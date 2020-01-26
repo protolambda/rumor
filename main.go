@@ -15,6 +15,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	ds_sync "github.com/ipfs/go-datastore/sync"
 	"github.com/libp2p/go-libp2p"
+	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -37,8 +38,16 @@ import (
 func main() {
 	topics := map[string]string{
 		"blocks": "/eth2/beacon_block/ssz",
+		"aggregate": "/eth2/beacon_aggregate_and_proof/ssz",
+		"legacy_attestation": "/eth2/beacon_attestation/ssz",
+		"voluntary_exit": "/eth2/voluntary_exit/ssz",
+		"proposer_slashing": "/eth2/proposer_slashing/ssz",
+		"attester_slashing": "/eth2/attester_slashing/ssz",
 		// TODO make this configurable
 	}
+	//for i := 0; i < 64; i++ {
+	//	topics[fmt.Sprintf("attestation_%d", i)] = fmt.Sprintf("/eth2/committee_index_%d_beacon_attestation/ssz", i)
+	//}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -56,7 +65,7 @@ func main() {
 	}
 
 	lurkAndLog := func(ctx context.Context, outName string, topic string) error {
-		out, err := os.OpenFile(path.Join(outPath, outName), os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
+		out, err := os.OpenFile(path.Join(outPath, outName+".txt"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
 		if err != nil {
 			return err
 		}
@@ -135,6 +144,8 @@ func main() {
 		panic(err)
 	}
 
+	lu.peerInfoLoop()
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT)
 
@@ -173,6 +184,9 @@ type Lurker struct {
 
 	log log.Logger
 
+	peerInfoLog log.Logger
+	peerInfoCtx *ManagedCtx
+
 	host    host.Host
 	hostCtx *ManagedCtx
 
@@ -181,7 +195,6 @@ type Lurker struct {
 	psLog log.Logger
 
 	connectionsCtx *ManagedCtx
-	connections    map[peer.ID]*ManagedCtx
 
 	kDht    *kad_dht.IpfsDHT
 	kDhtCtx *ManagedCtx
@@ -197,8 +210,6 @@ func NewLurker(ctx context.Context, l log.Logger) (*Lurker, error) {
 	lu := &Lurker{
 		log:            l,
 		ManagedCtx:     ManagedCtx{ctx: ctx, cancel: cancel},
-		connectionsCtx: nil,
-		connections:    nil,
 	}
 	return lu, lu.openHost()
 }
@@ -210,12 +221,53 @@ func (lu *Lurker) openHost() error {
 		//libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport),
 		//libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport),
 		//libp2p.Security(secio.ID, secio.New),
+		libp2p.ConnectionManager(connmgr.NewConnManager(15, 20, time.Second * 20)),
 	}
 	lu.hostCtx = lu.NewSubCtx()
 	h, err := libp2p.New(lu.hostCtx.ctx, hostOptions...)
 	lu.host = h
 	lu.log.Info("opened host")
 	return err
+}
+
+func (lu *Lurker) peerInfoLoop() {
+	lu.peerInfoCtx = lu.NewSubCtx()
+	lu.peerInfoLog = lu.log
+	go func() {
+		ticker := time.NewTicker(time.Second * 60)
+		end := lu.peerInfoCtx.ctx.Done()
+		strAddrs := func(peerID peer.ID) string {
+			out := ""
+			for _, a := range lu.host.Peerstore().Addrs(peerID) {
+				out += " "
+				out += a.String()
+			}
+			return out
+		}
+		for {
+			select {
+			case <-ticker.C:
+				peers := lu.host.Peerstore().Peers()
+				lu.peerInfoLog.Info(fmt.Sprintf("Peerstore size: %d", peers.Len()))
+				for i, peerID := range peers {
+					lu.peerInfoLog.Trace(fmt.Sprintf(" %d id: %x  %s", i, peerID, strAddrs(peerID)))
+				}
+				connPeers := lu.host.Network().Peers()
+				lu.peerInfoLog.Info(fmt.Sprintf("Network peers size: %d", len(connPeers)))
+				for i, peerID := range connPeers {
+					lu.peerInfoLog.Trace(fmt.Sprintf(" %d id: %x", i, peerID))
+				}
+				conns := lu.host.Network().Conns()
+				lu.peerInfoLog.Info(fmt.Sprintf("Connections count: %d", len(conns)))
+				for i, conn := range conns {
+					lu.peerInfoLog.Trace(fmt.Sprintf(" %d id: %x  %s", i, conn.RemotePeer(), conn.RemoteMultiaddr()))
+				}
+			case <-end:
+				lu.peerInfoLog.Info("stopped logging peer info")
+				return
+			}
+		}
+	}()
 }
 
 func (lu *Lurker) AddKadBootNodes(bootAddrs []ma.Multiaddr) error {
@@ -357,14 +409,10 @@ func (lu *Lurker) ConnectStaticPeers(multiAddrs []ma.Multiaddr, onConnect Connec
 	if lu.connectionsCtx == nil {
 		lu.connectionsCtx = lu.NewSubCtx()
 	}
-	if lu.connections == nil {
-		lu.connections = make(map[peer.ID]*ManagedCtx)
-	}
 	for _, info := range infos {
-		alreadyConnected := lu.connections[info.ID] != nil
+		alreadyConnected := len(lu.host.Network().ConnsToPeer(info.ID)) > 0
 		if !alreadyConnected {
 			peerCtx := lu.connectionsCtx.NewSubCtx()
-			lu.connections[info.ID] = peerCtx
 			if err := lu.host.Connect(peerCtx.ctx, info); err != nil {
 				return err
 			}
@@ -422,6 +470,7 @@ func (lu *Lurker) LurkTopic(ctx context.Context, topic string, out chan<- PubSub
 				outErr <- err
 				continue
 			}
+			lu.psLog.Debug(fmt.Sprintf("Received message on '%s' from %s: %d bytes, seq nr: %x", topic, msg.GetFrom().Pretty(), msg.Size(), msg.Seqno))
 			out <- PubSubMessage{
 				from: msg.GetFrom(),
 				data: msg.Data,
