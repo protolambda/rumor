@@ -42,12 +42,14 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	lu, err := NewLurker(ctx)
+	logger := log.New("lurker")
+	logger.SetHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(true)))
+	lu, err := NewLurker(ctx, logger)
 	if err != nil {
 		panic(err)
 	}
 
-	outPath := "logs"
+	outPath := "data"
 
 	if err := lu.StartPubSub(); err != nil {
 		panic(err)
@@ -138,6 +140,7 @@ func main() {
 
 	select {
 	case <-stop:
+		log.Info("Exiting...")
 		cancel()
 		time.Sleep(time.Second)
 		os.Exit(0)
@@ -175,21 +178,24 @@ type Lurker struct {
 
 	ps    *pubsub.PubSub
 	psCtx *ManagedCtx
+	psLog log.Logger
 
 	connectionsCtx *ManagedCtx
 	connections    map[peer.ID]*ManagedCtx
 
 	kDht    *kad_dht.IpfsDHT
 	kDhtCtx *ManagedCtx
+	kdLog   log.Logger
 
-	dv5Net  *discv5.Network
-	dv5Ctx  *ManagedCtx
-	dv5Log  log.Logger
+	dv5Net *discv5.Network
+	dv5Ctx *ManagedCtx
+	dv5Log log.Logger
 }
 
-func NewLurker(ctx context.Context) (*Lurker, error) {
+func NewLurker(ctx context.Context, l log.Logger) (*Lurker, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	lu := &Lurker{
+		log: l,
 		ManagedCtx:     ManagedCtx{ctx: ctx, cancel: cancel},
 		connectionsCtx: nil,
 		connections:    nil,
@@ -208,6 +214,7 @@ func (lu *Lurker) openHost() error {
 	lu.hostCtx = lu.NewSubCtx()
 	h, err := libp2p.New(lu.hostCtx.ctx, hostOptions...)
 	lu.host = h
+	lu.log.Info("opened host")
 	return err
 }
 
@@ -215,6 +222,7 @@ func (lu *Lurker) AddKadBootNodes(bootAddrs []ma.Multiaddr) error {
 	return lu.ConnectStaticPeers(bootAddrs, func(peerInfo peer.AddrInfo, alreadyConnected bool) error {
 		// protect the peer, we don't want the peer-limit to mess with the bootnodes when pruning.
 		lu.host.ConnManager().Protect(peerInfo.ID, "bootnode")
+		lu.kdLog.Info("added node with bootnode protection: " + string(peerInfo.ID))
 		return nil
 	})
 }
@@ -222,8 +230,8 @@ func (lu *Lurker) AddKadBootNodes(bootAddrs []ma.Multiaddr) error {
 func (lu *Lurker) InitKadDHT(id protocol.ID) error {
 	// example protocol id: "/prysm/0.0.0/dht"
 	dhtOpts := []dhtopts.Option{
-		dhtopts.Datastore(ds_sync.MutexWrap(ds.NewMapDatastore())),  // instead of the default map datastore.
-		dhtopts.Protocols(id),  // don't creep onto the default IPFS network, join the configured DHT
+		dhtopts.Datastore(ds_sync.MutexWrap(ds.NewMapDatastore())), // instead of the default map datastore.
+		dhtopts.Protocols(id), // don't creep onto the default IPFS network, join the configured DHT
 	}
 	kdCtx := lu.NewSubCtx()
 	kd, err := kad_dht.New(lu.kDhtCtx.ctx, lu.host, dhtOpts...)
@@ -232,6 +240,8 @@ func (lu *Lurker) InitKadDHT(id protocol.ID) error {
 	}
 	lu.kDhtCtx = kdCtx
 	lu.kDht = kd
+	lu.kdLog = lu.log.New("kadDHT")
+	lu.kdLog.Info("started KadDHT, protocol: " + string(id))
 	return nil
 }
 
@@ -242,9 +252,9 @@ func (lu *Lurker) RefresKadTable() {
 	go func() {
 		err := <-refResult
 		if err != nil {
-			fmt.Printf("failed to refresh kad dht table: %v", err)
+			lu.kdLog.Error("failed to refresh kad dht table: %v", err)
 		} else {
-			fmt.Println("successfully refreshed kad dht table")
+			lu.kdLog.Info("successfully refreshed kad dht table")
 		}
 	}()
 }
@@ -272,7 +282,9 @@ func (lu *Lurker) InitDiscV5(addr string, privKey *ecdsa.PrivateKey) error {
 	dv5Ctx := lu.NewSubCtx()
 	go func() {
 		<-dv5Ctx.ctx.Done()
+		dv5Log.Info("closing discv5", addr)
 		dv5Net.Close()
+		dv5Log.Info("closed discv5", addr)
 	}()
 
 	lu.dv5Net = dv5Net
@@ -282,6 +294,9 @@ func (lu *Lurker) InitDiscV5(addr string, privKey *ecdsa.PrivateKey) error {
 }
 
 func (lu *Lurker) AddDiscV5BootNodes(bootNodes []*discv5.Node) error {
+	for _, v := range bootNodes {
+		lu.dv5Log.Info("adding discv5 bootnode: ", v.String())
+	}
 	return lu.dv5Net.SetFallbackNodes(bootNodes)
 }
 
@@ -316,7 +331,7 @@ func enodeToDiscv5Node(en *enode.Node) (*discv5.Node, error) {
 	if ip == nil || udpPort == 0 || tcpPort == 0 {
 		return nil, fmt.Errorf("enode record %v has missing ip/udp/tcp", en.String())
 	}
-	return &discv5.Node{IP:  ip, UDP: udpPort, TCP: tcpPort, ID:  id}, nil
+	return &discv5.Node{IP: ip, UDP: udpPort, TCP: tcpPort, ID: id}, nil
 }
 
 type ConnectionCallback func(info peer.AddrInfo, alreadyConnected bool) error
@@ -360,6 +375,8 @@ func (lu *Lurker) StartPubSub() error {
 		return err
 	}
 	lu.ps = ps
+	lu.psLog = lu.log.New("pubsub")
+	lu.psLog.Info("started pubsub")
 	return nil
 }
 
@@ -369,6 +386,7 @@ type PubSubMessage struct {
 }
 
 func (lu *Lurker) LurkTopic(ctx context.Context, topic string, out chan<- PubSubMessage, outErr chan<- error) (err error) {
+	lu.psLog.Info("listening on pubsub topic: " + topic)
 	top, err := lu.ps.Join(topic)
 	if err != nil {
 		return err
@@ -396,8 +414,10 @@ func (lu *Lurker) LurkTopic(ctx context.Context, topic string, out chan<- PubSub
 	}()
 
 	go func() {
+		lu.psLog.Info("stopping listening on topic: "+topic)
 		<-ctx.Done()
 		running = false
+		lu.psLog.Info("stopped listening on topic: "+topic)
 	}()
 
 	return nil
