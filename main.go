@@ -52,7 +52,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	logger := log.Root()
-	logger.SetHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(true)))
+	logger.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
 	lu, err := NewLurker(ctx, logger)
 	if err != nil {
 		panic(err)
@@ -69,6 +69,22 @@ func main() {
 		if err != nil {
 			return err
 		}
+		go func() {
+			ticker := time.NewTicker(time.Second * 60)
+			for {
+				select {
+				case <-ticker.C:
+					if err := out.Sync(); err != nil {
+						lu.log.Error(fmt.Sprintf("Synced %s storage with error: %v", outName, err))
+					}
+				case <-ctx.Done():
+					if err := out.Close(); err != nil {
+						lu.log.Error(fmt.Sprintf("Closed %s storage with error: %v", outName, err))
+					}
+					return
+				}
+			}
+		}()
 		errLogger := lu.NewErrLogger(ctx, outName)
 		msgLogger := NewMessageLogger(ctx, out, errLogger)
 		return lu.LurkTopic(ctx, topic, msgLogger, errLogger)
