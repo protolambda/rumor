@@ -42,7 +42,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	logger := log.New("lurker")
+	logger := log.Root()
 	logger.SetHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(true)))
 	lu, err := NewLurker(ctx, logger)
 	if err != nil {
@@ -195,7 +195,7 @@ type Lurker struct {
 func NewLurker(ctx context.Context, l log.Logger) (*Lurker, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	lu := &Lurker{
-		log: l,
+		log:            l,
 		ManagedCtx:     ManagedCtx{ctx: ctx, cancel: cancel},
 		connectionsCtx: nil,
 		connections:    nil,
@@ -222,7 +222,7 @@ func (lu *Lurker) AddKadBootNodes(bootAddrs []ma.Multiaddr) error {
 	return lu.ConnectStaticPeers(bootAddrs, func(peerInfo peer.AddrInfo, alreadyConnected bool) error {
 		// protect the peer, we don't want the peer-limit to mess with the bootnodes when pruning.
 		lu.host.ConnManager().Protect(peerInfo.ID, "bootnode")
-		lu.kdLog.Info("added node with bootnode protection: " + string(peerInfo.ID))
+		lu.kdLog.Info("added node with bootnode protection: " + peerInfo.ID.String())
 		return nil
 	})
 }
@@ -234,13 +234,13 @@ func (lu *Lurker) InitKadDHT(id protocol.ID) error {
 		dhtopts.Protocols(id), // don't creep onto the default IPFS network, join the configured DHT
 	}
 	kdCtx := lu.NewSubCtx()
-	kd, err := kad_dht.New(lu.kDhtCtx.ctx, lu.host, dhtOpts...)
+	kd, err := kad_dht.New(kdCtx.ctx, lu.host, dhtOpts...)
 	if err != nil {
 		return err
 	}
 	lu.kDhtCtx = kdCtx
 	lu.kDht = kd
-	lu.kdLog = lu.log.New("kadDHT")
+	lu.kdLog = lu.log
 	lu.kdLog.Info("started KadDHT, protocol: " + string(id))
 	return nil
 }
@@ -252,7 +252,7 @@ func (lu *Lurker) RefresKadTable() {
 	go func() {
 		err := <-refResult
 		if err != nil {
-			lu.kdLog.Error("failed to refresh kad dht table: %v", err)
+			lu.kdLog.Error(fmt.Sprintf("failed to refresh kad dht table: %v", err))
 		} else {
 			lu.kdLog.Info("successfully refreshed kad dht table")
 		}
@@ -260,7 +260,7 @@ func (lu *Lurker) RefresKadTable() {
 }
 
 func (lu *Lurker) InitDiscV5(addr string, privKey *ecdsa.PrivateKey) error {
-	dv5Log := lu.log.New("discv5")
+	dv5Log := lu.log
 
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -299,6 +299,18 @@ func (lu *Lurker) AddDiscV5BootNodes(bootNodes []*discv5.Node) error {
 	}
 	return lu.dv5Net.SetFallbackNodes(bootNodes)
 }
+
+// TODO: implement discv5 polling routine to onboard new peers from into libp2p
+
+func (lu *Lurker) StartWatchingPeers() {
+	// TODO: log peers
+}
+
+// TODO: re-establish connections with disconnected peers
+
+// TODO: prune peers
+
+// TODO: log metrics of connected/disconnected/etc.
 
 func parseEnr(v string) (*enr.Record, error) {
 	data, err := base64.RawURLEncoding.DecodeString(v)
@@ -345,6 +357,9 @@ func (lu *Lurker) ConnectStaticPeers(multiAddrs []ma.Multiaddr, onConnect Connec
 	if lu.connectionsCtx == nil {
 		lu.connectionsCtx = lu.NewSubCtx()
 	}
+	if lu.connections == nil {
+		lu.connections = make(map[peer.ID]*ManagedCtx)
+	}
 	for _, info := range infos {
 		alreadyConnected := lu.connections[info.ID] != nil
 		if !alreadyConnected {
@@ -375,7 +390,7 @@ func (lu *Lurker) StartPubSub() error {
 		return err
 	}
 	lu.ps = ps
-	lu.psLog = lu.log.New("pubsub")
+	lu.psLog = lu.log
 	lu.psLog.Info("started pubsub")
 	return nil
 }
@@ -397,6 +412,7 @@ func (lu *Lurker) LurkTopic(ctx context.Context, topic string, out chan<- PubSub
 	}
 	running := true
 	go func() {
+		lu.log.Info("start subscription on topic " + topic)
 		for {
 			msg, err := sub.Next(lu.ctx)
 			if !running {
@@ -411,26 +427,28 @@ func (lu *Lurker) LurkTopic(ctx context.Context, topic string, out chan<- PubSub
 				data: msg.Data,
 			}
 		}
+		lu.log.Info("stopped subscription on topic " + topic)
 	}()
 
 	go func() {
-		lu.psLog.Info("stopping listening on topic: "+topic)
 		<-ctx.Done()
+		lu.psLog.Info("stopping listening on topic: " + topic)
 		running = false
-		lu.psLog.Info("stopped listening on topic: "+topic)
 	}()
 
 	return nil
 }
 
 func NewMessageLogger(ctx context.Context, w io.Writer, outErr chan<- error) chan<- PubSubMessage {
-	var buf bytes.Buffer
+	data := make([]byte, 1<<14)
 	outErr = make(chan error)
 	onMsg := func(msg PubSubMessage) {
-		buf.Reset()
-		buf.Grow(hex.EncodedLen(len(msg.data)))
-		hex.Encode(buf.Bytes(), msg.data)
-		if _, err := w.Write(buf.Bytes()); err != nil {
+		n := hex.EncodedLen(len(msg.data))
+		if n > len(data) {
+			data = make([]byte, n*2, n*2)
+		}
+		hex.Encode(data, msg.data)
+		if _, err := w.Write(data[:n]); err != nil {
 			outErr <- err
 		}
 		if _, err := w.Write([]byte{'\n'}); err != nil {
@@ -454,7 +472,7 @@ func NewMessageLogger(ctx context.Context, w io.Writer, outErr chan<- error) cha
 }
 
 func (lu *Lurker) NewErrLogger(ctx context.Context, name string) chan<- error {
-	l := lu.log.New(name)
+	l := lu.log
 	listenerCh := make(chan error)
 	go func() {
 		for {
