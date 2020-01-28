@@ -45,9 +45,9 @@ func main() {
 		"attester_slashing": "/eth2/attester_slashing/ssz",
 		// TODO make this configurable
 	}
-	//for i := 0; i < 64; i++ {
-	//	topics[fmt.Sprintf("attestation_%d", i)] = fmt.Sprintf("/eth2/committee_index_%d_beacon_attestation/ssz", i)
-	//}
+	for i := 0; i < 8; i++ {
+		topics[fmt.Sprintf("committee_%d", i)] = fmt.Sprintf("/eth2/committee_index%d_beacon_attestation/ssz", i)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
