@@ -30,6 +30,8 @@ import (
 	"github.com/libp2p/go-tcp-transport"
 	"github.com/minio/sha256-simd"
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/protolambda/zssz"
+	ztypes "github.com/protolambda/zssz/types"
 	"io"
 	"net"
 	"os"
@@ -223,6 +225,11 @@ type Lurker struct {
 	dv5Net *discv5.Network
 	dv5Ctx *ManagedCtx
 	dv5Log log.Logger
+
+	ownStatus *Status
+	peers     map[peer.ID]*Status
+
+	rpcLog log.Logger
 }
 
 func NewLurker(ctx context.Context, l log.Logger) (*Lurker, error) {
@@ -231,6 +238,7 @@ func NewLurker(ctx context.Context, l log.Logger) (*Lurker, error) {
 		log:        l,
 		ManagedCtx: ManagedCtx{ctx: ctx, cancel: cancel},
 	}
+	lu.rpcLog = l // TODO set up topic based logging
 	return lu, lu.openHost()
 }
 
@@ -384,9 +392,82 @@ func (lu *Lurker) StartWatchingPeers() {
 
 // TODO: log metrics of connected/disconnected/etc.
 
+type ForkVersion [4]byte
+type Root [32]byte
+type Epoch uint64
+type Slot uint64
+
+type Status struct {
+	HeadForkVersion ForkVersion
+	FinalizedRoot   Root
+	FinalizedEpoch  Epoch
+	HeadRoot        Root
+	HeadSlot        Slot
+}
+
+var StatusSSZ = zssz.GetSSZ((*Status)(nil))
+
+type RequestFn func(ctx context.Context, peerId peer.ID, comp Compression) error
+
+func (lu *Lurker) makeStatusRequestFn(req *Status, onResp func(result uint8, status *Status)) RequestFn {
+	return func(ctx context.Context, peerId peer.ID, comp Compression) error {
+		protocolId := protocol.ID("/eth2/beacon_chain/req/status/1/ssz")
+		if comp != nil {
+			protocolId += "_snappy"
+		}
+		respHandler := makeResponseHandler(1, StatusSSZ.MaxLen()*2, comp,
+			func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result uint8, r io.Reader, w io.Writer) error {
+				var status Status
+				if err := zssz.Decode(r, chunkSize, &status, StatusSSZ); err != nil {
+					return err
+				}
+				onResp(result, &status)
+				return nil
+			})
+		return lu.request(ctx, peerId, protocolId, req, StatusSSZ, comp, respHandler)
+	}
+}
+
+func (lu *Lurker) request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, data interface{},
+	dataType ztypes.SSZ, comp Compression, handle ResponseHandler) error {
+
+	reqTimeout := time.Second * 10
+	deadline := time.Now().Add(reqTimeout)
+	ctx, cancel := context.WithTimeout(ctx, reqTimeout)
+	defer cancel()
+
+	var buf bytes.Buffer
+	if _, err := zssz.Encode(&buf, data, dataType); err != nil {
+		return err
+	}
+
+	stream, err := lu.host.NewStream(ctx, peerId, protocolId)
+	if err != nil {
+		return err
+	}
+	if err := stream.SetReadDeadline(deadline); err != nil {
+		return err
+	}
+	if err := stream.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+	if err := EncodePayload(&buf, stream, comp); err != nil {
+		return err
+	}
+	chunkCount, err := handle(ctx, stream, stream)
+	if err != nil {
+		return err
+	}
+	lu.rpcLog.Debug(fmt.Sprintf("Sucess response of %d chunks on %s request from peer %s",
+		chunkCount, protocolId, peerId.Pretty()))
+	return nil
+}
+
 type Compression interface {
 	Decompress(r io.Reader) io.Reader
 	Compress(w io.WriteCloser) io.WriteCloser
+	MsgSizeBound(msgLen uint64) uint64
+	Name() string
 }
 
 type SnappyCompression struct{}
@@ -399,6 +480,10 @@ func (c *SnappyCompression) Compress(w io.WriteCloser) io.WriteCloser {
 	return snappy.NewBufferedWriter(w)
 }
 
+func (c *SnappyCompression) Name() string {
+	return "snappy"
+}
+
 // ResponseChunkHandler is a function that processes a response chunk. The index, size and result-code are already parsed.
 // The contents (decompressed if previously compressed) can be read from r. Optionally an answer can be written back to w.
 // If the response chunk could not be processed, an error may be returned.
@@ -409,7 +494,7 @@ type ResponseHandler func(ctx context.Context, r io.Reader, w io.WriteCloser) (c
 
 // makeResponseHandler builds a ResponseHandler, which won't take more than maxChunkCount chunks, or chunks larger than maxChunkSize.
 // Compression is optional and may be nil. Chunks are processed by the given ResponseChunkHandler.
-func (lu *Lurker) makeResponseHandler(maxChunkCount uint64, maxChunkSize uint64, comp Compression, handle ResponseChunkHandler) ResponseHandler {
+func makeResponseHandler(maxChunkCount uint64, maxChunkSize uint64, comp Compression, handle ResponseChunkHandler) ResponseHandler {
 	//		response  ::= <response_chunk>*
 	//		response_chunk  ::= <result> | <encoding-dependent-header> | <encoded-payload>
 	//		result    ::= “0” | “1” | “2” | [“128” ... ”255”]
@@ -451,18 +536,18 @@ func (lu *Lurker) makeResponseHandler(maxChunkCount uint64, maxChunkSize uint64,
 	}
 }
 
-type responseChunkBuf bytes.Buffer
+type payloadBuffer bytes.Buffer
 
-func (rcb *responseChunkBuf) Close() error {
+func (p *payloadBuffer) Close() error {
 	return nil
 }
 
-func (rcb *responseChunkBuf) Write(p []byte) (n int, err error) {
-	return (*bytes.Buffer)(rcb).Write(p)
+func (p *payloadBuffer) Write(b []byte) (n int, err error) {
+	return (*bytes.Buffer)(p).Write(b)
 }
 
-func (rcb *responseChunkBuf) OutputSizeVarint(w io.Writer) error {
-	size := (*bytes.Buffer)(rcb).Len()
+func (p *payloadBuffer) OutputSizeVarint(w io.Writer) error {
+	size := (*bytes.Buffer)(p).Len()
 	sizeBytes := [binary.MaxVarintLen64]byte{}
 	// TODO unsigned or signed var int?
 	sizeByteLen := binary.PutVarint(sizeBytes[:], int64(size))
@@ -470,41 +555,46 @@ func (rcb *responseChunkBuf) OutputSizeVarint(w io.Writer) error {
 	return err
 }
 
-func (rcb *responseChunkBuf) WriteTo(w io.Writer) (n int64, err error) {
-	return (*bytes.Buffer)(rcb).WriteTo(w)
+func (p *payloadBuffer) WriteTo(w io.Writer) (n int64, err error) {
+	return (*bytes.Buffer)(p).WriteTo(w)
 }
 
-// ResponseChunkWriter reads (decompressed) response message from the msg io.Reader, and writes it as a chunk with given result code to the output writer.
-type ResponseChunkWriter func(msg io.Reader, result uint8, w io.Writer) error
-
-// makeResponseChunkWriter builds a ResponseChunkWriter, to write responses. The compression is optional and may be nil.
-func makeResponseChunkWriter(comp Compression) ResponseChunkWriter {
-	return func(msg io.Reader, result uint8, w io.Writer) error {
-		if _, err := w.Write([]byte{result}); err != nil {
-			return err
-		}
-		var out io.Writer
-		var buf responseChunkBuf
-		out = &buf
-		if comp != nil {
-			compressedWriter := comp.Compress(&buf)
-			defer compressedWriter.Close()
-			out = compressedWriter
-		}
-		if _, err := io.Copy(out, msg); err != nil {
-			return err
-		}
-		if _, err := w.Write([]byte{result}); err != nil {
-			return err
-		}
-		if err := buf.OutputSizeVarint(w); err != nil {
-			return err
-		}
-		if _, err := buf.WriteTo(w); err != nil {
-			return err
-		}
-		return nil
+// EncodePayload reads a payload, buffers (and optionally compresses) the payload,
+// then computes the header-data (varint of byte size). And then writes header and payload.
+func EncodePayload(r io.Reader, w io.Writer, comp Compression) error {
+	var out io.Writer
+	var buf payloadBuffer
+	out = &buf
+	if comp != nil {
+		compressedWriter := comp.Compress(&buf)
+		defer compressedWriter.Close()
+		out = compressedWriter
 	}
+	if _, err := io.Copy(out, r); err != nil {
+		return err
+	}
+	if err := buf.OutputSizeVarint(w); err != nil {
+		return err
+	}
+	if _, err := buf.WriteTo(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+// EncodeResult writes the result code to the output writer.
+func EncodeResult(result uint8, w io.Writer) error {
+	_, err := w.Write([]byte{result})
+	return err
+}
+
+// EncodeChunk reads (decompressed) response message from the msg io.Reader,
+// and writes it as a chunk with given result code to the output writer. The compression is optional and may be nil.
+func EncodeChunk(result uint8, r io.Reader, w io.Writer, comp Compression) error {
+	if err := EncodeResult(result, w); err != nil {
+		return err
+	}
+	return EncodePayload(r, w, comp)
 }
 
 // RequestHandler processes a request (decompressed if previously compressed), read from r.
