@@ -41,12 +41,12 @@ import (
 
 func main() {
 	topics := map[string]string{
-		"blocks": "/eth2/beacon_block/ssz",
-		"aggregate": "/eth2/beacon_aggregate_and_proof/ssz",
+		"blocks":             "/eth2/beacon_block/ssz",
+		"aggregate":          "/eth2/beacon_aggregate_and_proof/ssz",
 		"legacy_attestation": "/eth2/beacon_attestation/ssz",
-		"voluntary_exit": "/eth2/voluntary_exit/ssz",
-		"proposer_slashing": "/eth2/proposer_slashing/ssz",
-		"attester_slashing": "/eth2/attester_slashing/ssz",
+		"voluntary_exit":     "/eth2/voluntary_exit/ssz",
+		"proposer_slashing":  "/eth2/proposer_slashing/ssz",
+		"attester_slashing":  "/eth2/attester_slashing/ssz",
 		// TODO make this configurable
 	}
 	for i := 0; i < 8; i++ {
@@ -228,8 +228,8 @@ type Lurker struct {
 func NewLurker(ctx context.Context, l log.Logger) (*Lurker, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	lu := &Lurker{
-		log:            l,
-		ManagedCtx:     ManagedCtx{ctx: ctx, cancel: cancel},
+		log:        l,
+		ManagedCtx: ManagedCtx{ctx: ctx, cancel: cancel},
 	}
 	return lu, lu.openHost()
 }
@@ -241,7 +241,7 @@ func (lu *Lurker) openHost() error {
 		//libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport),
 		//libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport),
 		//libp2p.Security(secio.ID, secio.New),
-		libp2p.ConnectionManager(connmgr.NewConnManager(15, 20, time.Second * 20)),
+		libp2p.ConnectionManager(connmgr.NewConnManager(15, 20, time.Second*20)),
 	}
 	lu.hostCtx = lu.NewSubCtx()
 	h, err := libp2p.New(lu.hostCtx.ctx, hostOptions...)
@@ -389,7 +389,7 @@ type Compression interface {
 	Compress(w io.WriteCloser) io.WriteCloser
 }
 
-type SnappyCompression struct {}
+type SnappyCompression struct{}
 
 func (c *SnappyCompression) Decompress(reader io.Reader) io.Reader {
 	return snappy.NewReader(reader)
@@ -415,21 +415,22 @@ func (lu *Lurker) makeResponseHandler(maxChunkCount uint64, maxChunkSize uint64,
 	//		result    ::= “0” | “1” | “2” | [“128” ... ”255”]
 	return func(ctx context.Context, r io.Reader, w io.WriteCloser) (chunkCount uint64, err error) {
 		for chunkIndex := uint64(0); chunkIndex < maxChunkCount; chunkIndex++ {
-			chunkSize, err := binary.ReadUvarint(bufio.NewReader(r))
+			resByte := [1]byte{}
+			_, err := r.Read(resByte[:])
 			if err == io.EOF { // no more chunks left.
 				return chunkIndex, nil
 			}
 			if err != nil {
+				return chunkIndex, fmt.Errorf("failed to read chunk %d result byte: %v", chunkIndex, err)
+			}
+			chunkSize, err := binary.ReadVarint(bufio.NewReader(r)) // TODO unsigned or signed var int?
+			if err != nil {
 				// TODO send error back: invalid chunk size encoding
 				return chunkIndex, err
 			}
-			if chunkSize > maxChunkSize {
+			if chunkSize < 0 || uint64(chunkSize) > maxChunkSize {
 				// TODO sender error back: invalid chunk size, too large.
 				return chunkIndex, fmt.Errorf("chunk size %d of chunk %d exceeds chunk limit %d", chunkSize, chunkIndex, maxChunkSize)
-			}
-			resByte := [1]byte{}
-			if _, err := r.Read(resByte[:]); err != nil {
-				return chunkIndex, fmt.Errorf("failed to read chunk %d result byte: %v", chunkIndex, err)
 			}
 			cr := r
 			cw := w
@@ -437,7 +438,7 @@ func (lu *Lurker) makeResponseHandler(maxChunkCount uint64, maxChunkSize uint64,
 				cr = comp.Decompress(cr)
 				cw = comp.Compress(cw)
 			}
-			if err := handle(ctx, chunkIndex, chunkSize, resByte[0], cr, cw); err != nil {
+			if err := handle(ctx, chunkIndex, uint64(chunkSize), resByte[0], cr, cw); err != nil {
 				return chunkIndex, err
 			}
 			if comp != nil {
@@ -450,6 +451,62 @@ func (lu *Lurker) makeResponseHandler(maxChunkCount uint64, maxChunkSize uint64,
 	}
 }
 
+type responseChunkBuf bytes.Buffer
+
+func (rcb *responseChunkBuf) Close() error {
+	return nil
+}
+
+func (rcb *responseChunkBuf) Write(p []byte) (n int, err error) {
+	return (*bytes.Buffer)(rcb).Write(p)
+}
+
+func (rcb *responseChunkBuf) OutputSizeVarint(w io.Writer) error {
+	size := (*bytes.Buffer)(rcb).Len()
+	sizeBytes := [binary.MaxVarintLen64]byte{}
+	// TODO unsigned or signed var int?
+	sizeByteLen := binary.PutVarint(sizeBytes[:], int64(size))
+	_, err := w.Write(sizeBytes[:sizeByteLen])
+	return err
+}
+
+func (rcb *responseChunkBuf) WriteTo(w io.Writer) (n int64, err error) {
+	return (*bytes.Buffer)(rcb).WriteTo(w)
+}
+
+// ResponseChunkWriter reads (decompressed) response message from the msg io.Reader, and writes it as a chunk with given result code to the output writer.
+type ResponseChunkWriter func(msg io.Reader, result uint8, w io.Writer) error
+
+// makeResponseChunkWriter builds a ResponseChunkWriter, to write responses. The compression is optional and may be nil.
+func makeResponseChunkWriter(comp Compression) ResponseChunkWriter {
+	return func(msg io.Reader, result uint8, w io.Writer) error {
+		if _, err := w.Write([]byte{result}); err != nil {
+			return err
+		}
+		var out io.Writer
+		var buf responseChunkBuf
+		out = &buf
+		if comp != nil {
+			compressedWriter := comp.Compress(&buf)
+			defer compressedWriter.Close()
+			out = compressedWriter
+		}
+		if _, err := io.Copy(out, msg); err != nil {
+			return err
+		}
+		if _, err := w.Write([]byte{result}); err != nil {
+			return err
+		}
+		if err := buf.OutputSizeVarint(w); err != nil {
+			return err
+		}
+		if _, err := buf.WriteTo(w); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
 // RequestHandler processes a request (decompressed if previously compressed), read from r.
 // The handler can respond by writing to w. After returning the writer will automatically be closed.
 type RequestHandler func(ctx context.Context, r io.Reader, w io.Writer)
@@ -459,7 +516,7 @@ func (lu *Lurker) startReqRPC(id protocol.ID, comp Compression, handle RequestHa
 	logger := lu.log
 	lu.host.SetStreamHandler(id, func(stream network.Stream) {
 		defer stream.Close()
-		deadlineDuration := time.Second * 2  // TODO decide on incoming stream timeout
+		deadlineDuration := time.Second * 2 // TODO decide on incoming stream timeout
 		ctx, cancel := context.WithTimeout(lu.NewSubCtx().ctx, deadlineDuration)
 		defer cancel()
 		if err := stream.SetReadDeadline(time.Now().Add(deadlineDuration)); err != nil {
