@@ -392,6 +392,60 @@ func (lu *Lurker) StartWatchingPeers() {
 
 // TODO: log metrics of connected/disconnected/etc.
 
+type BlocksByRangeReqV1 struct {
+	HeadBlockRoot Root // TO be removed in BlocksByRange v2
+	StartSlot Slot
+	Count uint64
+	Step uint64
+}
+
+var BlocksByRangeReqV1SSZ = zssz.GetSSZ((*BlocksByRangeReqV1)(nil))
+
+type BlocksByRangeReqV2 struct {
+	StartSlot Slot
+	Count uint64
+	Step uint64
+}
+
+var BlocksByRangeReqV2SSZ = zssz.GetSSZ((*BlocksByRangeReqV2)(nil))
+
+// instead of parsing the whole body, we can just leave it as bytes.
+type BeaconBlockBodyRaw []byte
+
+func (b *BeaconBlockBodyRaw) Limit() uint64 {
+	// just cap block body size at 1 MB
+	return 1 << 20
+}
+
+type BeaconBlock struct {
+	Slot Slot
+	ParentRoot Root
+	StateRoot Root
+	Body BeaconBlockBodyRaw
+}
+
+type SignedBeaconBlock struct {
+	Message BeaconBlock
+	Signature BLSSignature
+}
+var SignedBeaconBlockSSZ = zssz.GetSSZ((*SignedBeaconBlock)(nil))
+
+
+var BlocksByRangeRPCv1 = ReqRespType{
+	Protocol:      "/eth2/beacon_chain/req/status/1/ssz",
+	MaxChunkCount: 50, // 50 blocks default maximum
+	ReqSSZ:        BlocksByRangeReqV1SSZ,
+	RespChunkSSZ:  SignedBeaconBlockSSZ,
+}
+
+var BlocksByRangeRPCv2 = ReqRespType{
+	Protocol:      "/eth2/beacon_chain/req/status/2/ssz",
+	MaxChunkCount: 50, // 50 blocks default maximum
+	ReqSSZ:        BlocksByRangeReqV2SSZ,
+	RespChunkSSZ:  SignedBeaconBlockSSZ,
+}
+
+type BLSSignature [96]byte
 type ForkVersion [4]byte
 type Root [32]byte
 type Epoch uint64
@@ -407,26 +461,57 @@ type Status struct {
 
 var StatusSSZ = zssz.GetSSZ((*Status)(nil))
 
-type RequestFn func(ctx context.Context, peerId peer.ID, comp Compression) error
-
-func (lu *Lurker) makeStatusRequestFn(req *Status, onResp func(result uint8, status *Status)) RequestFn {
-	return func(ctx context.Context, peerId peer.ID, comp Compression) error {
-		protocolId := protocol.ID("/eth2/beacon_chain/req/status/1/ssz")
-		if comp != nil {
-			protocolId += "_snappy"
-		}
-		respHandler := makeResponseHandler(1, StatusSSZ.MaxLen()*2, comp,
-			func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result uint8, r io.Reader, w io.Writer) error {
-				var status Status
-				if err := zssz.Decode(r, chunkSize, &status, StatusSSZ); err != nil {
-					return err
-				}
-				onResp(result, &status)
-				return nil
-			})
-		return lu.request(ctx, peerId, protocolId, req, StatusSSZ, comp, respHandler)
-	}
+var StatusRPCv1 = ReqRespType{
+	Protocol: "/eth2/beacon_chain/req/status/1/ssz",
+	MaxChunkCount: 1,
+	ReqSSZ: StatusSSZ,
+	RespChunkSSZ: StatusSSZ,
 }
+
+type ReqRespType struct {
+	Protocol protocol.ID
+	MaxChunkCount uint64
+	ReqSSZ ztypes.SSZ
+	RespChunkSSZ ztypes.SSZ
+}
+
+type RespChunkEntry struct {
+	ChunkIndex uint64
+	ResponseCode uint8
+	ReadChunk func(dest interface{}) error
+}
+
+func (reqType *ReqRespType) RunRequest(ctx context.Context, reqFn RequestFn, req interface{},
+	peerId peer.ID, comp Compression, responses chan<- RespChunkEntry) error {
+
+	defer func() {
+		close(responses)
+	}()
+
+	protocolId := reqType.Protocol
+	maxChunkSize := reqType.RespChunkSSZ.MaxLen()
+	if comp != nil {
+		protocolId += protocol.ID("_" + comp.Name())
+		if s, err := comp.MaxEncodedLen(maxChunkSize); err != nil {
+			return err
+		} else {
+			maxChunkSize = s
+		}
+	}
+	respHandler := makeResponseHandler(reqType.MaxChunkCount, maxChunkSize, comp,
+		func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result uint8, r io.Reader, w io.Writer) error {
+			responses <- RespChunkEntry{ChunkIndex: chunkIndex, ResponseCode: result, ReadChunk: func(dest interface{}) error {
+				return zssz.Decode(r, chunkSize, dest, reqType.RespChunkSSZ)
+			}}
+			return nil
+		})
+	// Runs the request in sync, which processes responses,
+	// and then finally closes the channel through the earlier deferred close.
+	return reqFn(ctx, peerId, protocolId, req, reqType.ReqSSZ, comp, respHandler)
+}
+
+type RequestFn func(ctx context.Context, peerId peer.ID, protocolId protocol.ID, data interface{},
+	dataType ztypes.SSZ, comp Compression, handle ResponseHandler) error
 
 func (lu *Lurker) request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, data interface{},
 	dataType ztypes.SSZ, comp Compression, handle ResponseHandler) error {
@@ -464,9 +549,13 @@ func (lu *Lurker) request(ctx context.Context, peerId peer.ID, protocolId protoc
 }
 
 type Compression interface {
+	// Wraps a reader to decompress data as reads happen.
 	Decompress(r io.Reader) io.Reader
+	// Wraps a writer to compress data as writes happen.
 	Compress(w io.WriteCloser) io.WriteCloser
-	MsgSizeBound(msgLen uint64) uint64
+	// Returns an error when the input size is too large to encode.
+	MaxEncodedLen(msgLen uint64) (uint64, error)
+	// The name of the compression that is suffixed to the actual encoding. E.g. "snappy", w.r.t. "ssz_snappy".
 	Name() string
 }
 
@@ -478,6 +567,17 @@ func (c *SnappyCompression) Decompress(reader io.Reader) io.Reader {
 
 func (c *SnappyCompression) Compress(w io.WriteCloser) io.WriteCloser {
 	return snappy.NewBufferedWriter(w)
+}
+
+func (c *SnappyCompression) MaxEncodedLen(msgLen uint64) (uint64, error) {
+	if msgLen & (1 << 63) != 0 {
+		return 0, fmt.Errorf("message length %d is too large to compress with snappy", msgLen)
+	}
+	m := snappy.MaxEncodedLen(int(msgLen))
+	if m < 0 {
+		return 0, fmt.Errorf("message length %d is too large to compress with snappy", msgLen)
+	}
+	return uint64(m), nil
 }
 
 func (c *SnappyCompression) Name() string {
