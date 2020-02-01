@@ -20,4 +20,7 @@ var StatusRPCv1 = reqresp.RPCMethod{
 	MaxChunkCount: 1,
 	ReqSSZ: StatusSSZ,
 	RespChunkSSZ: StatusSSZ,
+	AllocRequest: func() interface{} {
+		return new(Status)
+	},
 }

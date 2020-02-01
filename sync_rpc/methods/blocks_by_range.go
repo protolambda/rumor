@@ -41,6 +41,9 @@ var BlocksByRangeRPCv1 = reqresp.RPCMethod{
 	MaxChunkCount: 50, // 50 blocks default maximum
 	ReqSSZ:        BlocksByRangeReqV1SSZ,
 	RespChunkSSZ:  SignedBeaconBlockSSZ,
+	AllocRequest: func() interface{} {
+		return new(BlocksByRangeReqV1)
+	},
 }
 
 type BlocksByRangeReqV2 struct {
@@ -56,4 +59,7 @@ var BlocksByRangeRPCv2 = reqresp.RPCMethod{
 	MaxChunkCount: 50, // 50 blocks default maximum
 	ReqSSZ:        BlocksByRangeReqV2SSZ,
 	RespChunkSSZ:  SignedBeaconBlockSSZ,
+	AllocRequest: func() interface{} {
+		return new(BlocksByRangeReqV2)
+	},
 }
