@@ -29,11 +29,11 @@ type LocalNode struct {
 	ctx context.Context
 	host host.Host
 	priv crypto.PrivKey
-	logger logrus.FieldLogger
+	log logrus.FieldLogger
 }
 
 // using defaults
-func NewLocalNode(ctx context.Context, options ...libp2p.Option) (*LocalNode, error) {
+func NewLocalNode(ctx context.Context, log logrus.FieldLogger, options ...libp2p.Option) (*LocalNode, error) {
 	priv, _, err := crypto.GenerateKeyPairWithReader(crypto.RSA, 2048, rand.Reader)
 	if err != nil {
 		return nil, err
@@ -61,6 +61,7 @@ func NewLocalNode(ctx context.Context, options ...libp2p.Option) (*LocalNode, er
 		ctx:  ctx,
 		host: h,
 		priv: priv,
+		log: log,
 	}, nil
 }
 
@@ -69,5 +70,5 @@ func (l *LocalNode) Host() host.Host {
 }
 
 func (l *LocalNode) Logger(logTopic string) logrus.FieldLogger {
-	return l.logger.WithField("log_topic", logTopic)
+	return l.log.WithField("log_topic", logTopic)
 }

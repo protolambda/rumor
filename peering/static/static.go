@@ -44,3 +44,15 @@ func ConnectBootNodes(ctx context.Context, n node.Node, bootAddrs []ma.Multiaddr
 		return nil
 	})
 }
+
+func ParseMultiAddrs(addrs... string) ([]ma.Multiaddr, error) {
+	multiAddrs := make([]ma.Multiaddr, 0, len(addrs))
+	for _, addr := range addrs {
+		muAddr, err := ma.NewMultiaddr(addr)
+		if err != nil {
+			return nil, err
+		}
+		multiAddrs = append(multiAddrs, muAddr)
+	}
+	return multiAddrs, nil
+}

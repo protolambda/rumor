@@ -1,20 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
+	"eth2-lurk/gossip"
+	"eth2-lurk/node"
+	"eth2-lurk/peering/discv5"
+	"eth2-lurk/peering/kad"
+	"eth2-lurk/peering/static"
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/enr"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
-	kad_dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-pubsub"
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/sirupsen/logrus"
 	"os"
 	"os/signal"
 	"path"
@@ -38,20 +34,20 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	logger := log.Root()
-	logger.SetHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(true)))
-	lu, err := NewLurker(ctx, logger)
+	log := logrus.New()
+	log.SetFormatter(&logrus.TextFormatter{})
+	log.SetOutput(os.Stdout)
+	log.SetLevel(logrus.TraceLevel)
+
+	lu, err := NewLurker(ctx, log)
 	if err != nil {
 		panic(err)
 	}
 
 	outPath := "data"
 
-	if err := lu.StartPubSub(); err != nil {
-		panic(err)
-	}
-
 	lurkAndLog := func(ctx context.Context, outName string, topic string) error {
+		topicLog := log.WithField("log_topic", "topic_lurker")
 		out, err := os.OpenFile(path.Join(outPath, outName+".txt"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
 		if err != nil {
 			return err
@@ -62,19 +58,19 @@ func main() {
 				select {
 				case <-ticker.C:
 					if err := out.Sync(); err != nil {
-						lu.log.Error(fmt.Sprintf("Synced %s storage with error: %v", outName, err))
+						topicLog.Errorf("Synced %s storage with error: %v", outName, err)
 					}
 				case <-ctx.Done():
 					if err := out.Close(); err != nil {
-						lu.log.Error(fmt.Sprintf("Closed %s storage with error: %v", outName, err))
+						topicLog.Errorf("Closed %s storage with error: %v", outName, err)
 					}
 					return
 				}
 			}
 		}()
-		errLogger := lu.NewErrLogger(ctx, outName)
-		msgLogger := NewMessageLogger(ctx, out, errLogger)
-		return lu.LurkTopic(ctx, topic, msgLogger, errLogger)
+		errLogger := gossip.NewErrLoggerChannel(ctx, topicLog, outName)
+		msgLogger := gossip.NewMessageLogger(ctx, out, errLogger)
+		return lu.GS.LurkTopic(ctx, topic, msgLogger, errLogger)
 	}
 
 	for name, top := range topics {
@@ -86,68 +82,36 @@ func main() {
 	// Connect with peers after the pubsub is all set up,
 	// so that peers do not have to learn about pubsub interest after being connected.
 
-	// TODO: enode list option -> bootnodes discv5
-	// TODO: multi addr list option -> bootnodes kdht
-
 	// kademlia
-	{
-		if err := lu.InitKadDHT("/prysm/0.0.0/dht"); err != nil {
-			panic(err)
-		}
-		bootAddrStrs := []string{
-			"/dns4/prylabs.net/tcp/30001/p2p/16Uiu2HAm7Qwe19vz9WzD2Mxn7fXd1vgHHp4iccuyq7TxwRXoAGfc",
-		}
-		bootNodes := make([]ma.Multiaddr, 0, len(bootAddrStrs))
-		for _, addr := range bootAddrStrs {
-			muAddr, err := ma.NewMultiaddr(addr)
-			if err != nil {
-				panic(err)
-			}
-			bootNodes = append(bootNodes, muAddr)
-		}
-		if err := lu.AddKadBootNodes(bootNodes); err != nil {
-			panic(err)
-		}
-	}
-
-	// disc v5
-	if false { // disabled for now
-		// TODO configure udp addr and keypair
-		if err := lu.InitDiscV5("", nil); err != nil {
-			panic(err)
-		}
-		bootAddrStrs := []string{
-			".........", // TODO base64 enr with udp port
-		}
-		bootNodes := make([]*discv5.Node, 0, len(bootAddrStrs))
-		for _, addr := range bootAddrStrs {
-			enrRec, err := parseEnr(addr)
-			if err != nil {
-				panic(err)
-			}
-			enodeAddr, err := enrToEnode(enrRec, true)
-			if err != nil {
-				panic(err)
-			}
-			dv5Node, err := enodeToDiscv5Node(enodeAddr)
-			if err != nil {
-				panic(err)
-			}
-			bootNodes = append(bootNodes, dv5Node)
-		}
-		if err := lu.AddDiscV5BootNodes(bootNodes); err != nil {
-			panic(err)
-		}
-	}
-
-	// static peers
-	if err := lu.ConnectStaticPeers([]ma.Multiaddr{
-		// TODO connect with peers
-	}, nil); err != nil {
+	bootAddrStrs, err := static.ParseMultiAddrs("/dns4/prylabs.net/tcp/30001/p2p/16Uiu2HAm7Qwe19vz9WzD2Mxn7fXd1vgHHp4iccuyq7TxwRXoAGfc")
+	if err != nil {
 		panic(err)
 	}
 
-	lu.peerInfoLoop()
+	if err := lu.ConnectBootNodes(bootAddrStrs); err != nil {
+		panic(err)
+	}
+
+	// disc v5
+	//dv5Nodes, err := discv5.ParseDiscv5ENRs(....)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//if err := lu.Dv5.AddDiscV5BootNodes(dv5Nodes); err != nil {
+	//	panic(err)
+	//}
+
+
+	// static peers
+	staticAddrs, err := static.ParseMultiAddrs() // TODO any static addrs to connect to?
+	if err != nil {
+		panic(err)
+	}
+	if err := lu.ConnectStaticPeers(staticAddrs); err != nil {
+		panic(err)
+	}
+
+	lu.peerInfoLoop(ctx, log.WithField("log_topic", "peer_info"))
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT)
@@ -161,70 +125,51 @@ func main() {
 	}
 }
 
-type ManagedCtx struct {
-	ctx    context.Context
-	cancel func()
-}
-
-func (mCtx *ManagedCtx) NewSubCtx() *ManagedCtx {
-	ctx, cancel := context.WithCancel(mCtx.ctx)
-	return &ManagedCtx{
-		ctx:    ctx,
-		cancel: cancel,
-	}
-}
-
 type Lurker struct {
-	ManagedCtx
+	ctx context.Context
+	close func()
 
-	log log.Logger
-
-	peerInfoLog log.Logger
-	peerInfoCtx *ManagedCtx
-
-	host    host.Host
-	hostCtx *ManagedCtx
-
-	ps    *pubsub.PubSub
-	psCtx *ManagedCtx
-	psLog log.Logger
-
-	connectionsCtx *ManagedCtx
-
-	kDht    *kad_dht.IpfsDHT
-	kDhtCtx *ManagedCtx
-	kdLog   log.Logger
-
-	dv5Net *discv5.Network
-	dv5Ctx *ManagedCtx
-	dv5Log log.Logger
-
-	//ownStatus *Status
-	//peers     map[peer.ID]*Status
-
-	rpcLog log.Logger
+	Node node.Node
+	Kad kad.Kademlia
+	Dv5 discv5.Discv5
+	GS gossip.GossipSub
 }
 
-func NewLurker(ctx context.Context, l log.Logger) (*Lurker, error) {
+func NewLurker(ctx context.Context, log logrus.FieldLogger) (*Lurker, error) {
 	ctx, cancel := context.WithCancel(ctx)
-	lu := &Lurker{
-		log:        l,
-		ManagedCtx: ManagedCtx{ctx: ctx, cancel: cancel},
+	n, err := node.NewLocalNode(ctx, log)
+	if err != nil {
+		return nil, err
 	}
-	lu.rpcLog = l // TODO set up topic based logging
-	return lu, lu.openHost()
+	k, err := kad.NewKademlia(ctx, n, "/prysm/0.0.0/dht")
+	if err != nil {
+		return nil, err
+	}
+	gs, err := gossip.NewGossipSub(ctx, n)
+	if err != nil {
+		return nil, err
+	}
+	lu := &Lurker{
+		ctx: ctx,
+		close: cancel,
+		Node: n,
+		Kad: k,
+		//Dv5: discv5.NewDiscV5(ctx, n, dv5Addr, privKey), // TODO: setup discv5
+		GS: gs,
+	}
+
+	return lu, nil
 }
 
-
-func (lu *Lurker) peerInfoLoop() {
-	lu.peerInfoCtx = lu.NewSubCtx()
-	lu.peerInfoLog = lu.log
+func (lu *Lurker) peerInfoLoop(ctx context.Context, log logrus.FieldLogger) {
 	go func() {
 		ticker := time.NewTicker(time.Second * 60)
-		end := lu.peerInfoCtx.ctx.Done()
+		end := ctx.Done()
+		peerstore := lu.Node.Host().Peerstore()
+		net := lu.Node.Host().Network()
 		strAddrs := func(peerID peer.ID) string {
 			out := ""
-			for _, a := range lu.host.Peerstore().Addrs(peerID) {
+			for _, a := range peerstore.Addrs(peerID) {
 				out += " "
 				out += a.String()
 			}
@@ -233,27 +178,35 @@ func (lu *Lurker) peerInfoLoop() {
 		for {
 			select {
 			case <-ticker.C:
-				peers := lu.host.Peerstore().Peers()
-				lu.peerInfoLog.Info(fmt.Sprintf("Peerstore size: %d", peers.Len()))
+				peers := peerstore.Peers()
+				log.Info("Peerstore size: %d", peers.Len())
 				for i, peerID := range peers {
-					lu.peerInfoLog.Trace(fmt.Sprintf(" %d id: %x  %s", i, peerID, strAddrs(peerID)))
+					log.Debugf(" %d id: %x  %s", i, peerID, strAddrs(peerID))
 				}
-				connPeers := lu.host.Network().Peers()
-				lu.peerInfoLog.Info(fmt.Sprintf("Network peers size: %d", len(connPeers)))
+				connPeers := net.Peers()
+				log.Info("Network peers size: %d", len(connPeers))
 				for i, peerID := range connPeers {
-					lu.peerInfoLog.Trace(fmt.Sprintf(" %d id: %x", i, peerID))
+					log.Debugf(" %d id: %x", i, peerID)
 				}
-				conns := lu.host.Network().Conns()
-				lu.peerInfoLog.Info(fmt.Sprintf("Connections count: %d", len(conns)))
+				conns := net.Conns()
+				log.Info("Connections count: %d", len(conns))
 				for i, conn := range conns {
-					lu.peerInfoLog.Trace(fmt.Sprintf(" %d id: %x  %s", i, conn.RemotePeer(), conn.RemoteMultiaddr()))
+					log.Debugf(" %d id: %x  %s", i, conn.RemotePeer(), conn.RemoteMultiaddr())
 				}
 			case <-end:
-				lu.peerInfoLog.Info("stopped logging peer info")
+				log.Info("stopped logging peer info")
 				return
 			}
 		}
 	}()
+}
+
+func (lu *Lurker) ConnectStaticPeers(multiAddrs []ma.Multiaddr) error {
+	return static.ConnectStaticPeers(lu.ctx, lu.Node, multiAddrs, nil)
+}
+
+func (lu *Lurker) ConnectBootNodes(bootAddrs []ma.Multiaddr) error {
+	return static.ConnectBootNodes(lu.ctx, lu.Node, bootAddrs)
 }
 
 // TODO: implement discv5 polling routine to onboard new peers from into libp2p
@@ -268,37 +221,3 @@ func (lu *Lurker) StartWatchingPeers() {
 
 // TODO: log metrics of connected/disconnected/etc.
 
-
-func parseEnr(v string) (*enr.Record, error) {
-	data, err := base64.RawURLEncoding.DecodeString(v)
-	if err != nil {
-		return nil, err
-	}
-	var record enr.Record
-	if err := rlp.Decode(bytes.NewReader(data), &record); err != nil {
-		return nil, err
-	}
-	return &record, nil
-}
-
-func enrToEnode(record *enr.Record, verifySig bool) (*enode.Node, error) {
-	idSchemeName := record.IdentityScheme()
-
-	if verifySig {
-		if err := record.VerifySignature(enode.ValidSchemes[idSchemeName]); err != nil {
-			return nil, err
-		}
-	}
-
-	return enode.New(enode.ValidSchemes[idSchemeName], record)
-}
-
-func enodeToDiscv5Node(en *enode.Node) (*discv5.Node, error) {
-	id := discv5.PubkeyID(en.Pubkey())
-	ip := en.IP()
-	udpPort, tcpPort := uint16(en.UDP()), uint16(en.TCP())
-	if ip == nil || udpPort == 0 || tcpPort == 0 {
-		return nil, fmt.Errorf("enode record %v has missing ip/udp/tcp", en.String())
-	}
-	return &discv5.Node{IP: ip, UDP: udpPort, TCP: tcpPort, ID: id}, nil
-}
