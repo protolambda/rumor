@@ -8,17 +8,38 @@ import (
 	"eth2-lurk/peering/kad"
 	"eth2-lurk/peering/static"
 	"fmt"
+	"github.com/abiosoft/ishell"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/sirupsen/logrus"
 	"os"
 	"os/signal"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
+	// create new shell.
+	// by default, new shell includes 'exit', 'help' and 'clear' commands.
+	shell := ishell.New()
+
+	// display welcome info.
+	shell.Println("znet")
+
+	shell.AddCmd(&ishell.Cmd{
+		Name: "greet",
+		Help: "greet user",
+		Func: func(c *ishell.Context) {
+			c.Println("Hello", strings.Join(c.Args, " "))
+		},
+	})
+
+	// run shell
+	shell.Run()
+
+
 	topics := map[string]string{
 		"blocks":             "/eth2/beacon_block/ssz",
 		"aggregate":          "/eth2/beacon_aggregate_and_proof/ssz",
