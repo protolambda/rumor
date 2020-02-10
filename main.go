@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"eth2-lurk/gossip"
 	"eth2-lurk/node"
 	"eth2-lurk/peering/dv5"
 	"eth2-lurk/peering/kad"
 	"eth2-lurk/peering/static"
+	"eth2-lurk/repl"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
@@ -14,11 +16,52 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
+	log := logrus.New()
+	log.SetFormatter(&logrus.TextFormatter{ForceColors: true})
+	log.SetOutput(os.Stdout)
+	log.SetLevel(logrus.TraceLevel)
+
+	rep := repl.NewRepl(log)
+	rep.ReplCmd.SetOut(os.Stdout)
+	rep.ReplCmd.SetOut(os.Stderr)
+
+	stop := make(chan os.Signal, 1)
+	go func() {
+		reader := bufio.NewReader(os.Stdin)
+		for {
+			cmdString, err := reader.ReadString('\n')
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				continue
+			}
+			cmdString = strings.TrimSuffix(cmdString, "\n")
+			if cmdString == "exit" {
+				stop <- syscall.SIGINT
+				break
+			}
+			cmdArgs := strings.Fields(cmdString)
+			rep.ReplCmd.SetArgs(cmdArgs)
+			if err := rep.ReplCmd.Execute(); err != nil {
+				_, _ = fmt.Fprintln(os.Stderr, err)
+			}
+		}
+	}()
+
+	signal.Notify(stop, syscall.SIGINT)
+
+	<-stop
+	log.Info("Exiting...")
+	rep.Cancel()
+	os.Exit(0)
+}
+
+func old() {
 
 	topics := map[string]string{
 		"blocks":             "/eth2/beacon_block/ssz",
@@ -33,13 +76,9 @@ func main() {
 		topics[fmt.Sprintf("committee_%d", i)] = fmt.Sprintf("/eth2/committee_index%d_beacon_attestation/ssz", i)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, _ := context.WithCancel(context.Background())
 
 	log := logrus.New()
-	log.SetFormatter(&logrus.TextFormatter{})
-	log.SetOutput(os.Stdout)
-	log.SetLevel(logrus.TraceLevel)
-
 	lu, err := NewLurker(ctx, log)
 	if err != nil {
 		panic(err)
@@ -112,18 +151,8 @@ func main() {
 		panic(err)
 	}
 
-	lu.peerInfoLoop(ctx, log.WithField("log_topic", "peer_info"))
+	//lu.peerInfoLoop(ctx, log.WithField("log_topic", "peer_info"))
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT)
-
-	select {
-	case <-stop:
-		log.Info("Exiting...")
-		cancel()
-		time.Sleep(time.Second)
-		os.Exit(0)
-	}
 }
 
 type Lurker struct {

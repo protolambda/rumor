@@ -53,7 +53,7 @@ func NewRepl(log logrus.FieldLogger) *Repl {
 		repl.Cancel = cancelAll
 	}
 	cmd := &cobra.Command{
-		Use:   "eth2-net-repl",
+		Use:   "",
 		Short: "A REPL for Eth2 networking.",
 		Long:  `A REPL for Eth2 networking. For debugging and interacting with Eth2 network components.`,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -82,7 +82,7 @@ func (r *Repl) Logger(logTopic string) logrus.FieldLogger {
 }
 
 func writeErrMsg(cmd *cobra.Command, format string, a ...interface{}) {
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), format + "\n", a)
+	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), format + "\n", a...)
 }
 
 func writeErr(cmd *cobra.Command, err error) {
@@ -215,10 +215,13 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "listen <multi-addr> [multi-addr [multi-addr [...]]]",
 		Short: "Start listening on given addresses",
-		Args: cobra.MinimumNArgs(1),
+		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
+			}
+			if len(args) == 0 {
+				args = append(args, "/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0")
 			}
 			maddrs, err := static.ParseMultiAddrs(args...)
 			if err != nil {
@@ -294,10 +297,16 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		Short: "Manage Libp2p peerstore",
 	}
 	cmd.AddCommand(&cobra.Command{
-		Use:   "list <all | connected>",
-		Short: "List peers in peerstore",
-		Args: cobra.ExactArgs(1),
+		Use:   "list [all | connected]",
+		Short: "List peers in peerstore. Defaults to connected only.",
+		Args: cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
+			if len(args) == 0 {
+				args = append(args, "connected")
+			}
 			var peers []peer.ID
 			switch args[0] {
 			case "all":
@@ -319,6 +328,9 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		Short: "Trim peers (2 second time allowance)",
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
 			ctx, _ := context.WithTimeout(context.Background(), time.Second * 2)
 			r.P2PHost.ConnManager().TrimOpenConns(ctx)
 		},
@@ -328,6 +340,9 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		Short: "Connect to peer",
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
 			muAddr, err := ma.NewMultiaddr(args[0])
 			if err != nil {
 				writeErr(cmd, err)
@@ -356,6 +371,9 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		Short: "Disconnect peer",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
 				writeErr(cmd, err)
@@ -376,6 +394,9 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		Short: "Protect peer, tagging them as <tag>",
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
 				writeErr(cmd, err)
@@ -392,6 +413,9 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		Short: "Unprotect peer, un-tagging them as <tag>",
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
 				writeErr(cmd, err)
@@ -404,18 +428,35 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "addrs <peerID>",
-		Short: "View known addresses of <peerID>",
-		Args: cobra.ExactArgs(1),
+		Use:   "addrs [peerID]",
+		Short: "View known addresses of [peerID]. Defaults to local addresses if no peer id is specified.",
+		Args: cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
-			peerID, err := peer.Decode(args[0])
-			if err != nil {
-				writeErr(cmd, err)
+			if r.NoHost(cmd) {
 				return
 			}
 			log := r.Logger("peer-addrs")
-			for i, a := range r.P2PHost.Peerstore().Addrs(peerID) {
-				log.Infof("%s addr #%d: %s", peerID.Pretty(), i, a.String())
+			if len(args) > 0 {
+				peerID, err := peer.Decode(args[0])
+				if err != nil {
+					writeErr(cmd, err)
+					return
+				}
+				addrs := r.P2PHost.Peerstore().Addrs(peerID)
+				for i, a := range addrs {
+					log.Infof("%s addr #%d: %s", peerID.Pretty(), i, a.String())
+				}
+				if len(addrs) == 0 {
+					log.Infof("no known addrs for peer %s", peerID.Pretty())
+				}
+			} else {
+				addrs := r.P2PHost.Addrs()
+				for i, a := range addrs {
+					log.Infof("host addr #%d: %s", i, a.String())
+				}
+				if len(addrs) == 0 {
+					log.Info("no host addrs")
+				}
 			}
 		},
 	})
@@ -451,12 +492,26 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			return dv5.EnodeToDiscv5Node(enodeAddr)
 		}
 	}
+	noDv5 := func(cmd *cobra.Command) bool {
+		if r.NoHost(cmd) {
+			return true
+		}
+		if dv5Node == nil {
+			writeErrMsg(cmd, "REPL must have initialized discv5. Try 'dv5 start'")
+			return true
+		}
+		return false
+	}
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start <UDP address with port>",
 		Short: "Start discv5.",
 		Long: "Start discv5.",
-		Args: cobra.RangeArgs(1, 2),
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
 			if dv5Node != nil {
 				writeErrMsg(cmd, "Already have dv5 open at %s", dv5Node.UDPAddress().String())
 				return
@@ -477,6 +532,9 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 		Long: "Dv5 addr format example: 'enode://<hex node id>@10.3.58.6:30303?discport=30301', enr is url-base64 encoded.",
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
+			if noDv5(cmd) {
+				return
+			}
 			dv5Addr, err := parseDv5Addr(args[0])
 			if err != nil {
 				writeErr(cmd, err)
@@ -493,6 +551,9 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 		Short: "Stop discv5",
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			if noDv5(cmd) {
+				return
+			}
 			closeDv5()
 			dv5Node = nil
 			r.Logger("dv5").Info("Stopped discv5")
@@ -520,6 +581,9 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 		Short: "Get list of nearby multi addrs (excluding self). If no target node is provided, then find nodes nearby to self.",
 		Args: cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if noDv5(cmd) {
+				return
+			}
 			target := dv5Node.Self()
 			if len(args) > 0 {
 				if n, err := parseDv5Addr(args[0]); err != nil {
@@ -590,6 +654,9 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 		Short: "get local discv5 nodeID and udp address",
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			if noDv5(cmd) {
+				return
+			}
 			r.Logger("discv5").Infof("local dv5 node: %s  UDP address: %s", dv5Node.Self().String(), dv5Node.UDPAddress().String())
 		},
 	})
