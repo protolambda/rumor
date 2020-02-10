@@ -1,22 +1,28 @@
 package repl
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"eth2-lurk/node"
 	"eth2-lurk/peering/static"
 	"fmt"
+	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/peer"
 	mplex "github.com/libp2p/go-libp2p-mplex"
 	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
 	secio "github.com/libp2p/go-libp2p-secio"
 	yamux "github.com/libp2p/go-libp2p-yamux"
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"strings"
@@ -99,6 +105,8 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	var muxStrArr []string
 	var securityStr string
 	var relayEnabled bool
+	var loPeers, hiPeers int
+	var gracePeriodMs int
 
 	startCmd := &cobra.Command{
 		Use:   "start [--priv-key=...] [--security=<secio|tls|noise>] [--mux=yamux,mplex] [--transports=tcp,ws]",
@@ -175,7 +183,7 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 			hostOptions = append(hostOptions,
 				libp2p.Identity(r.PrivLibp2pRSA),
 				libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
-				libp2p.ConnectionManager(connmgr.NewConnManager(15, 20, time.Second*20)),
+				libp2p.ConnectionManager(connmgr.NewConnManager(loPeers, hiPeers, time.Millisecond*time.Duration(gracePeriodMs))),
 			)
 			h, err := libp2p.New(r.Ctx, hostOptions...)
 			if err != nil {
@@ -190,6 +198,9 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	startCmd.Flags().StringArrayVar(&transportsStrArr, "transports", []string{"tcp"}, "Transports to use. Options: tcp, ws")
 	startCmd.Flags().StringVar(&securityStr, "security", "secio", "Security to use. Options: secio, none")
 	startCmd.Flags().BoolVar(&relayEnabled, "relay", false, "enable relayer functionality")
+	startCmd.Flags().IntVar(&loPeers, "lo-peers", 15, "low-water for connection manager to trim peer count to")
+	startCmd.Flags().IntVar(&hiPeers, "hi-peers", 20, "high-water for connection manager to trim peer count from")
+	startCmd.Flags().IntVar(&gracePeriodMs, "peer-grace-period", 20_000, "Time in milliseconds to grace a peer from being trimmed")
 
 	cmd.AddCommand(startCmd)
 	cmd.AddCommand(&cobra.Command{
@@ -242,8 +253,19 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "view <enr url-base64 (RFC 4648)>",
 		Short: "view ENR contents",
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-
+			data, err := base64.RawURLEncoding.DecodeString(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			var record enr.Record
+			if err := rlp.Decode(bytes.NewReader(data), &record); err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			// TODO print record details
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -264,57 +286,124 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list <all | connected>",
 		Short: "List peers in peerstore",
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-
+			var peers []peer.ID
+			switch args[0] {
+			case "all":
+				peers = r.P2PHost.Peerstore().Peers()
+			case "connected":
+				peers = r.P2PHost.Network().Peers()
+			default:
+				writeErrMsg(cmd, "invalid peer type: %s", args[0])
+			}
+			log := r.Logger("peers")
+			log.Infof("%d peers:", len(peers))
+			for i, p := range peers {
+				log.Infof("%4d: %s", i, r.P2PHost.Peerstore().PeerInfo(p).String())
+			}
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "prune <N connections to keep>",
-		Short: "Prune peers",
+		Use:   "trim",
+		Short: "Trim peers (2 second time allowance)",
 		Run: func(cmd *cobra.Command, args []string) {
-
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "limit <lo peer count> <hi peer count>",
-		Short: "Prune down to <lo> whenever peer count exceeds <hi>",
-		Run: func(cmd *cobra.Command, args []string) {
-
+			ctx, _ := context.WithTimeout(context.Background(), time.Second * 2)
+			r.P2PHost.ConnManager().TrimOpenConns(ctx)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "connect <multi addr> [tag]",
 		Short: "Connect to peer",
+		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
-
+			muAddr, err := ma.NewMultiaddr(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			addrInfo, err := peer.AddrInfoFromP2pAddr(muAddr)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			ctx, _ := context.WithTimeout(context.Background(), time.Second * 5)
+			if err := r.P2PHost.Connect(ctx, *addrInfo); err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			log := r.Logger("connect-peer")
+			log.Infof("connected to peer %s", addrInfo.ID.Pretty())
+			if len(args) > 1 {
+				r.P2PHost.ConnManager().Protect(addrInfo.ID, args[1])
+				log.Infof("protected peer %s as tag %s", addrInfo.ID.Pretty(), args[1])
+			}
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "disconnect <peerID or multi addr>",
+		Use:   "disconnect <peerID>",
 		Short: "Disconnect peer",
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			conns := r.P2PHost.Network().ConnsToPeer(peerID)
+			log := r.Logger("disconnect-peer")
+			for _, c := range conns {
+				if err := c.Close(); err != nil {
+					log.Infof("error during disconnect of peer %s (%s)", peerID.Pretty(), c.RemoteMultiaddr().String())
+				}
+			}
+			log.Infof("finished disconnecting peer %s", peerID.Pretty())
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "protect <peerID> <tag>",
 		Short: "Protect peer, tagging them as <tag>",
+		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			log := r.Logger("protect-peer")
+			tag := args[1]
+			r.P2PHost.ConnManager().Protect(peerID, tag)
+			log.Infof("protected peer %s as %s", peerID.Pretty(), tag)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "unprotect <peerID> <tag>",
 		Short: "Unprotect peer, un-tagging them as <tag>",
 		Run: func(cmd *cobra.Command, args []string) {
-
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			log := r.Logger("protect-peer")
+			tag := args[1]
+			r.P2PHost.ConnManager().Unprotect(peerID, tag)
+			log.Infof("protected peer %s as %s", peerID.Pretty(), tag)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "addrs <peerID>",
 		Short: "View known addresses of <peerID>",
 		Run: func(cmd *cobra.Command, args []string) {
-
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			log := r.Logger("peer-addrs")
+			for i, a := range r.P2PHost.Peerstore().Addrs(peerID) {
+				log.Infof("%s addr #%d: %s", peerID.Pretty(), i, a.String())
+			}
 		},
 	})
 	return cmd
