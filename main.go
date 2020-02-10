@@ -4,7 +4,7 @@ import (
 	"context"
 	"eth2-lurk/gossip"
 	"eth2-lurk/node"
-	"eth2-lurk/peering/discv5"
+	"eth2-lurk/peering/dv5"
 	"eth2-lurk/peering/kad"
 	"eth2-lurk/peering/static"
 	"fmt"
@@ -131,9 +131,9 @@ type Lurker struct {
 	close func()
 
 	Node node.Node
-	Kad kad.Kademlia
-	Dv5 discv5.Discv5
-	GS gossip.GossipSub
+	Kad  kad.Kademlia
+	Dv5  dv5.Discv5
+	GS   gossip.GossipSub
 }
 
 func NewLurker(ctx context.Context, log logrus.FieldLogger) (*Lurker, error) {
