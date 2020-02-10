@@ -514,9 +514,10 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	//
 	//	},
 	//})
-	cmd.AddCommand(&cobra.Command{
+	connectNearby := false
+	nearbyCmd := &cobra.Command{
 		Use:   "nearby [target node: raw node ID (hex) or enode address or ENR (url-base64)]",
-		Short: "Get list of nearby multi addrs. If no target node is provided, then find nodes nearby to self.",
+		Short: "Get list of nearby multi addrs (excluding self). If no target node is provided, then find nodes nearby to self.",
 		Args: cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
 			target := dv5Node.Self()
@@ -537,7 +538,15 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 					target = n.ID
 				}
 			}
-			nearby := dv5Node.NearNodes(target)
+			var nearby []*discv5.Node
+			// filter out self from results
+			selfID := dv5Node.Self()
+			for _, v := range dv5Node.NearNodes(target) {
+				if v.ID != selfID {
+					nearby = append(nearby, v)
+				}
+			}
+
 			dv5AddrsOut := ""
 			for i, v := range nearby {
 				if i > 0 {
@@ -560,8 +569,22 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				mAddrsOut += v.String()
 			}
 			log.Infof("addresses of nearby nodes: %s", mAddrsOut)
+			if connectNearby {
+				log.Infof("connecting to nearby nodes (with a 10 second timeout)")
+				ctx, _ := context.WithTimeout(r.Ctx, time.Second * 10)
+				err := static.ConnectStaticPeers(ctx, r, mAddrs, func(info peer.AddrInfo, alreadyConnected bool) error {
+					log.Infof("connected to peer from discv5 nearby nodes: %s", info.String())
+					return nil
+				})
+				if err != nil {
+					writeErr(cmd, err)
+				}
+			}
 		},
-	})
+	}
+	nearbyCmd.Flags().BoolVar(&connectNearby, "connect", false, "Connect to the discv5 nearby nodes")
+	cmd.AddCommand(nearbyCmd)
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "self",
 		Short: "get local discv5 nodeID and udp address",
