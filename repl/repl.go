@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"eth2-lurk/node"
 	"eth2-lurk/peering/dv5"
+	"eth2-lurk/peering/kad"
 	"eth2-lurk/peering/static"
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
@@ -18,6 +19,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	mplex "github.com/libp2p/go-libp2p-mplex"
 	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
 	secio "github.com/libp2p/go-libp2p-secio"
@@ -664,22 +666,115 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 }
 
 func (r *Repl) InitKadCmd() *cobra.Command {
+
+	var kadNode kad.Kademlia
+	var closeKad func()
+
+	noKad := func(cmd *cobra.Command) bool {
+		if r.NoHost(cmd) {
+			return true
+		}
+		if kadNode == nil {
+			writeErrMsg(cmd, "REPL must have initialized Kademlia DHT. Try 'kad start'")
+			return true
+		}
+		return false
+	}
 	cmd := &cobra.Command{
 		Use:   "kad",
 		Short: "Manage Libp2p Kademlia DHT",
 	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start <protocol ID>",
-		Short: "Go onto the given Kademlia DHT, if known by any connected peer (connect to bootnode first)",
+		Short: "Go onto the given Kademlia DHT. (connect to bootnode and refresh table)",
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-
+			if r.NoHost(cmd) {
+				return
+			}
+			if kadNode != nil {
+				writeErrMsg(cmd, "Already have a Kademlia DHT open")
+				return
+			}
+			ctx, cancel := context.WithCancel(r.Ctx)
+			var err error
+			kadNode, err = kad.NewKademlia(ctx, r, protocol.ID(args[0]))
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			closeKad = cancel
 		},
 	})
-	cmd.AddCommand(&cobra.Command{
+	var waitForRefreshResult bool
+	refreshCmd := &cobra.Command{
 		Use:   "refresh [--wait]",
 		Short: "Refresh the Kademlia table. Optionally wait for it to complete.",
 		Run: func(cmd *cobra.Command, args []string) {
+			if noKad(cmd) {
+				return
+			}
+			kadNode.RefreshTable(waitForRefreshResult)
+		},
+	}
+	refreshCmd.Flags().BoolVar(&waitForRefreshResult, "wait", false, "Wait for the table refresh to complete")
+	cmd.AddCommand(refreshCmd)
 
+	cmd.AddCommand(&cobra.Command{
+		Use:   "find-conn-peers <peer ID>",
+		Short: "Find connected peer addresses of the given peer in the DHT",
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noKad(cmd) {
+				return
+			}
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			ctx, _ := context.WithTimeout(r.Ctx, time.Second * 10)
+			addrInfos, err := kadNode.FindPeersConnectedToPeer(ctx, peerID)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					r.Logger("kad").Infof("Timed out connected addrs query for peer %s", peerID.Pretty())
+					return
+				case info, ok := <-addrInfos:
+					r.Logger("kad").Infof("Found connected address for peer %s: %s", peerID.Pretty(), info.String())
+					if !ok {
+						r.Logger("kad").Infof("Stopped connected addrs query for peer %s", peerID.Pretty())
+						return
+					}
+				}
+			}
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "find-peer <peer ID>",
+		Short: "Find address info of the given peer in the DHT",
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noKad(cmd) {
+				return
+			}
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			ctx, _ := context.WithTimeout(r.Ctx, time.Second * 10)
+			addrInfo, err := kadNode.FindPeer(ctx, peerID)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			r.Logger("kad").Infof("Found address for peer %s: %s", peerID.Pretty(), addrInfo.String())
 		},
 	})
 	return cmd
