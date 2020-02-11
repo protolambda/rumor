@@ -14,7 +14,9 @@ import (
 )
 
 type GossipSub interface {
-	LurkTopic(ctx context.Context, topic string, out chan<- PubSubMessage, outErr chan<- error) (err error)
+	JoinTopic(topic string) (*pubsub.Topic, error)
+	BlacklistPeer(id peer.ID)
+	LogTopic(ctx context.Context, loggerName string, top *pubsub.Topic, out chan<- PubSubMessage, outErr chan<- error) (err error)
 }
 
 type GossipSubImpl struct {
@@ -54,14 +56,17 @@ type PubSubMessage struct {
 	data []byte
 }
 
-func (gs *GossipSubImpl) LurkTopic(ctx context.Context, topic string, out chan<- PubSubMessage, outErr chan<- error) (err error) {
-	log := gs.log.WithField("ps_topic", topic)
-	log.Info("starting listening on pubsub topic")
-	top, err := gs.ps.Join(topic)
-	if err != nil {
-		log.Errorf("failed to join topic: %v", err)
-		return err
-	}
+func (gs *GossipSubImpl) JoinTopic(topic string) (*pubsub.Topic, error) {
+	return gs.ps.Join(topic)
+}
+
+func (gs *GossipSubImpl) BlacklistPeer(id peer.ID) {
+	gs.ps.BlacklistPeer(id)
+}
+
+func (gs *GossipSubImpl) LogTopic(ctx context.Context, loggerName string, top *pubsub.Topic, out chan<- PubSubMessage, outErr chan<- error) (err error) {
+	log := gs.log.WithField("logger", loggerName)
+	log.Info("starting logging on pubsub topic")
 	sub, err := top.Subscribe()
 	if err != nil {
 		log.Errorf("failed to subscribe: %v", err)
@@ -79,7 +84,7 @@ func (gs *GossipSubImpl) LurkTopic(ctx context.Context, topic string, out chan<-
 				outErr <- err
 				continue
 			}
-			log.Debugf("Received message on '%s' from %s: %d bytes, seq nr: %x", topic, msg.GetFrom().Pretty(), msg.Size(), msg.Seqno)
+			log.Debugf("Received message! logger: %s from %s: %d bytes, seq nr: %x", loggerName, msg.GetFrom().Pretty(), msg.Size(), msg.Seqno)
 			out <- PubSubMessage{
 				from: msg.GetFrom(),
 				data: msg.Data,

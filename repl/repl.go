@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"eth2-lurk/gossip"
 	"eth2-lurk/node"
 	"eth2-lurk/peering/dv5"
 	"eth2-lurk/peering/kad"
@@ -22,6 +23,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/protocol"
 	mplex "github.com/libp2p/go-libp2p-mplex"
 	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	secio "github.com/libp2p/go-libp2p-secio"
 	yamux "github.com/libp2p/go-libp2p-yamux"
 	"github.com/libp2p/go-tcp-transport"
@@ -29,6 +31,8 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"os"
+	"path"
 	"strings"
 	"time"
 )
@@ -38,7 +42,7 @@ type Repl struct {
 	PrivKey crypto.PrivKey
 	Log     logrus.FieldLogger
 	Ctx     context.Context
-	Cancel  func()
+	Cancel  context.CancelFunc
 	ReplCmd *cobra.Command
 }
 
@@ -319,7 +323,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 				writeErrMsg(cmd, "invalid peer type: %s", args[0])
 			}
 			log := r.Logger("peers")
-			log.Infof("%d peers:", len(peers))
+			log.Infof("%d peers", len(peers))
 			for i, p := range peers {
 				log.Infof("%4d: %s", i, r.P2PHost.Peerstore().PeerInfo(p).String())
 			}
@@ -472,7 +476,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	}
 
 	var dv5Node dv5.Discv5
-	var closeDv5 func()
+	var closeDv5 context.CancelFunc
 	parseDv5Addr := func(v string) (*discv5.Node, error) {
 		if strings.HasPrefix(v, "enode://") {
 			addr := new(discv5.Node)
@@ -529,6 +533,19 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
+		Use:   "stop",
+		Short: "Stop discv5",
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			if noDv5(cmd) {
+				return
+			}
+			closeDv5()
+			dv5Node = nil
+			r.Logger("dv5").Info("Stopped discv5")
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
 		Use:   "bootstrap <Dv5-addr or ENR-addr>",
 		Short: "Bootstrap discv5 by connecting to the given discv5 node.",
 		Long: "Dv5 addr format example: 'enode://<hex node id>@10.3.58.6:30303?discport=30301', enr is url-base64 encoded.",
@@ -546,19 +563,6 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "stop",
-		Short: "Stop discv5",
-		Args: cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			closeDv5()
-			dv5Node = nil
-			r.Logger("dv5").Info("Stopped discv5")
 		},
 	})
 	// TODO: Discv5 topic functionality is unstable and not specced yet.
@@ -666,9 +670,8 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 }
 
 func (r *Repl) InitKadCmd() *cobra.Command {
-
 	var kadNode kad.Kademlia
-	var closeKad func()
+	var closeKad context.CancelFunc
 
 	noKad := func(cmd *cobra.Command) bool {
 		if r.NoHost(cmd) {
@@ -706,6 +709,21 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 			closeKad = cancel
 		},
 	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "stop",
+		Short: "Stop kademlia",
+		Args: cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			if noKad(cmd) {
+				return
+			}
+			closeKad()
+			kadNode = nil
+			r.Logger("kad").Info("Stopped kademlia DHT")
+		},
+	})
+
 	var waitForRefreshResult bool
 	refreshCmd := &cobra.Command{
 		Use:   "refresh [--wait]",
@@ -777,47 +795,298 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 			r.Logger("kad").Infof("Found address for peer %s: %s", peerID.Pretty(), addrInfo.String())
 		},
 	})
+
 	return cmd
 }
 
+type joinedTopics map[string]*pubsub.Topic
+
+type topicLogger struct {
+	name string
+	topicName string
+	outPath string
+	close context.CancelFunc
+}
+
+type topicLoggers map[string]*topicLogger
+
 func (r *Repl) InitGossipCmd() *cobra.Command {
+	var gsNode gossip.GossipSub
+	var closeGS context.CancelFunc
+
+	var topics joinedTopics
+
+	log := r.Logger("gossip")
+
+	noGS := func(cmd *cobra.Command) bool {
+		if r.NoHost(cmd) {
+			return true
+		}
+		if gsNode == nil {
+			writeErrMsg(cmd, "REPL must have initialized GossipSub. Try 'gossip start'")
+			return true
+		}
+		return false
+	}
 	cmd := &cobra.Command{
 		Use:   "gossip",
 		Short: "Manage Libp2p GossipSub",
 	}
 	cmd.AddCommand(&cobra.Command{
+		Use:   "start",
+		Short: "Start GossipSub",
+		Run: func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
+			if gsNode != nil {
+				writeErrMsg(cmd, "Already started GossipSub")
+				return
+			}
+			topics = make(joinedTopics)
+			ctx, cancel := context.WithCancel(r.Ctx)
+			var err error
+			gsNode, err = gossip.NewGossipSub(ctx, r)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			closeGS = cancel
+			log.Info("Started GossipSub")
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "stop",
+		Short: "Stop GossipSub",
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			gsNode = nil
+
+			closeGS()
+			log.Info("Stopped GossipSub")
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List joined gossip topics",
 		Run: func(cmd *cobra.Command, args []string) {
-
+			if noGS(cmd) {
+				return
+			}
+			log.Infof("on %d topics:", len(topics))
+			for topic, _ := range topics {
+				log.Infof("topic: %s", topic)
+			}
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "join <topic>",
 		Short: "Join a gossip topic. Propagate anything.",
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			topicName := args[0]
+			if _, ok := topics[topicName]; ok {
+				writeErrMsg(cmd, "already on gossip topic %s", topicName)
+				return
+			}
+			top, err := gsNode.JoinTopic(topicName)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			evHandler, err := top.EventHandler()
+			if err != nil {
+				writeErr(cmd, err)
+				// no events, but still joined, don't exit
+			} else {
+				go func() {
+					log.Infof("Started listening for peer join/leave events for topic %s", topicName)
+					for {
+						ev, err := evHandler.NextPeerEvent(context.Background())
+						if err != nil {
+							log.Infof("Stopped listening for peer join/leave events for topic %s", topicName)
+							return
+						}
+						switch ev.Type {
+						case pubsub.PeerJoin:
+							log.Infof("peer %s joined topic %s", ev.Peer.Pretty(), topicName)
+						case pubsub.PeerLeave:
+							log.Infof("peer %s left topic %s", ev.Peer.Pretty(), topicName)
+						}
+					}
+				}()
+			}
 
+			topics[topicName] = top
+			log.Infof("joined topic %s", topicName)
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "list-peers <topic>",
+		Short: "List the peers known for the given topic",
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			topicName := args[0]
+			if top, ok := topics[topicName]; !ok {
+				writeErrMsg(cmd, "not on gossip topic %s", topicName)
+				return
+			} else {
+				peers := top.ListPeers()
+				log.Infof("%d peers on topic %s", len(peers), topicName)
+				for i, p := range peers {
+					log.Infof("%4d: %s", i, r.P2PHost.Peerstore().PeerInfo(p).String())
+				}
+			}
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "blacklist <peerID>",
+		Short: "Blacklist a peer from GossipSub",
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			gsNode.BlacklistPeer(peerID)
+			log.Infof("Blacklisted peer %s", peerID.Pretty())
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "lurk <topic>",
 		Short: "Lurk a gossip topic. Propagate nothing.",
 		Run: func(cmd *cobra.Command, args []string) {
-
+			// TODO
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "leave <topic>",
 		Short: "Leave a gossip topic.",
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-
+			if noGS(cmd) {
+				return
+			}
+			topicName := args[0]
+			if top, ok := topics[topicName]; !ok {
+				writeErrMsg(cmd, "not on gossip topic %s", topicName)
+				return
+			} else {
+				err := top.Close()
+				if err != nil {
+					writeErr(cmd, err)
+				}
+				delete(topics, topicName)
+			}
 		},
 	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "log <topic> <output file path>",
-		Short: "Log the messages of a gossip topic to a file. 1 hex-encoded message per line. Join/lurk a topic first.",
-		Run: func(cmd *cobra.Command, args []string) {
 
+	logToFile := func(ctx context.Context, loggerName string, top *pubsub.Topic, outPath string) error {
+		topicLog := log.WithField("ps_logger", loggerName)
+		out, err := os.OpenFile(path.Join(outPath), os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
+		if err != nil {
+			return err
+		}
+		go func() {
+			ticker := time.NewTicker(time.Second * 60)
+			for {
+				select {
+				case <-ticker.C:
+					if err := out.Sync(); err != nil {
+						topicLog.Errorf("Synced %s log with error: %v", outPath, err)
+					}
+				case <-ctx.Done():
+					if err := out.Close(); err != nil {
+						topicLog.Errorf("Closed %s log with error: %v", outPath, err)
+					}
+					return
+				}
+			}
+		}()
+		errLogger := gossip.NewErrLoggerChannel(ctx, topicLog, outPath)
+		msgLogger := gossip.NewMessageLogger(ctx, out, errLogger)
+		return gsNode.LogTopic(ctx, loggerName, top, msgLogger, errLogger)
+	}
+
+	topLogs := make(topicLoggers)
+
+	logCmd := &cobra.Command{
+		Use:   "log",
+		Short: "Log GossipSub topic messages",
+	}
+
+	logCmd.AddCommand(&cobra.Command{
+		Use:   "start <name> <topic> <output file path>",
+		Short: "Log the messages of a gossip topic to a file. 1 hex-encoded message per line. Join a topic first.",
+		Args: cobra.ExactArgs(3),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			loggerName := args[0]
+			topicName := args[1]
+			outPath := args[2]
+			if top, ok := topics[topicName]; !ok {
+				writeErrMsg(cmd, "not on gossip topic %s", topicName)
+				return
+			} else {
+				ctx, cancelLogger := context.WithCancel(r.Ctx)
+				if err := logToFile(ctx, loggerName, top, outPath); err != nil {
+					writeErr(cmd, err)
+					return
+				}
+				topLogs[loggerName] = &topicLogger{
+					name:      loggerName,
+					topicName: topicName,
+					outPath:   outPath,
+					close:     cancelLogger,
+				}
+			}
+		},
+	})
+	logCmd.AddCommand(&cobra.Command{
+		Use:   "stop <name>",
+		Short: "Stop logging messages for a logger started with 'log start' earlier",
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			loggerName := args[0]
+			if lo, ok := topLogs[loggerName]; ok {
+				lo.close()
+				log.Infof("Closed logger '%s', topic: '%s', output path: '%s'", loggerName, lo.topicName, lo.outPath)
+				delete(topLogs, loggerName)
+			} else {
+				log.Infof("Logger '%s' does not exist, cannot stop it.", loggerName)
+			}
+		},
+	})
+	logCmd.AddCommand(&cobra.Command{
+		Use:   "list",
+		Short: "List gossip loggers",
+		Args: cobra.ExactArgs(3),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			log.Infof("%d loggers", len(topLogs))
+			for name, lo := range topLogs {
+				log.Infof("%20s: '%s' -> '%s'", name, lo.topicName, lo.outPath)
+			}
 		},
 	})
 	return cmd
