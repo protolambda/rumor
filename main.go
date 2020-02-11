@@ -61,7 +61,7 @@ func main() {
 
 	rep := repl.NewRepl(log)
 	rep.ReplCmd.SetOut(l.Stdout())
-	rep.ReplCmd.SetOut(l.Stderr())
+	rep.ReplCmd.SetErr(l.Stderr())
 
 	stop := make(chan os.Signal, 1)
 	go func() {

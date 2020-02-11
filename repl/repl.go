@@ -88,11 +88,11 @@ func (r *Repl) Logger(logTopic string) logrus.FieldLogger {
 }
 
 func writeErrMsg(cmd *cobra.Command, format string, a ...interface{}) {
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), format + "\n", a...)
+	_, _ = fmt.Fprintf(cmd.OutOrStderr(), format + "\n", a...)
 }
 
 func writeErr(cmd *cobra.Command, err error) {
-	_, _ = fmt.Fprintf(cmd.ErrOrStderr(), err.Error() + "\n")
+	_, _ = fmt.Fprintf(cmd.OutOrStderr(), err.Error() + "\n")
 }
 
 func (r *Repl) NoHost(cmd *cobra.Command) bool {
@@ -274,7 +274,11 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 		Short: "view ENR contents",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			data, err := base64.RawURLEncoding.DecodeString(args[0])
+			enrStr := args[0]
+			if strings.HasPrefix(enrStr, "enr:") {
+				enrStr = enrStr[4:]
+			}
+			data, err := base64.RawURLEncoding.DecodeString(enrStr)
 			if err != nil {
 				writeErr(cmd, err)
 				return
@@ -342,18 +346,33 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "connect <multi addr> [tag]",
+		Use:   "connect <multi addr, enode or ENR> [tag]",
 		Short: "Connect to peer",
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
 			}
-			muAddr, err := ma.NewMultiaddr(args[0])
-			if err != nil {
-				writeErr(cmd, err)
-				return
+			log := r.Logger("connect-peer")
+			addrStr := args[0]
+			var muAddr ma.Multiaddr
+			if dv5Addr, err := parseDv5Addr(addrStr); err != nil {
+				log.Info("addr not a dv5 addr")
+				muAddr, err = ma.NewMultiaddr(args[0])
+				if err != nil {
+					log.Info("addr not a multi addr either")
+					writeErr(cmd, err)
+					return
+				}
+			} else {
+				log.Info("addr is a dv5 addr")
+				muAddr, err = dv5.Dv5NodeToMultiAddr(dv5Addr)
+				if err != nil {
+					writeErr(cmd, err)
+					return
+				}
 			}
+			log.Infof("parsed multi addr: %s", muAddr.String())
 			addrInfo, err := peer.AddrInfoFromP2pAddr(muAddr)
 			if err != nil {
 				writeErr(cmd, err)
@@ -364,7 +383,6 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			log := r.Logger("connect-peer")
 			log.Infof("connected to peer %s", addrInfo.ID.Pretty())
 			if len(args) > 1 {
 				r.P2PHost.ConnManager().Protect(addrInfo.ID, args[1])
@@ -469,6 +487,28 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	return cmd
 }
 
+func parseDv5Addr(v string) (*discv5.Node, error) {
+	if strings.HasPrefix(v, "enode://") {
+		addr := new(discv5.Node)
+		err := addr.UnmarshalText([]byte(v))
+		if err != nil {
+			return nil, err
+		}
+		return addr, nil
+	} else {
+		enrAddr, err := dv5.ParseEnr(v)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: warn if no "eth2" key in ENR record.
+		enodeAddr, err := dv5.EnrToEnode(enrAddr, true)
+		if err != nil {
+			return nil, err
+		}
+		return dv5.EnodeToDiscv5Node(enodeAddr)
+	}
+}
+
 func (r *Repl) InitDv5Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dv5",
@@ -477,27 +517,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 
 	var dv5Node dv5.Discv5
 	var closeDv5 context.CancelFunc
-	parseDv5Addr := func(v string) (*discv5.Node, error) {
-		if strings.HasPrefix(v, "enode://") {
-			addr := new(discv5.Node)
-			err := addr.UnmarshalText([]byte(v))
-			if err != nil {
-				return nil, err
-			}
-			return addr, nil
-		} else {
-			enrAddr, err := dv5.ParseEnr(v)
-			if err != nil {
-				return nil, err
-			}
-			// TODO: warn if no "eth2" key in ENR record.
-			enodeAddr, err := dv5.EnrToEnode(enrAddr, true)
-			if err != nil {
-				return nil, err
-			}
-			return dv5.EnodeToDiscv5Node(enodeAddr)
-		}
-	}
+
 	noDv5 := func(cmd *cobra.Command) bool {
 		if r.NoHost(cmd) {
 			return true
@@ -549,7 +569,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 		Use:   "bootstrap <Dv5-addr or ENR-addr>",
 		Short: "Bootstrap discv5 by connecting to the given discv5 node.",
 		Long: "Dv5 addr format example: 'enode://<hex node id>@10.3.58.6:30303?discport=30301', enr is url-base64 encoded.",
-		Args: cobra.RangeArgs(1, 2),
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
 				return
@@ -563,6 +583,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
+			r.Logger("dv5").Infof("bootstrapped to %s", dv5Addr.String())
 		},
 	})
 	// TODO: Discv5 topic functionality is unstable and not specced yet.
@@ -638,7 +659,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				}
 				mAddrsOut += v.String()
 			}
-			log.Infof("addresses of nearby nodes: %s", mAddrsOut)
+			log.Infof("addresses of nearby nodes (%d): %s", len(mAddrs), mAddrsOut)
 			if connectNearby {
 				log.Infof("connecting to nearby nodes (with a 10 second timeout)")
 				ctx, _ := context.WithTimeout(r.Ctx, time.Second * 10)

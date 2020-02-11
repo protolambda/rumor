@@ -9,14 +9,18 @@ import (
 	"eth2-lurk/node"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	geth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/sirupsen/logrus"
+	"math/big"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -106,6 +110,9 @@ func (dv5 *Discv5Impl) AddDiscV5BootNodes(bootNodes []*discv5.Node) error {
 }
 
 func ParseEnr(v string) (*enr.Record, error) {
+	if strings.HasPrefix(v, "enr:") {
+		v = v[4:]
+	}
 	data, err := base64.RawURLEncoding.DecodeString(v)
 	if err != nil {
 		return nil, err
@@ -174,12 +181,31 @@ func Dv5NodesToMultiAddrs(nodes []*discv5.Node) ([]ma.Multiaddr, error) {
 	return out, nil
 }
 
+func Dv5NodeIdToPubkey(nodeId discv5.NodeID) (*ecdsa.PublicKey, error) {
+	p := &ecdsa.PublicKey{Curve: geth_crypto.S256(), X: new(big.Int), Y: new(big.Int)}
+	half := len(nodeId) / 2
+	p.X.SetBytes(nodeId[:half])
+	p.Y.SetBytes(nodeId[half:])
+	if !p.Curve.IsOnCurve(p.X, p.Y) {
+		return nil, errors.New("id is invalid secp256k1 curve point")
+	}
+	return p, nil
+}
+
 func Dv5NodeToMultiAddr(node *discv5.Node) (ma.Multiaddr, error) {
 	ipScheme := "ip4"
 	if len(node.IP) == net.IPv6len {
 		ipScheme = "ip6"
 	}
-	multiAddrStr := fmt.Sprintf("/%s/%s/tcp/%d/p2p/%s", ipScheme, node.IP.String(), node.TCP, node.ID)
+	pubkey, err := Dv5NodeIdToPubkey(node.ID)
+	if err != nil {
+		return nil, err
+	}
+	peerID, err := peer.IDFromPublicKey(crypto.PubKey((*crypto.Secp256k1PublicKey)((*btcec.PublicKey)(pubkey))))
+	if err != nil {
+		return nil, err
+	}
+	multiAddrStr := fmt.Sprintf("/%s/%s/tcp/%d/p2p/%s", ipScheme, node.IP.String(), node.TCP, peerID)
 	multiAddr, err := ma.NewMultiaddr(multiAddrStr)
 	if err != nil {
 		return nil, err
