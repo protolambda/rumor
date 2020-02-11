@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"eth2-lurk/gossip"
 	"eth2-lurk/node"
@@ -10,9 +9,11 @@ import (
 	"eth2-lurk/peering/static"
 	"eth2-lurk/repl"
 	"fmt"
+	"github.com/chzyer/readline"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/sirupsen/logrus"
+	"io"
 	"os"
 	"os/signal"
 	"path"
@@ -21,31 +22,76 @@ import (
 	"time"
 )
 
+
+func filterInput(r rune) (rune, bool) {
+	switch r {
+	// block CtrlZ feature
+	case readline.CharCtrlZ:
+		return r, false
+	}
+	return r, true
+}
+
+type LogFormatter struct {
+	logrus.TextFormatter
+}
+
+func (l *LogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	topic, okTopic := entry.Data["log_topic"]
+	delete(entry.Data, "log_topic")
+	out, err := l.TextFormatter.Format(entry)
+	if err != nil {
+		return nil, err
+	}
+	if okTopic {
+		return []byte(fmt.Sprintf("\033[34m[%10s]\033[0m %s", topic, out)), nil
+	} else {
+		return out, nil
+	}
+}
+
 func main() {
+	l, err := readline.NewEx(&readline.Config{
+		Prompt:          "\033[31m»\033[0m ",
+		HistoryFile:     "/tmp/readline.tmp",
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+
+		HistorySearchFold:   true,
+		FuncFilterInputRune: filterInput,
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	log := logrus.New()
-	log.SetFormatter(&logrus.TextFormatter{ForceColors: true})
-	log.SetOutput(os.Stdout)
+	log.SetFormatter(&LogFormatter{TextFormatter: logrus.TextFormatter{ForceColors: true}})
+	log.SetOutput(l.Stderr())
 	log.SetLevel(logrus.TraceLevel)
 
 	rep := repl.NewRepl(log)
-	rep.ReplCmd.SetOut(os.Stdout)
-	rep.ReplCmd.SetOut(os.Stderr)
+	rep.ReplCmd.SetOut(l.Stdout())
+	rep.ReplCmd.SetOut(l.Stderr())
 
 	stop := make(chan os.Signal, 1)
 	go func() {
-		reader := bufio.NewReader(os.Stdin)
 		for {
-			cmdString, err := reader.ReadString('\n')
-			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				continue
+			line, err := l.Readline()
+			if err == readline.ErrInterrupt {
+				if len(line) == 0 {
+					break
+				} else {
+					continue
+				}
+			} else if err == io.EOF {
+				break
 			}
-			cmdString = strings.TrimSuffix(cmdString, "\n")
-			if cmdString == "exit" {
+			line = strings.TrimSpace(line)
+			if line == "exit" {
 				stop <- syscall.SIGINT
 				break
 			}
-			cmdArgs := strings.Fields(cmdString)
+			cmdArgs := strings.Fields(line)
 			rep.ReplCmd.SetArgs(cmdArgs)
 			if err := rep.ReplCmd.Execute(); err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, err)
@@ -57,6 +103,7 @@ func main() {
 
 	<-stop
 	log.Info("Exiting...")
+	_ = l.Close()
 	rep.Cancel()
 	os.Exit(0)
 }
