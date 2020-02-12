@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"eth2-lurk/node"
 	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	pubsub_pb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"github.com/minio/sha256-simd"
+	"github.com/protolambda/rumor/node"
 	"github.com/sirupsen/logrus"
 	"io"
 )

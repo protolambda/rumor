@@ -1,7 +1,7 @@
 package main
 
 import (
-	"eth2-lurk/repl"
+	"github.com/protolambda/rumor/repl"
 	"fmt"
 	"github.com/chzyer/readline"
 	"github.com/sirupsen/logrus"

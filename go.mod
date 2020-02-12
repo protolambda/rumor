@@ -1,4 +1,4 @@
-module eth2-lurk
+module github.com/protolambda/rumor
 
 go 1.13
 

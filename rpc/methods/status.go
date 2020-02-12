@@ -1,7 +1,7 @@
 package methods
 
 import (
-	"eth2-lurk/rpc/reqresp"
+	"github.com/protolambda/rumor/rpc/reqresp"
 	"github.com/protolambda/zssz"
 )
 

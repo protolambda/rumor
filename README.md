@@ -1,6 +1,6 @@
-# eth2-lurk
+# Rumor
 
-A small Go tool to attach to eth2 testnets, and log the gossip messages for use in tooling.
+A REPL written in Go, to run the Eth2 network stack, attach to testnets, debug clients, and extract data for tooling.
 
 ## Usage
 
@@ -28,7 +28,10 @@ kad refresh
 
 # Start discv5 and connect to the Lighthouse testnet
 dv5 start 0.0.0.0:9000
+# Get your local Discv5 node info
+dv5 self
 # Bootstrap discv5 with a bootnode ENR (see help for other addr formats)
+# Alternatively, use the above info from another REPL instance to make an enode address, and bootstrap to that.
 dv5 bootstrap enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9X8Im_ZjQYyeoBP_luLLBB4wy39gQ4JgmlkgnY0gmlwhCOhiGqJc2VjcDI1NmsxoQMrmBYg_yR_ZKZKoLiChvlpNqdwXwodXmgw_TRow7RVwYN0Y3CCIyiDdWRwgiMo
 # Get nearby nodes
 dv5 nearby

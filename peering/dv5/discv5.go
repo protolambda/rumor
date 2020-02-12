@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"errors"
-	"eth2-lurk/node"
+	"github.com/protolambda/rumor/node"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	geth_crypto "github.com/ethereum/go-ethereum/crypto"

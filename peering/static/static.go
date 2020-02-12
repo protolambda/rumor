@@ -2,7 +2,7 @@ package static
 
 import (
 	"context"
-	"eth2-lurk/node"
+	"github.com/protolambda/rumor/node"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 )

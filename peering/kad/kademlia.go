@@ -2,7 +2,7 @@ package kad
 
 import (
 	"context"
-	"eth2-lurk/node"
+	"github.com/protolambda/rumor/node"
 	ds "github.com/ipfs/go-datastore"
 	ds_sync "github.com/ipfs/go-datastore/sync"
 	"github.com/libp2p/go-libp2p-core/peer"
