@@ -1,11 +1,10 @@
 package repl
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
+	"eth2-lurk/addrutil"
 	"eth2-lurk/gossip"
 	"eth2-lurk/node"
 	"eth2-lurk/peering/dv5"
@@ -13,8 +12,6 @@ import (
 	"eth2-lurk/peering/static"
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
-	"github.com/ethereum/go-ethereum/p2p/enr"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -117,8 +114,8 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	var gracePeriodMs int
 
 	startCmd := &cobra.Command{
-		Use:   "start [--priv-key=...] [--security=<secio|tls|noise>] [--mux=yamux,mplex] [--transports=tcp,ws]",
-		Short: "Start the host node",
+		Use:   "start",
+		Short: "Start the host node. See flags for security, transport, mux etc. options",
 		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.P2PHost != nil {
@@ -269,33 +266,31 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 		Use:   "enr",
 		Short: "Ethereum Name Record (ENR) utilities",
 	}
+	log := r.Logger("enr")
 	cmd.AddCommand(&cobra.Command{
-		Use:   "view <enr url-base64 (RFC 4648)>",
-		Short: "view ENR contents",
+		Use:   "view <enr>",
+		Short: "view ENR contents. ENR is url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix.",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			enrStr := args[0]
-			if strings.HasPrefix(enrStr, "enr:") {
-				enrStr = enrStr[4:]
-			}
-			data, err := base64.RawURLEncoding.DecodeString(enrStr)
+			rec, err := addrutil.ParseEnr(enrStr)
 			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			var record enr.Record
-			if err := rlp.Decode(bytes.NewReader(data), &record); err != nil {
+			enrPairs, err := addrutil.ParseEnrInternals(rec)
+			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			// TODO print record details
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "from <multi addr>",
-		Short: "create ENR (encoded in url-base64 (RFC 4648)) from multi addr",
-		Run: func(cmd *cobra.Command, args []string) {
-
+			for _, p := range enrPairs {
+				ent, err := p.ValueEntry()
+				if err != nil {
+					log.Infof("Enr pair: %s -> (could not decode) -- raw: %x", p.K, p.V)
+				} else {
+					log.Infof("Enr pair: %s -> %s -- raw: %x", p.K, ent, p.V)
+				}
+			}
 		},
 	})
 	return cmd
@@ -346,8 +341,8 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "connect <multi addr, enode or ENR> [tag]",
-		Short: "Connect to peer",
+		Use:   "connect <addr> [tag]",
+		Short: "Connect to peer. Addr can be a multi-addr, enode or ENR",
 		Args: cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
@@ -496,12 +491,12 @@ func parseDv5Addr(v string) (*discv5.Node, error) {
 		}
 		return addr, nil
 	} else {
-		enrAddr, err := dv5.ParseEnr(v)
+		enrAddr, err := addrutil.ParseEnr(v)
 		if err != nil {
 			return nil, err
 		}
 		// TODO: warn if no "eth2" key in ENR record.
-		enodeAddr, err := dv5.EnrToEnode(enrAddr, true)
+		enodeAddr, err := addrutil.EnrToEnode(enrAddr, true)
 		if err != nil {
 			return nil, err
 		}
@@ -514,6 +509,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 		Use:   "dv5",
 		Short: "Manage Ethereum Discv5",
 	}
+	log := r.Logger("discv5")
 
 	var dv5Node dv5.Discv5
 	var closeDv5 context.CancelFunc
@@ -530,7 +526,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(&cobra.Command{
-		Use:   "start <UDP address with port>",
+		Use:   "start <UDP-address-with-port>",
 		Short: "Start discv5.",
 		Long: "Start discv5.",
 		Args: cobra.ExactArgs(1),
@@ -562,13 +558,13 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			}
 			closeDv5()
 			dv5Node = nil
-			r.Logger("dv5").Info("Stopped discv5")
+			log.Info("Stopped discv5")
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "bootstrap <Dv5-addr or ENR-addr>",
+		Use:   "bootstrap <addr>",
 		Short: "Bootstrap discv5 by connecting to the given discv5 node.",
-		Long: "Dv5 addr format example: 'enode://<hex node id>@10.3.58.6:30303?discport=30301', enr is url-base64 encoded.",
+		Long: "Dv5 addr can be an enode or ENR. Enode format example: 'enode://<hex node id>@10.3.58.6:30303?discport=30301'. enr is url-base64 encoded, optionally prefixed with 'enr:'.",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
@@ -583,7 +579,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			r.Logger("dv5").Infof("bootstrapped to %s", dv5Addr.String())
+			log.Infof("bootstrapped to %s", dv5Addr.String())
 		},
 	})
 	// TODO: Discv5 topic functionality is unstable and not specced yet.
@@ -684,7 +680,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			if noDv5(cmd) {
 				return
 			}
-			r.Logger("discv5").Infof("local dv5 node: %s  UDP address: %s", dv5Node.Self().String(), dv5Node.UDPAddress().String())
+			log.Infof("local dv5 node: enode://%s@%s", dv5Node.Self().String(), dv5Node.UDPAddress().String())
 		},
 	})
 	return cmd
@@ -709,7 +705,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 		Short: "Manage Libp2p Kademlia DHT",
 	}
 	cmd.AddCommand(&cobra.Command{
-		Use:   "start <protocol ID>",
+		Use:   "start <protocol-ID>",
 		Short: "Go onto the given Kademlia DHT. (connect to bootnode and refresh table)",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -760,7 +756,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 	cmd.AddCommand(refreshCmd)
 
 	cmd.AddCommand(&cobra.Command{
-		Use:   "find-conn-peers <peer ID>",
+		Use:   "find-conn-peers <peer-ID>",
 		Short: "Find connected peer addresses of the given peer in the DHT",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -795,7 +791,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 	})
 
 	cmd.AddCommand(&cobra.Command{
-		Use:   "find-peer <peer ID>",
+		Use:   "find-peer <peer-ID>",
 		Short: "Find address info of the given peer in the DHT",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -970,7 +966,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "blacklist <peerID>",
+		Use:   "blacklist <peer-ID>",
 		Short: "Blacklist a peer from GossipSub",
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -1050,7 +1046,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	}
 
 	logCmd.AddCommand(&cobra.Command{
-		Use:   "start <name> <topic> <output file path>",
+		Use:   "start <name> <topic> <output-file-path>",
 		Short: "Log the messages of a gossip topic to a file. 1 hex-encoded message per line. Join a topic first.",
 		Args: cobra.ExactArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -1126,7 +1122,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use: "log-req <method name> [compression]",
+		Use: "log-req <method-name> [compression]",
 		Short: "Log requests to a file",
 		Run: func(cmd *cobra.Command, args []string) {
 

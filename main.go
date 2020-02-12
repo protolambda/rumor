@@ -30,6 +30,9 @@ func (l *LogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	topic, okTopic := entry.Data["log_topic"]
 	delete(entry.Data, "log_topic")
 	out, err := l.TextFormatter.Format(entry)
+	if okTopic {
+		entry.Data["log_topic"] = topic
+	}
 	if err != nil {
 		return nil, err
 	}

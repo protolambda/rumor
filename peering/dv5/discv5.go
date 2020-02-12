@@ -1,10 +1,8 @@
 package dv5
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
-	"encoding/base64"
 	"errors"
 	"eth2-lurk/node"
 	"fmt"
@@ -12,15 +10,12 @@ import (
 	geth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/enr"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/sirupsen/logrus"
 	"math/big"
 	"net"
-	"strings"
 	"time"
 )
 
@@ -109,33 +104,6 @@ func (dv5 *Discv5Impl) AddDiscV5BootNodes(bootNodes []*discv5.Node) error {
 	return dv5.net.SetFallbackNodes(bootNodes)
 }
 
-func ParseEnr(v string) (*enr.Record, error) {
-	if strings.HasPrefix(v, "enr:") {
-		v = v[4:]
-	}
-	data, err := base64.RawURLEncoding.DecodeString(v)
-	if err != nil {
-		return nil, err
-	}
-	var record enr.Record
-	if err := rlp.Decode(bytes.NewReader(data), &record); err != nil {
-		return nil, err
-	}
-	return &record, nil
-}
-
-func EnrToEnode(record *enr.Record, verifySig bool) (*enode.Node, error) {
-	idSchemeName := record.IdentityScheme()
-
-	if verifySig {
-		if err := record.VerifySignature(enode.ValidSchemes[idSchemeName]); err != nil {
-			return nil, err
-		}
-	}
-
-	return enode.New(enode.ValidSchemes[idSchemeName], record)
-}
-
 func EnodeToDiscv5Node(en *enode.Node) (*discv5.Node, error) {
 	id := discv5.PubkeyID(en.Pubkey())
 	ip := en.IP()
@@ -144,26 +112,6 @@ func EnodeToDiscv5Node(en *enode.Node) (*discv5.Node, error) {
 		return nil, fmt.Errorf("enode record %v has missing ip/udp/tcp", en.String())
 	}
 	return &discv5.Node{IP: ip, UDP: udpPort, TCP: tcpPort, ID: id}, nil
-}
-
-func ParseDiscv5ENRs(enrAddrs []string) ([]*discv5.Node, error) {
-	dv5Nodes := make([]*discv5.Node, 0, len(enrAddrs))
-	for _, addr := range enrAddrs {
-		enrRec, err := ParseEnr(addr)
-		if err != nil {
-			return nil, err
-		}
-		enodeAddr, err := EnrToEnode(enrRec, true)
-		if err != nil {
-			return nil, err
-		}
-		dv5Node, err := EnodeToDiscv5Node(enodeAddr)
-		if err != nil {
-			return nil, err
-		}
-		dv5Nodes = append(dv5Nodes, dv5Node)
-	}
-	return dv5Nodes, nil
 }
 
 func Dv5NodesToMultiAddrs(nodes []*discv5.Node) ([]ma.Multiaddr, error) {
