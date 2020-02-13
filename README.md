@@ -36,7 +36,25 @@ dv5 bootstrap enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9
 # Get nearby nodes
 dv5 nearby
 
+# Log gossip blocks of prysmatic testnet to file
+gossip start
+gossip join /eth2/beacon_block/ssz
+# listening on the topic!
+gossip list
+# Update your kademlia peers to learn about the gossip topic interest.
+kad refresh
+# Check your peers on the topic
+gossip list-peers /eth2/beacon_block/ssz
+# Start logging
+gossip log start beacon_block /eth2/beacon_block/ssz blocks.txt
+# Show gossip loggers
+gossip log list
+# Stop block logger
+gossip log stop beacon_block
+# Leave channel
+gossip leave /eth2/beacon_block/ssz
 ```
+
 ## License
 
 MIT, see [`LICENSE`](./LICENSE) file.

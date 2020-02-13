@@ -1095,7 +1095,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	logCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List gossip loggers",
-		Args: cobra.ExactArgs(3),
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1106,6 +1106,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 			}
 		},
 	})
+	cmd.AddCommand(logCmd)
 	return cmd
 }
 
