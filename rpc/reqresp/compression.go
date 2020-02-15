@@ -19,15 +19,15 @@ type Compression interface {
 
 type SnappyCompression struct{}
 
-func (c *SnappyCompression) Decompress(reader io.Reader) io.Reader {
+func (c SnappyCompression) Decompress(reader io.Reader) io.Reader {
 	return snappy.NewReader(reader)
 }
 
-func (c *SnappyCompression) Compress(w io.WriteCloser) io.WriteCloser {
+func (c SnappyCompression) Compress(w io.WriteCloser) io.WriteCloser {
 	return snappy.NewBufferedWriter(w)
 }
 
-func (c *SnappyCompression) MaxEncodedLen(msgLen uint64) (uint64, error) {
+func (c SnappyCompression) MaxEncodedLen(msgLen uint64) (uint64, error) {
 	if msgLen & (1 << 63) != 0 {
 		return 0, fmt.Errorf("message length %d is too large to compress with snappy", msgLen)
 	}
@@ -38,6 +38,6 @@ func (c *SnappyCompression) MaxEncodedLen(msgLen uint64) (uint64, error) {
 	return uint64(m), nil
 }
 
-func (c *SnappyCompression) Name() string {
+func (c SnappyCompression) Name() string {
 	return "snappy"
 }

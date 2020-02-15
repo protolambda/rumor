@@ -48,6 +48,7 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 				cw = comp.Compress(cw)
 			}
 			if err := handleChunk(ctx, chunkIndex, chunkSize, resByte[0], cr, cw); err != nil {
+				_ = cw.Close()
 				return err
 			}
 			if comp != nil {

@@ -22,24 +22,17 @@ type RPCMethod struct {
 	AllocRequest  AllocRequest  // TODO update zssz to include this functionality
 }
 
-type RespChunkEntry struct {
-	ChunkIndex   uint64
-	ResponseCode uint8
-	ReadChunk    func(dest interface{}) error
-}
+type MethodRespChunkHandler func(chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error
 
 func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req interface{}, responses chan<- RespChunkEntry) error {
+	peerId peer.ID, comp Compression, req interface{}, onResponse MethodRespChunkHandler, onClose func()) error {
 
-	defer func() {
-		close(responses)
-	}()
+	defer onClose()
 
 	handleChunks := ResponseChunkHandler(func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result uint8, r io.Reader, w io.Writer) error {
-		responses <- RespChunkEntry{ChunkIndex: chunkIndex, ResponseCode: result, ReadChunk: func(dest interface{}) error {
+		return onResponse(chunkIndex, result, func(dest interface{}) error {
 			return zssz.Decode(r, chunkSize, dest, reqType.RespChunkSSZ)
-		}}
-		return nil
+		})
 	})
 
 	protocolId := reqType.Protocol

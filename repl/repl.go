@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/protolambda/rumor/addrutil"
 	"github.com/protolambda/rumor/gossip"
 	"github.com/protolambda/rumor/node"
@@ -26,10 +27,13 @@ import (
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/protolambda/rumor/rpc/methods"
+	"github.com/protolambda/rumor/rpc/reqresp"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,11 +89,11 @@ func (r *Repl) Logger(logTopic string) logrus.FieldLogger {
 }
 
 func writeErrMsg(cmd *cobra.Command, format string, a ...interface{}) {
-	_, _ = fmt.Fprintf(cmd.OutOrStderr(), format + "\n", a...)
+	_, _ = fmt.Fprintf(cmd.OutOrStderr(), format+"\n", a...)
 }
 
 func writeErr(cmd *cobra.Command, err error) {
-	_, _ = fmt.Fprintf(cmd.OutOrStderr(), err.Error() + "\n")
+	_, _ = fmt.Fprintf(cmd.OutOrStderr(), err.Error()+"\n")
 }
 
 func (r *Repl) NoHost(cmd *cobra.Command) bool {
@@ -116,7 +120,7 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	startCmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the host node. See flags for security, transport, mux etc. options",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.P2PHost != nil {
 				writeErrMsg(cmd, "Already have a host open.")
@@ -218,7 +222,7 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "listen <multi-addr> [multi-addr [multi-addr [...]]]",
 		Short: "Start listening on given addresses",
-		Args: cobra.ArbitraryArgs,
+		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -240,7 +244,7 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "view",
 		Short: "View local peer ID, listening addresses, etc.",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -270,7 +274,7 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "view <enr>",
 		Short: "view ENR contents. ENR is url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix.",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			enrStr := args[0]
 			rec, err := addrutil.ParseEnr(enrStr)
@@ -304,7 +308,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list [all | connected]",
 		Short: "List peers in peerstore. Defaults to connected only.",
-		Args: cobra.ArbitraryArgs,
+		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -331,19 +335,19 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "trim",
 		Short: "Trim peers (2 second time allowance)",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
 			}
-			ctx, _ := context.WithTimeout(context.Background(), time.Second * 2)
+			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
 			r.P2PHost.ConnManager().TrimOpenConns(ctx)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "connect <addr> [tag]",
 		Short: "Connect to peer. Addr can be a multi-addr, enode or ENR",
-		Args: cobra.RangeArgs(1, 2),
+		Args:  cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -373,7 +377,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			ctx, _ := context.WithTimeout(context.Background(), time.Second * 5)
+			ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 			if err := r.P2PHost.Connect(ctx, *addrInfo); err != nil {
 				writeErr(cmd, err)
 				return
@@ -388,7 +392,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "disconnect <peerID>",
 		Short: "Disconnect peer",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -411,7 +415,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "protect <peerID> <tag>",
 		Short: "Protect peer, tagging them as <tag>",
-		Args: cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -430,7 +434,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "unprotect <peerID> <tag>",
 		Short: "Unprotect peer, un-tagging them as <tag>",
-		Args: cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -449,7 +453,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "addrs [peerID]",
 		Short: "View known addresses of [peerID]. Defaults to local addresses if no peer id is specified.",
-		Args: cobra.RangeArgs(0, 1),
+		Args:  cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -528,8 +532,8 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start <UDP-address-with-port>",
 		Short: "Start discv5.",
-		Long: "Start discv5.",
-		Args: cobra.ExactArgs(1),
+		Long:  "Start discv5.",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -551,7 +555,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "stop",
 		Short: "Stop discv5",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
 				return
@@ -564,8 +568,8 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "bootstrap <addr>",
 		Short: "Bootstrap discv5 by connecting to the given discv5 node.",
-		Long: "Dv5 addr can be an enode or ENR. Enode format example: 'enode://<hex node id>@10.3.58.6:30303?discport=30301'. enr is url-base64 encoded, optionally prefixed with 'enr:'.",
-		Args: cobra.ExactArgs(1),
+		Long:  "Dv5 addr can be an enode or ENR. Enode format example: 'enode://<hex node id>@10.3.58.6:30303?discport=30301'. enr is url-base64 encoded, optionally prefixed with 'enr:'.",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
 				return
@@ -602,7 +606,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	nearbyCmd := &cobra.Command{
 		Use:   "nearby [target node: raw node ID (hex) or enode address or ENR (url-base64)]",
 		Short: "Get list of nearby multi addrs (excluding self). If no target node is provided, then find nodes nearby to self.",
-		Args: cobra.RangeArgs(0, 1),
+		Args:  cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
 				return
@@ -658,7 +662,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			log.Infof("addresses of nearby nodes (%d): %s", len(mAddrs), mAddrsOut)
 			if connectNearby {
 				log.Infof("connecting to nearby nodes (with a 10 second timeout)")
-				ctx, _ := context.WithTimeout(r.Ctx, time.Second * 10)
+				ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
 				err := static.ConnectStaticPeers(ctx, r, mAddrs, func(info peer.AddrInfo, alreadyConnected bool) error {
 					log.Infof("connected to peer from discv5 nearby nodes: %s", info.String())
 					return nil
@@ -675,7 +679,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "self",
 		Short: "get local discv5 nodeID and udp address",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
 				return
@@ -707,7 +711,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start <protocol-ID>",
 		Short: "Go onto the given Kademlia DHT. (connect to bootnode and refresh table)",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -730,7 +734,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "stop",
 		Short: "Stop kademlia",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noKad(cmd) {
 				return
@@ -758,7 +762,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "find-conn-peers <peer-ID>",
 		Short: "Find connected peer addresses of the given peer in the DHT",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noKad(cmd) {
 				return
@@ -768,7 +772,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			ctx, _ := context.WithTimeout(r.Ctx, time.Second * 10)
+			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
 			addrInfos, err := kadNode.FindPeersConnectedToPeer(ctx, peerID)
 			if err != nil {
 				writeErr(cmd, err)
@@ -793,7 +797,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "find-peer <peer-ID>",
 		Short: "Find address info of the given peer in the DHT",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noKad(cmd) {
 				return
@@ -803,7 +807,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			ctx, _ := context.WithTimeout(r.Ctx, time.Second * 10)
+			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
 			addrInfo, err := kadNode.FindPeer(ctx, peerID)
 			if err != nil {
 				writeErr(cmd, err)
@@ -819,10 +823,10 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 type joinedTopics map[string]*pubsub.Topic
 
 type topicLogger struct {
-	name string
+	name      string
 	topicName string
-	outPath string
-	close context.CancelFunc
+	outPath   string
+	close     context.CancelFunc
 }
 
 type topicLoggers map[string]*topicLogger
@@ -901,7 +905,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "join <topic>",
 		Short: "Join a gossip topic. Propagate anything.",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -947,7 +951,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list-peers <topic>",
 		Short: "List the peers known for the given topic",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -968,7 +972,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "blacklist <peer-ID>",
 		Short: "Blacklist a peer from GossipSub",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -992,7 +996,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "leave <topic>",
 		Short: "Leave a gossip topic.",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1048,7 +1052,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	logCmd.AddCommand(&cobra.Command{
 		Use:   "start <name> <topic> <output-file-path>",
 		Short: "Log the messages of a gossip topic to a file. 1 hex-encoded message per line. Join a topic first.",
-		Args: cobra.ExactArgs(3),
+		Args:  cobra.ExactArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1077,7 +1081,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	logCmd.AddCommand(&cobra.Command{
 		Use:   "stop <name>",
 		Short: "Stop logging messages for a logger started with 'log start' earlier",
-		Args: cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1095,7 +1099,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	logCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List gossip loggers",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1112,30 +1116,94 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 
 func (r *Repl) InitRpcCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "rpc",
+		Use:   "rpc",
 		Short: "Manage Eth2 RPC",
 	}
 	cmd.AddCommand(&cobra.Command{
-		Use: "list",
+		Use:   "list",
 		Short: "List active RPC listeners",
 		Run: func(cmd *cobra.Command, args []string) {
 
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use: "log-req <method-name> [compression]",
+		Use:   "log-req <method-name> [compression]",
 		Short: "Log requests to a file",
 		Run: func(cmd *cobra.Command, args []string) {
 
 		},
 	})
-	cmd.AddCommand(&cobra.Command{
-		Use: "goodbye <peerID> <code> [compression] [--disconnect]",
-		Short: "Send a goodbye to a peer, optionally disconnecting the peer after sending the Goodbye.",
-		Run: func(cmd *cobra.Command, args []string) {
+	log := r.Logger("rpc")
 
-		},
+	makeReqRunner := func(
+		mkReq func(cmd *cobra.Command, args []string) (interface{}, error),
+		onResp func(peerID peer.ID, chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error,
+		onClose func(peerID peer.ID),
+	) func(cmd *cobra.Command, args []string) {
+		return func(cmd *cobra.Command, args []string) {
+			sFn := func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
+				return r.P2PHost.NewStream(ctx, peerId, protocolId)
+			}
+			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10) // TODO add timeout option
+			peerID, err := peer.Decode(args[0])
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			var comp reqresp.Compression = nil
+			if compStr, err := cmd.Flags().GetString("compression"); err != nil {
+			} else {
+				switch compStr {
+				case "none", "", "false":
+					// no compression
+				case "snappy":
+					comp = reqresp.SnappyCompression{}
+				default:
+					writeErrMsg(cmd, "cannot recognize compression '%s'", compStr)
+				}
+			}
+			req, err := mkReq(cmd, args)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			lastRespChunkIndex := int64(-1)
+			if err := methods.GoodbyeRPCv1.RunRequest(ctx, sFn, peerID, comp, req,
+				func(chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error {
+					log.Debugf("Received response chunk %d with code %d from peer %s", chunkIndex, responseCode, peerID.Pretty())
+					lastRespChunkIndex = int64(chunkIndex)
+					return onResp(peerID, chunkIndex, responseCode, readChunk)
+				}, func() {
+					log.Debugf("Responses of peer %s stopped after %d response chunks", peerID.Pretty(),lastRespChunkIndex+1)
+					onClose(peerID)
+				}); err != nil {
+				writeErr(cmd, err)
+			}
+		}
+	}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "goodbye <peerID> <code> [compression] [--disconnect]",
+		Short: "Send a goodbye to a peer, optionally disconnecting the peer after sending the Goodbye.",
+		Run: makeReqRunner(func(cmd *cobra.Command, args []string) (interface{}, error) {
+			v, err := strconv.ParseUint(args[1], 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
+			}
+			req := methods.Goodbye(v)
+			return &req, nil
+		}, func(peerID peer.ID, chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error {
+			if chunkIndex > 0 {
+				return fmt.Errorf("unexpected second Goodbye response chunk with code %d from peer %s", responseCode, peerID.Pretty())
+			}
+			var data methods.Goodbye
+			if err := readChunk(&data); err != nil {
+				return err
+			}
+			log.Infof("Goodbye RPC response of peer %s: %d", peerID.Pretty(), data)
+			return nil
+		}, func(peerID peer.ID) {
+			log.Infof("Goodbye RPC responses of peer %s ended", peerID.Pretty())
+		}),
 	})
 	return cmd
 }
-
