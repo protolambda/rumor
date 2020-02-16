@@ -1119,20 +1119,6 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		Use:   "rpc",
 		Short: "Manage Eth2 RPC",
 	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "list",
-		Short: "List active RPC listeners",
-		Run: func(cmd *cobra.Command, args []string) {
-
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "log-req <method-name> [compression]",
-		Short: "Log requests to a file",
-		Run: func(cmd *cobra.Command, args []string) {
-
-		},
-	})
 	log := r.Logger("rpc")
 
 	makeReqCmd := func(cmd *cobra.Command,
@@ -1175,7 +1161,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 				return
 			}
 			lastRespChunkIndex := int64(-1)
-			if err := rpcMethod().RunRequest(ctx, sFn, peerID, comp, req,
+			if err := rpcMethod(cmd).RunRequest(ctx, sFn, peerID, comp, req,
 				func(chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error {
 					log.Debugf("Received response chunk %d with code %d from peer %s", chunkIndex, responseCode, peerID.Pretty())
 					lastRespChunkIndex = int64(chunkIndex)
@@ -1192,10 +1178,11 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 	cmd.AddCommand(makeReqCmd(&cobra.Command{
 		Use:   "goodbye <peerID> <code>",
 		Short: "Send a goodbye to a peer, optionally disconnecting the peer after sending the Goodbye.",
+		Args: cobra.ExactArgs(2),
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.GoodbyeRPCv1
 	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
-			v, err := strconv.ParseUint(args[1], 10, 64)
+			v, err := strconv.ParseUint(args[1], 0, 64)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
 			}
@@ -1226,6 +1213,17 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		_, err := hex.Decode(out[:], []byte(v))
 		return out, err
 	}
+	parseForkVersion := func(v string) ([4]byte, error) {
+		if strings.HasPrefix(v, "0x") {
+			v = v[2:]
+		}
+		if len(v) != 8 {
+			return [4]byte{}, fmt.Errorf("provided root has length %d, expected 8 hex characters (ignoring optional 0x prefix)", len(v))
+		}
+		var out [4]byte
+		_, err := hex.Decode(out[:], []byte(v))
+		return out, err
+	}
 	blocksByRangeCmd := makeReqCmd(&cobra.Command{
 		Use:   "blocks-by-range <peerID> <start-slot> <count> <step> [head-root-hex]",
 		Short: "Get blocks by range from a peer. The head-root is optional, and defaults to zeroes. Use --v2 for no head-root.",
@@ -1238,15 +1236,15 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 			return &methods.BlocksByRangeRPCv1
 		}
 	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
-		startSlot, err := strconv.ParseUint(args[1], 10, 64)
+		startSlot, err := strconv.ParseUint(args[1], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse start slot '%s'", args[1])
 		}
-		count, err := strconv.ParseUint(args[2], 10, 64)
+		count, err := strconv.ParseUint(args[2], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse count '%s'", args[1])
 		}
-		step, err := strconv.ParseUint(args[3], 10, 64)
+		step, err := strconv.ParseUint(args[3], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse step '%s'", args[1])
 		}
@@ -1289,6 +1287,103 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 	blocksByRangeCmd.Flags().Bool("v2", false, "To use v2 (no head root in request)")
 	cmd.AddCommand(blocksByRangeCmd)
 
+	fmtStatus := func(st *methods.Status) string {
+		return fmt.Sprintf("head_fork_version: %x, finalized_root: %x, finalized_epoch: %d, head_root: %x, head_slot: %d",
+		st.HeadForkVersion, st.FinalizedRoot, st.FinalizedEpoch, st.HeadRoot, st.HeadSlot)
+	}
+	var currentStatus methods.Status
+	//respondingStatus := false
 
+	statusCmd := &cobra.Command{
+		Use:   "status",
+		Short: "Manage status RPC",
+	}
+	statusCmd.AddCommand(&cobra.Command{
+		Use:   "view",
+		Short: "Show current status",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			log.Infof("Current status: %s", fmtStatus(&currentStatus))
+		},
+	})
+	parseStatus := func(args []string) (*methods.Status, error) {
+		forkVersion, err := parseForkVersion(args[0])
+		if err != nil {
+			return nil, err
+		}
+		finalizedRoot, err := parseRoot(args[1])
+		if err != nil {
+			return nil, err
+		}
+		finalizedEpoch, err := strconv.ParseUint(args[2], 0, 64)
+		if err != nil {
+			return nil, err
+		}
+		headRoot, err := parseRoot(args[3])
+		if err != nil {
+			return nil, err
+		}
+		headSlot, err := strconv.ParseUint(args[4], 0, 64)
+		if err != nil {
+			return nil, err
+		}
+		return &methods.Status{
+			HeadForkVersion: forkVersion,
+			FinalizedRoot:   finalizedRoot,
+			FinalizedEpoch:  methods.Epoch(finalizedEpoch),
+			HeadRoot:        headRoot,
+			HeadSlot:        methods.Slot(headSlot),
+		}, nil
+	}
+	statusCmd.AddCommand(&cobra.Command{
+		Use:   "set <head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>",
+		Short: "Change current status.",
+		Args:  cobra.ExactArgs(5),
+		Run: func(cmd *cobra.Command, args []string) {
+			stat, err := parseStatus(args)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			currentStatus = *stat
+			log.Infof("Set to status: %s", fmtStatus(&currentStatus))
+		},
+	})
+	statusCmd.AddCommand(makeReqCmd(&cobra.Command{
+		Use:   "req <peerID> [<head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>]",
+		Short: "Ask peer for status. Request with given status, or current status if not defined.",
+		Args:  func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 && len(args) != 6 {
+				return fmt.Errorf("accepts either 1 or 6 args, received %d", len(args))
+			}
+			return nil
+		},
+	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
+		return &methods.StatusRPCv1
+	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
+		if len(args) != 1 {
+			reqStatus, err := parseStatus(args[1:])
+			if err != nil {
+				return nil, err
+			}
+			return reqStatus, nil
+		} else {
+			return &currentStatus, nil
+		}
+	}, func(peerID peer.ID, chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error {
+		if chunkIndex > 0 {
+			return fmt.Errorf("unexpected second Status response chunk with code %d from peer %s", responseCode, peerID.Pretty())
+		}
+		var data methods.Status
+		if err := readChunk(&data); err != nil {
+			return err
+		}
+		log.Infof("Status RPC response of peer %s: %s", peerID.Pretty(), fmtStatus(&data))
+		return nil
+	}, func(peerID peer.ID) {
+		log.Infof("Status RPC responses of peer %s ended", peerID.Pretty())
+	},
+	))
+	cmd.AddCommand(statusCmd)
 	return cmd
 }

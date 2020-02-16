@@ -37,8 +37,8 @@ type BlocksByRangeReqV1 struct {
 var BlocksByRangeReqV1SSZ = zssz.GetSSZ((*BlocksByRangeReqV1)(nil))
 
 var BlocksByRangeRPCv1 = reqresp.RPCMethod{
-	Protocol:      "/eth2/beacon_chain/req/status/1/ssz",
-	MaxChunkCount: 50, // 50 blocks default maximum
+	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
+	MaxChunkCount: 100, // 100 blocks default maximum
 	ReqSSZ:        BlocksByRangeReqV1SSZ,
 	RespChunkSSZ:  SignedBeaconBlockSSZ,
 	AllocRequest: func() interface{} {
@@ -55,11 +55,29 @@ type BlocksByRangeReqV2 struct {
 var BlocksByRangeReqV2SSZ = zssz.GetSSZ((*BlocksByRangeReqV2)(nil))
 
 var BlocksByRangeRPCv2 = reqresp.RPCMethod{
-	Protocol:      "/eth2/beacon_chain/req/status/2/ssz",
-	MaxChunkCount: 50, // 50 blocks default maximum
+	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/2/ssz",
+	MaxChunkCount: 100, // 100 blocks default maximum
 	ReqSSZ:        BlocksByRangeReqV2SSZ,
 	RespChunkSSZ:  SignedBeaconBlockSSZ,
 	AllocRequest: func() interface{} {
 		return new(BlocksByRangeReqV2)
+	},
+}
+
+type BlocksByRootReq []Root
+
+func (*BlocksByRootReq) Limit() uint64 {
+	return 100
+}
+
+var BlocksByRootReqSSZ = zssz.GetSSZ((*BlocksByRootReq)(nil))
+
+var BlocksByRootRPCv1 = reqresp.RPCMethod{
+	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_root/1/ssz",
+	MaxChunkCount: 100, // 100 blocks default maximum
+	ReqSSZ:        BlocksByRootReqSSZ,
+	RespChunkSSZ:  SignedBeaconBlockSSZ,
+	AllocRequest: func() interface{} {
+		return new(BlocksByRootReq)
 	},
 }
