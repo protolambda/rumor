@@ -1135,12 +1135,17 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 	})
 	log := r.Logger("rpc")
 
-	makeReqRunner := func(
+	makeReqCmd := func(cmd *cobra.Command,
+		rpcMethod func(cmd *cobra.Command) *reqresp.RPCMethod,
 		mkReq func(cmd *cobra.Command, args []string) (interface{}, error),
 		onResp func(peerID peer.ID, chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error,
 		onClose func(peerID peer.ID),
-	) func(cmd *cobra.Command, args []string) {
-		return func(cmd *cobra.Command, args []string) {
+	) *cobra.Command {
+		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
+		cmd.Run = func(cmd *cobra.Command, args []string) {
+			if r.NoHost(cmd) {
+				return
+			}
 			sFn := func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
 				return r.P2PHost.NewStream(ctx, peerId, protocolId)
 			}
@@ -1152,6 +1157,8 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 			}
 			var comp reqresp.Compression = nil
 			if compStr, err := cmd.Flags().GetString("compression"); err != nil {
+				writeErr(cmd, err)
+				return
 			} else {
 				switch compStr {
 				case "none", "", "false":
@@ -1168,7 +1175,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 				return
 			}
 			lastRespChunkIndex := int64(-1)
-			if err := methods.GoodbyeRPCv1.RunRequest(ctx, sFn, peerID, comp, req,
+			if err := rpcMethod().RunRequest(ctx, sFn, peerID, comp, req,
 				func(chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error {
 					log.Debugf("Received response chunk %d with code %d from peer %s", chunkIndex, responseCode, peerID.Pretty())
 					lastRespChunkIndex = int64(chunkIndex)
@@ -1180,11 +1187,14 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 				writeErr(cmd, err)
 			}
 		}
+		return cmd
 	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "goodbye <peerID> <code> [compression] [--disconnect]",
+	cmd.AddCommand(makeReqCmd(&cobra.Command{
+		Use:   "goodbye <peerID> <code>",
 		Short: "Send a goodbye to a peer, optionally disconnecting the peer after sending the Goodbye.",
-		Run: makeReqRunner(func(cmd *cobra.Command, args []string) (interface{}, error) {
+	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
+		return &methods.GoodbyeRPCv1
+	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
 			v, err := strconv.ParseUint(args[1], 10, 64)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
@@ -1203,7 +1213,82 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 			return nil
 		}, func(peerID peer.ID) {
 			log.Infof("Goodbye RPC responses of peer %s ended", peerID.Pretty())
-		}),
-	})
+		},
+	))
+	parseRoot := func(v string) ([32]byte, error) {
+		if strings.HasPrefix(v, "0x") {
+			v = v[2:]
+		}
+		if len(v) != 64 {
+			return [32]byte{}, fmt.Errorf("provided root has length %d, expected 64 hex characters (ignoring optional 0x prefix)", len(v))
+		}
+		var out [32]byte
+		_, err := hex.Decode(out[:], []byte(v))
+		return out, err
+	}
+	blocksByRangeCmd := makeReqCmd(&cobra.Command{
+		Use:   "blocks-by-range <peerID> <start-slot> <count> <step> [head-root-hex]",
+		Short: "Get blocks by range from a peer. The head-root is optional, and defaults to zeroes. Use --v2 for no head-root.",
+		Args: cobra.RangeArgs(4, 5),
+	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
+		v2, _ := cmd.Flags().GetBool("v2")
+		if v2 {
+			return &methods.BlocksByRangeRPCv2
+		} else {
+			return &methods.BlocksByRangeRPCv1
+		}
+	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
+		startSlot, err := strconv.ParseUint(args[1], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse start slot '%s'", args[1])
+		}
+		count, err := strconv.ParseUint(args[2], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse count '%s'", args[1])
+		}
+		step, err := strconv.ParseUint(args[3], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse step '%s'", args[1])
+		}
+		v2, err := cmd.Flags().GetBool("v2")
+		if err != nil {
+			return nil, err
+		}
+		if v2 {
+			return &methods.BlocksByRangeReqV2{
+				StartSlot:     methods.Slot(startSlot),
+				Count:         count,
+				Step:          step,
+			}, nil
+		} else {
+			var root [32]byte
+			if len(args) > 4 {
+				root, err = parseRoot(args[4])
+				if err != nil{
+					return nil, err
+				}
+			}
+			return &methods.BlocksByRangeReqV1{
+				HeadBlockRoot: root,
+				StartSlot:     methods.Slot(startSlot),
+				Count:         count,
+				Step:          step,
+			}, nil
+		}
+	}, func(peerID peer.ID, chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error {
+		var data methods.SignedBeaconBlock
+		if err := readChunk(&data); err != nil {
+			return err
+		}
+		log.Infof("Block RPC response of peer %s: Slot: %d Parent root: %x Sig: %x", peerID.Pretty(), data.Message.Slot, data.Message.ParentRoot, data.Signature)
+		return nil
+	}, func(peerID peer.ID) {
+		log.Infof("Blocks-by-range RPC responses of peer %s ended", peerID.Pretty())
+	},
+	)
+	blocksByRangeCmd.Flags().Bool("v2", false, "To use v2 (no head root in request)")
+	cmd.AddCommand(blocksByRangeCmd)
+
+
 	return cmd
 }
