@@ -306,7 +306,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		Short: "Manage Libp2p peerstore",
 	}
 	cmd.AddCommand(&cobra.Command{
-		Use:   "list [all | connected]",
+		Use:   "list <all,connected>",
 		Short: "List peers in peerstore. Defaults to connected only.",
 		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
@@ -345,7 +345,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
-		Use:   "connect <addr> [tag]",
+		Use:   "connect <addr> [<tag>]",
 		Short: "Connect to peer. Addr can be a multi-addr, enode or ENR",
 		Args:  cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
