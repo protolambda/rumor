@@ -301,12 +301,15 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
+			log.Infof("addr meta: seq: %d  node-ID: %s", enodeRes.Seq(), enodeRes.ID().String())
+			log.Infof("enode addr: %s", enodeRes.URLv4())
 			muAddr, err := addrutil.EnodeToTCPMultiAddr(enodeRes)
 			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			log.Infof("multi addr for %s", args[0], muAddr.String())
+			log.Infof("TCP multi addr: %s", muAddr.String())
+			log.Infof("ENR: %s", enodeRes.String())
 		},
 	})
 	return cmd

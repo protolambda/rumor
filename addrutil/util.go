@@ -252,7 +252,7 @@ func EnodeToTCPMultiAddr(node *enode.Node) (ma.Multiaddr, error) {
 	if err != nil {
 		return nil, err
 	}
-	multiAddrStr := fmt.Sprintf("/%s/%s/tcp/%d/p2p/%s", ipScheme, node.IP().String(), node.TCP, peerID)
+	multiAddrStr := fmt.Sprintf("/%s/%s/tcp/%d/p2p/%s", ipScheme, node.IP().String(), node.TCP(), peerID)
 	multiAddr, err := ma.NewMultiaddr(multiAddrStr)
 	if err != nil {
 		return nil, err
