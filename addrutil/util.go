@@ -6,9 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/peer"
+	ma "github.com/multiformats/go-multiaddr"
 	"net"
 	"strings"
 )
@@ -189,6 +193,28 @@ func ParseEnr(v string) (*enr.Record, error) {
 	return &record, nil
 }
 
+func ParseEnodeAddr(v string) (*enode.Node, error) {
+	if strings.HasPrefix(v, "enode://") {
+		addr := new(enode.Node)
+		err := addr.UnmarshalText([]byte(v))
+		if err != nil {
+			return nil, err
+		}
+		return addr, nil
+	} else {
+		enrAddr, err := ParseEnr(v)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: warn if no "eth2" key in ENR record.
+		enodeAddr, err := EnrToEnode(enrAddr, true)
+		if err != nil {
+			return nil, err
+		}
+		return enodeAddr, nil
+	}
+}
+
 func EnrToEnode(record *enr.Record, verifySig bool) (*enode.Node, error) {
 	idSchemeName := record.IdentityScheme()
 
@@ -199,4 +225,37 @@ func EnrToEnode(record *enr.Record, verifySig bool) (*enode.Node, error) {
 	}
 
 	return enode.New(enode.ValidSchemes[idSchemeName], record)
+}
+
+func EnodesToMultiAddrs(nodes []*enode.Node) ([]ma.Multiaddr, error) {
+	var out []ma.Multiaddr
+	for _, n := range nodes {
+		if n.IP() == nil {
+			continue
+		}
+		multiAddr, err := EnodeToTCPMultiAddr(n)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, multiAddr)
+	}
+	return out, nil
+}
+
+func EnodeToTCPMultiAddr(node *enode.Node) (ma.Multiaddr, error) {
+	ipScheme := "ip4"
+	if len(node.IP()) == net.IPv6len {
+		ipScheme = "ip6"
+	}
+	pubkey := node.Pubkey()
+	peerID, err := peer.IDFromPublicKey(crypto.PubKey((*crypto.Secp256k1PublicKey)((*btcec.PublicKey)(pubkey))))
+	if err != nil {
+		return nil, err
+	}
+	multiAddrStr := fmt.Sprintf("/%s/%s/tcp/%d/p2p/%s", ipScheme, node.IP().String(), node.TCP, peerID)
+	multiAddr, err := ma.NewMultiaddr(multiAddrStr)
+	if err != nil {
+		return nil, err
+	}
+	return multiAddr, nil
 }

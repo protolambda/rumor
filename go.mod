@@ -3,6 +3,7 @@ module github.com/protolambda/rumor
 go 1.13
 
 require (
+	github.com/aristanetworks/goarista v0.0.0-20200214154357-2151774b0d85 // indirect
 	github.com/btcsuite/btcd v0.20.1-beta
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/ethereum/go-ethereum v1.9.10
@@ -24,5 +25,6 @@ require (
 	github.com/protolambda/zssz v0.1.4
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
-	golang.org/x/tools v0.0.0-20190311212946-11955173bddd
 )
+
+replace github.com/ethereum/go-ethereum => github.com/fjl/go-ethereum v0.6.9-0.20191014041357-ebe8b231a236
