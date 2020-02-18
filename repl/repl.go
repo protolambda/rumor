@@ -89,11 +89,11 @@ func (r *Repl) Logger(logTopic string) logrus.FieldLogger {
 }
 
 func writeErrMsg(cmd *cobra.Command, format string, a ...interface{}) {
-	_, _ = fmt.Fprintf(cmd.OutOrStderr(), format+"\n", a...)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), format+"\n", a...)
 }
 
 func writeErr(cmd *cobra.Command, err error) {
-	_, _ = fmt.Fprintf(cmd.OutOrStderr(), err.Error()+"\n")
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), err.Error()+"\n")
 }
 
 func (r *Repl) NoHost(cmd *cobra.Command) bool {
