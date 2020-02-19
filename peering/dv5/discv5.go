@@ -70,7 +70,7 @@ func (l *GethLogger) Log(r *geth_log.Record) error {
 	return nil
 }
 
-func NewDiscV5(ctx context.Context, n node.Node, addr string, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
+func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
 	dv5Log := n.Logger("discv5")
 	k, ok := privKey.(*crypto.Secp256k1PrivateKey)
 	if !ok {
@@ -78,9 +78,9 @@ func NewDiscV5(ctx context.Context, n node.Node, addr string, privKey crypto.Pri
 	}
 	ecdsaPrivKey := (*ecdsa.PrivateKey)((*btcec.PrivateKey)(k))
 
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, err
+	udpAddr := &net.UDPAddr{
+		IP:   ip,
+		Port: int(port),
 	}
 
 	dv5Log = dv5Log.WithField("addr", udpAddr)
@@ -129,10 +129,10 @@ func NewDiscV5(ctx context.Context, n node.Node, addr string, privKey crypto.Pri
 	dv5Log.Debug("Discv5 listener up")
 	go func() {
 		<-ctx.Done()
-		dv5Log.Info("closing discv5", addr)
+		dv5Log.Info("closing discv5", udpAddr.String())
 		udpV5.Close()
 		close(unhandledMsgs)
-		dv5Log.Info("closed discv5", addr)
+		dv5Log.Info("closed discv5", udpAddr.String())
 	}()
 
 	return &Discv5Impl{

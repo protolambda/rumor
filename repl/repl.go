@@ -2,10 +2,12 @@ package repl
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -31,6 +33,7 @@ import (
 	"github.com/protolambda/rumor/rpc/reqresp"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"net"
 	"os"
 	"path"
 	"strconv"
@@ -41,6 +44,9 @@ import (
 type Repl struct {
 	P2PHost host.Host
 	PrivKey crypto.PrivKey
+	IP      net.IP
+	TcpPort uint16
+	UdpPort uint16
 	Log     logrus.FieldLogger
 	Ctx     context.Context
 	Cancel  context.CancelFunc
@@ -104,6 +110,11 @@ func (r *Repl) NoHost(cmd *cobra.Command) bool {
 	return false
 }
 
+func (r *Repl) GetEnr() *enr.Record {
+	priv := (*ecdsa.PrivateKey)(r.PrivKey.(*crypto.Secp256k1PrivateKey))
+	return addrutil.MakeENR(r.IP, r.TcpPort, r.UdpPort, priv)
+}
+
 func (r *Repl) InitHostCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "host",
@@ -141,16 +152,12 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 					}
 					r.Logger("host-key").Infof("Generated random Secp256k1 private key: %s", hex.EncodeToString(p))
 				} else {
-					privKeyBytes, err := hex.DecodeString(privKeyStr)
+					priv, err := addrutil.ParsePrivateKey(privKeyStr)
 					if err != nil {
-						writeErrMsg(cmd, "cannot parse private key, expected hex string (without 0x)")
+						writeErr(cmd, err)
 						return
 					}
-					r.PrivKey, err = crypto.UnmarshalSecp256k1PrivateKey(privKeyBytes)
-					if err != nil {
-						writeErrMsg(cmd, "cannot parse private key, invalid private key (Secp256k1)")
-						return
-					}
+					r.PrivKey = (*crypto.Secp256k1PrivateKey)(priv)
 				}
 			}
 			hostOptions := make([]libp2p.Option, 0)
@@ -218,27 +225,100 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	startCmd.Flags().IntVar(&hiPeers, "hi-peers", 20, "high-water for connection manager to trim peer count from")
 	startCmd.Flags().IntVar(&gracePeriodMs, "peer-grace-period", 20_000, "Time in milliseconds to grace a peer from being trimmed")
 
+	log := r.Logger("host")
+
+	printEnr := func(cmd *cobra.Command) {
+		enrStr, err := addrutil.EnrToString(r.GetEnr())
+		if err != nil {
+			writeErr(cmd, err)
+			return
+		}
+		log.Infof("ENR address: %s", enrStr)
+	}
+
 	cmd.AddCommand(startCmd)
 	cmd.AddCommand(&cobra.Command{
-		Use:   "listen <multi-addr> [multi-addr [multi-addr [...]]]",
-		Short: "Start listening on given addresses",
-		Args:  cobra.ArbitraryArgs,
+		Use:   "listen [<ip> [<tcp-port> [udp-port]]]",
+		Short: "Start listening on given address. If no IP is specified, network interfaces are checked for one. " +
+			"If no tcp port is specified, it defaults to 9000. If no udp port is specified, UDP equals TCP.",
+		Args:  cobra.RangeArgs(0, 3),
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
 			}
-			if len(args) == 0 {
-				args = append(args, "/ip4/0.0.0.0/tcp/0", "/ip6/::/tcp/0")
+			var ip net.IP
+			if len(args) > 0 {
+				ip = net.ParseIP(args[0])
 			}
-			maddrs, err := static.ParseMultiAddrs(args...)
+			// hack to get a non-loopback address, to be improved.
+			if ip == nil {
+				ifaces, err := net.Interfaces()
+				if err != nil {
+					writeErr(cmd, err)
+					return
+				}
+				for _, i := range ifaces {
+					addrs, err := i.Addrs()
+					if err != nil {
+						writeErr(cmd, err)
+						return
+					}
+					for _, addr := range addrs {
+						var addrIP net.IP
+						switch v := addr.(type) {
+						case *net.IPNet:
+							addrIP = v.IP
+						case *net.IPAddr:
+							addrIP = v.IP
+						}
+						if addrIP.IsGlobalUnicast() {
+							ip = addrIP
+						}
+					}
+				}
+			}
+			if ip == nil {
+				writeErrMsg(cmd, "no IP found")
+				return
+			}
+			ipScheme := "ip4"
+			if ip4 := ip.To4(); ip4 == nil {
+				ipScheme = "ip6"
+			} else {
+				ip = ip4
+			}
+			tcpPort := uint64(9000)
+			if len(args) > 1 {
+				var err error
+				tcpPort, err = strconv.ParseUint(args[1], 0, 16)
+				if err != nil {
+					writeErrMsg(cmd, "could not parse tcp port: %v", err)
+					return
+				}
+			}
+			udpPort := tcpPort
+			if len(args) > 2 {
+				var err error
+				udpPort, err = strconv.ParseUint(args[2], 0, 16)
+				if err != nil {
+					writeErrMsg(cmd, "could not parse udp port: %v", err)
+					return
+				}
+			}
+			log.Infof("ip: %s tcp: %d", ipScheme, tcpPort)
+			mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, ip.String(), tcpPort))
 			if err != nil {
+				writeErrMsg(cmd, "could not construct multi addr: %v", err)
+				return
+			}
+			if err := r.Host().Network().Listen(mAddr); err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			if err := r.Host().Network().Listen(maddrs...); err != nil {
-				writeErr(cmd, err)
-				return
-			}
+			r.IP = ip
+			r.TcpPort = uint16(tcpPort)
+			r.UdpPort = uint16(udpPort)
+			printEnr(cmd)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -249,7 +329,6 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 			if r.NoHost(cmd) {
 				return
 			}
-			log := r.Logger("host")
 			h := r.Host()
 			log.Infof("Peer ID: %s", h.ID().Pretty())
 			for _, a := range h.Addrs() {
@@ -260,6 +339,8 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 				strings.ToLower(strings.Join(muxStrArr, ", ")),
 				strings.ToLower(strings.Join(transportsStrArr, ", ")),
 				relayEnabled)
+
+			printEnr(cmd)
 		},
 	})
 	return cmd
@@ -303,13 +384,47 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 			}
 			log.Infof("addr meta: seq: %d  node-ID: %s", enodeRes.Seq(), enodeRes.ID().String())
 			log.Infof("enode addr: %s", enodeRes.URLv4())
-			muAddr, err := addrutil.EnodeToTCPMultiAddr(enodeRes)
+			muAddr, err := addrutil.EnodeToMultiAddr(enodeRes)
 			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			log.Infof("TCP multi addr: %s", muAddr.String())
+			log.Infof("multi addr: %s", muAddr.String())
 			log.Infof("ENR: %s", enodeRes.String())
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "make <ip> <tcp-port> <udp-port> <priv>",
+		Short: "make an ENR. ENR is url-base64 (RFC 4648). Pubkey is raw hex encoded format",
+		Args:  cobra.ExactArgs(4),
+		Run: func(cmd *cobra.Command, args []string) {
+			ip := net.ParseIP(args[0])
+			if ip == nil {
+				writeErrMsg(cmd, "could not parse ip: %s", args[0])
+				return
+			}
+			tcpPort, err := strconv.ParseUint(args[1], 0, 16)
+			if err != nil {
+				writeErrMsg(cmd, "could not parse tcp port: %v", err)
+				return
+			}
+			udpPort, err := strconv.ParseUint(args[2], 0, 16)
+			if err != nil {
+				writeErrMsg(cmd, "could not parse udp port: %v", err)
+				return
+			}
+			priv, err := addrutil.ParsePrivateKey(args[3])
+			if err != nil {
+				writeErrMsg(cmd, "could not pubkey: %v", err)
+				return
+			}
+			rec := addrutil.MakeENR(ip, uint16(tcpPort), uint16(udpPort), priv)
+			enrStr, err := addrutil.EnrToString(rec)
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			log.Infof("ENR address: %s", enrStr)
 		},
 	})
 	return cmd
@@ -371,16 +486,14 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 			addrStr := args[0]
 			var muAddr ma.Multiaddr
 			if dv5Addr, err := addrutil.ParseEnodeAddr(addrStr); err != nil {
-				log.Info("addr not a enode addr")
 				muAddr, err = ma.NewMultiaddr(args[0])
 				if err != nil {
-					log.Info("addr not a multi addr either")
+					log.Info("addr not an enode or multi addr")
 					writeErr(cmd, err)
 					return
 				}
 			} else {
-				log.Info("addr is an enode addr")
-				muAddr, err = addrutil.EnodeToTCPMultiAddr(dv5Addr)
+				muAddr, err = addrutil.EnodeToMultiAddr(dv5Addr)
 				if err != nil {
 					writeErr(cmd, err)
 					return
@@ -524,19 +637,23 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(&cobra.Command{
-		Use:   "start <UDP-address-with-port> [<bootstrap-addr> [...]]",
+		Use:   "start [<bootstrap-addr> [...]]",
 		Short: "Start discv5.",
 		Long:  "Start discv5.",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
+				return
+			}
+			if r.IP == nil {
+				writeErrMsg(cmd, "Host has no IP yet. Get with 'host listen'")
 				return
 			}
 			if dv5Node != nil {
 				writeErrMsg(cmd, "Already have dv5 open at %s", dv5Node.Self().String())
 				return
 			}
-			bootNodes := make([]*enode.Node, 0, len(args) - 1)
+			bootNodes := make([]*enode.Node, 0, len(args))
 			for i := 1; i < len(args); i++ {
 				dv5Addr, err := addrutil.ParseEnodeAddr(args[i])
 				if err != nil {
@@ -547,7 +664,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			}
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			dv5Node, err = dv5.NewDiscV5(ctx, r, args[0], r.PrivKey, bootNodes)
+			dv5Node, err = dv5.NewDiscV5(ctx, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
 			if err != nil {
 				writeErr(cmd, err)
 				return
@@ -746,14 +863,20 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "self",
-		Short: "get local discv5 nodeID and udp address",
+		Short: "get local discv5 ENR",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
 				return
 			}
+			v, err := addrutil.EnrToString(r.GetEnr())
+			if err != nil {
+				writeErr(cmd, err)
+				return
+			}
+			log.Infof("local ENR: %s", v)
 			enodeAddr := dv5Node.Self()
-			log.Infof("local dv5 node: %s", enodeAddr.String())
+			log.Infof("local dv5 node (no TCP in ENR): %s", enodeAddr.String())
 		},
 	})
 	cmd.AddCommand(&cobra.Command{

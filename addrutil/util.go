@@ -2,11 +2,14 @@ package addrutil
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/ethereum/go-ethereum/common/math"
+	geth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -34,7 +37,9 @@ var EnrEntries = map[string]func() (enr.Entry, func() string) {
 			var out [64]byte
 			copy(out[:32], res.X.Bytes())
 			copy(out[32:], res.Y.Bytes())
-			return hex.EncodeToString(out[:])
+			peerID := PeerIDFromPubkey((*ecdsa.PublicKey)(res))
+			nodeID := NodeIDFromPubkey((*ecdsa.PublicKey)(res))
+			return fmt.Sprintf("XY: %x NodeID: %s PeerID: %s", out, nodeID.String(), peerID.Pretty())
 		}
 	},
 	"tcp": func() (enr.Entry, func() string) {
@@ -215,6 +220,38 @@ func ParseEnodeAddr(v string) (*enode.Node, error) {
 	}
 }
 
+func ParsePrivateKey(v string) (*ecdsa.PrivateKey, error) {
+	if strings.HasPrefix(v, "0x") {
+		v = v[2:]
+	}
+	privKeyBytes, err := hex.DecodeString(v)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse private key, expected hex string: %v", err)
+	}
+	var priv crypto.PrivKey
+	priv, err = crypto.UnmarshalSecp256k1PrivateKey(privKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse private key, invalid private key (Secp256k1): %v", err)
+	}
+	return (*ecdsa.PrivateKey)((priv).(*crypto.Secp256k1PrivateKey)), nil
+}
+
+func ParsePubkey(v string) (*ecdsa.PublicKey, error) {
+	if strings.HasPrefix(v, "0x") {
+		v = v[2:]
+	}
+	pubKeyBytes, err := hex.DecodeString(v)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse public key, expected hex string: %v", err)
+	}
+	var pub crypto.PubKey
+	pub, err = crypto.UnmarshalSecp256k1PublicKey(pubKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse public key, invalid public key (Secp256k1): %v", err)
+	}
+	return (*ecdsa.PublicKey)((pub).(*crypto.Secp256k1PublicKey)), nil
+}
+
 func EnrToEnode(record *enr.Record, verifySig bool) (*enode.Node, error) {
 	idSchemeName := record.IdentityScheme()
 
@@ -227,13 +264,22 @@ func EnrToEnode(record *enr.Record, verifySig bool) (*enode.Node, error) {
 	return enode.New(enode.ValidSchemes[idSchemeName], record)
 }
 
+func EnrToString(record *enr.Record) (string, error) {
+	enc, err := rlp.EncodeToBytes(record)
+	if err != nil {
+		return "", err
+	}
+	b64 := base64.RawURLEncoding.EncodeToString(enc)
+	return "enr:" + b64, nil
+}
+
 func EnodesToMultiAddrs(nodes []*enode.Node) ([]ma.Multiaddr, error) {
 	var out []ma.Multiaddr
 	for _, n := range nodes {
 		if n.IP() == nil {
 			continue
 		}
-		multiAddr, err := EnodeToTCPMultiAddr(n)
+		multiAddr, err := EnodeToMultiAddr(n)
 		if err != nil {
 			return nil, err
 		}
@@ -242,20 +288,59 @@ func EnodesToMultiAddrs(nodes []*enode.Node) ([]ma.Multiaddr, error) {
 	return out, nil
 }
 
-func EnodeToTCPMultiAddr(node *enode.Node) (ma.Multiaddr, error) {
+func PeerIDFromPubkey(pubkey *ecdsa.PublicKey) peer.ID {
+	// save for this kind of pubkey
+	id, _ := peer.IDFromPublicKey(crypto.PubKey((*crypto.Secp256k1PublicKey)((*btcec.PublicKey)(pubkey))))
+	return id
+}
+
+func NodeIDFromPubkey(pubkey *ecdsa.PublicKey) enode.ID {
+	buf := make([]byte, 64)
+	math.ReadBits(pubkey.X, buf[:32])
+	math.ReadBits(pubkey.Y, buf[32:])
+	var id enode.ID
+	copy(id[:], geth_crypto.Keccak256(buf))
+	return id
+}
+
+func EnodeToMultiAddr(node *enode.Node) (ma.Multiaddr, error) {
 	ipScheme := "ip4"
 	if len(node.IP()) == net.IPv6len {
 		ipScheme = "ip6"
 	}
 	pubkey := node.Pubkey()
-	peerID, err := peer.IDFromPublicKey(crypto.PubKey((*crypto.Secp256k1PublicKey)((*btcec.PublicKey)(pubkey))))
-	if err != nil {
-		return nil, err
-	}
+	peerID := PeerIDFromPubkey(pubkey)
 	multiAddrStr := fmt.Sprintf("/%s/%s/tcp/%d/p2p/%s", ipScheme, node.IP().String(), node.TCP(), peerID)
 	multiAddr, err := ma.NewMultiaddr(multiAddrStr)
 	if err != nil {
 		return nil, err
 	}
 	return multiAddr, nil
+}
+
+// Create an ENR. All arguments are optional.
+func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *ecdsa.PrivateKey) *enr.Record {
+	var rec enr.Record
+	if ip != nil {
+		if len(ip) == net.IPv4len {
+			rec.Set(enr.IDv4)
+		} else {
+			rec.Set(enr.ID("v6"))
+		}
+	}
+	if ip != nil {
+		rec.Set(enr.IP(ip))
+	}
+	if priv != nil {
+		pub := priv.Public().(*ecdsa.PublicKey)
+		rec.Set(enode.Secp256k1(*pub))
+	}
+	if tcpPort != 0 {
+		rec.Set(enr.TCP(tcpPort))
+	}
+	if udpPort != 0 {
+		rec.Set(enr.UDP(udpPort))
+	}
+	_ = enode.SignV4(&rec, priv)
+	return &rec
 }
