@@ -11,7 +11,7 @@ import (
 // ResponseChunkHandler is a function that processes a response chunk. The index, size and result-code are already parsed.
 // The contents (decompressed if previously compressed) can be read from r. Optionally an answer can be written back to w.
 // If the response chunk could not be processed, an error may be returned.
-type ResponseChunkHandler func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result uint8, r io.Reader, w io.Writer) error
+type ResponseChunkHandler func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result ResponseCode, r io.Reader, w io.Writer) error
 
 // ResponseHandler processes a response by internally processing chunks, any error is propagated up.
 type ResponseHandler func(ctx context.Context, r io.Reader, w io.WriteCloser) error
@@ -47,7 +47,7 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 				cr = comp.Decompress(cr)
 				cw = comp.Compress(cw)
 			}
-			if err := handleChunk(ctx, chunkIndex, chunkSize, resByte[0], cr, cw); err != nil {
+			if err := handleChunk(ctx, chunkIndex, chunkSize, ResponseCode(resByte[0]), cr, cw); err != nil {
 				_ = cw.Close()
 				return err
 			}

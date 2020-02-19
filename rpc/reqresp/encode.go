@@ -53,14 +53,14 @@ func EncodePayload(r io.Reader, w io.Writer, comp Compression) error {
 }
 
 // EncodeResult writes the result code to the output writer.
-func EncodeResult(result uint8, w io.Writer) error {
-	_, err := w.Write([]byte{result})
+func EncodeResult(result ResponseCode, w io.Writer) error {
+	_, err := w.Write([]byte{uint8(result)})
 	return err
 }
 
 // EncodeChunk reads (decompressed) response message from the msg io.Reader,
 // and writes it as a chunk with given result code to the output writer. The compression is optional and may be nil.
-func EncodeChunk(result uint8, r io.Reader, w io.Writer, comp Compression) error {
+func EncodeChunk(result ResponseCode, r io.Reader, w io.Writer, comp Compression) error {
 	if err := EncodeResult(result, w); err != nil {
 		return err
 	}

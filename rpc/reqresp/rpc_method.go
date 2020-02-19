@@ -22,17 +22,43 @@ type RPCMethod struct {
 	AllocRequest  AllocRequest  // TODO update zssz to include this functionality
 }
 
-type MethodRespChunkHandler func(chunkIndex uint64, responseCode uint8, readChunk func(dest interface{}) error) error
+type ResponseCode uint8
+
+const (
+	SuccessCode ResponseCode = 0
+	InvalidReqCode = 1
+	ServerErrCode = 2
+)
+
+// 8 KB max error size
+const MAX_ERR_SIZE = 1 << 15
+
+type MethodRespSuccessHandler func(chunkIndex uint64, readChunk func(dest interface{}) error) error
+type MethodRespErrorHandler func(chunkIndex uint64, msg string) error
 
 func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req interface{}, onResponse MethodRespChunkHandler, onClose func()) error {
+	peerId peer.ID, comp Compression, req interface{}, onResponse MethodRespSuccessHandler,
+	onInvalidReqResp MethodRespErrorHandler, onServerErrorResp MethodRespErrorHandler, onClose func()) error {
 
 	defer onClose()
 
-	handleChunks := ResponseChunkHandler(func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result uint8, r io.Reader, w io.Writer) error {
-		return onResponse(chunkIndex, result, func(dest interface{}) error {
-			return zssz.Decode(r, chunkSize, dest, reqType.RespChunkSSZ)
-		})
+	handleChunks := ResponseChunkHandler(func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result ResponseCode, r io.Reader, w io.Writer) error {
+		switch result {
+		case SuccessCode:
+			return onResponse(chunkIndex, func(dest interface{}) error {
+				return zssz.Decode(r, chunkSize, dest, reqType.RespChunkSSZ)
+			})
+		case InvalidReqCode:
+			var buf bytes.Buffer
+			_, _ = buf.ReadFrom(io.LimitReader(r, MAX_ERR_SIZE))
+			return onInvalidReqResp(chunkIndex, string(buf.Bytes()))
+		case ServerErrCode:
+			var buf bytes.Buffer
+			_, _ = buf.ReadFrom(io.LimitReader(r, MAX_ERR_SIZE))
+			return onServerErrorResp(chunkIndex, string(buf.Bytes()))
+		default:
+			return fmt.Errorf("unrecognized result code for chunk %d (size %d): %d from peer %s", chunkIndex, chunkSize, result, peerId.Pretty())
+		}
 	})
 
 	protocolId := reqType.Protocol
@@ -53,9 +79,10 @@ func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamF
 	return newStreamFn.Request(ctx, peerId, protocolId, req, reqType.ReqSSZ, comp, respHandler)
 }
 
-type WriteChunkFn func(responseCode uint8, data interface{}) error
+type WriteSuccessChunkFn func(data interface{}) error
+type WriteMsgFn func(msg string) error
 
-type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request interface{}, respChunk WriteChunkFn) error
+type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request interface{}, respChunk WriteSuccessChunkFn, respChunkInvalidInput WriteMsgFn, respChunkServerError WriteMsgFn) error
 
 
 func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, handle ChunkedRequestHandler,
@@ -84,11 +111,16 @@ func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression
 		}
 		var buf bytes.Buffer
 
-		if err := handle(ctx, peerId, reqObj, func(responseCode uint8, data interface{}) error {
+		if err := handle(ctx, peerId, reqObj, func(data interface{}) error {
+			buf.Reset()
 			if _, err := zssz.Encode(&buf, data, reqType.RespChunkSSZ); err != nil {
 				return err
 			}
-			return EncodeChunk(responseCode, &buf, w, comp)
+			return EncodeChunk(SuccessCode, &buf, w, comp)
+		}, func(msg string) error {
+			return EncodeChunk(InvalidReqCode, bytes.NewReader([]byte(msg)), w, comp)
+		}, func(msg string) error {
+			return EncodeChunk(ServerErrCode, bytes.NewReader([]byte(msg)), w, comp)
 		}); err != nil {
 			onServerError(ctx, peerId, err)
 			return
