@@ -3,7 +3,6 @@ package reqresp
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -43,12 +42,10 @@ func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, prot
 		return nil
 	}
 	var buf2 bytes.Buffer
-	fmt.Printf("FIXME: payload contents: %x", buf.Bytes())
 	if err := EncodePayload(bytes.NewReader(buf.Bytes()), &buf2, comp); err != nil {
 		return err
 	}
-	fmt.Printf("FIXME payload written (with contents): %x", buf2.Bytes())
-	if _, err := buf2.WriteTo(stream); err != nil {
+	if _, err := stream.Write(buf2.Bytes()); err != nil {
 		return err
 	}
 	return handle(ctx, stream, stream)

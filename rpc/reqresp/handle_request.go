@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"io"
+	"time"
 )
 
 // RequestPayloadHandler processes a request (decompressed if previously compressed), read from r.
@@ -25,12 +27,17 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 		ctx, cancel := context.WithCancel(newCtx())
 		defer cancel()
 
-		reqLen, err := binary.ReadUvarint(bufio.NewReader(stream))
+		br := bufio.NewReader(stream)
+		reqLen, err := binary.ReadUvarint(br)
 		if err != nil {
 			onInvalidInput(ctx, peerId, err)
 			return
 		}
-		r := io.Reader(stream)
+		if err := stream.SetReadDeadline(time.Now().Add(time.Second * 10)); err != nil {
+			onInvalidInput(ctx, peerId, err)
+			return
+		}
+		r := io.LimitReader(br, 1 << 20)
 		w := io.WriteCloser(stream)
 		if comp != nil {
 			r = comp.Decompress(r)
@@ -38,5 +45,6 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 			defer w.Close()
 		}
 		handle(ctx, peerId, reqLen, r, w)
+		fmt.Sprintln("done handling")
 	}
 }

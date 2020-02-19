@@ -1355,9 +1355,9 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 			if r.NoHost(cmd) {
 				return
 			}
-			sFn := func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
+			sFn := reqresp.NewStreamFn(func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
 				return r.P2PHost.NewStream(ctx, peerId, protocolId)
-			}
+			}).WithTimeout(time.Second*10)
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10) // TODO add timeout option
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
@@ -1428,7 +1428,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 				return
 			}
 			handleReqWrap := func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
-				log.Debugf("Got request from %s, protocol %s, req: %v", peerId.Pretty(), m.Protocol, request)
+				log.Debugf("Got request from %s, protocol %s", peerId.Pretty(), m.Protocol)
 				respChunkWrap := func(data interface{}) error {
 					log.Debugf("Responding SUCCESS to peer %s with data: %v", peerId.Pretty(), data)
 					return respChunk(data)

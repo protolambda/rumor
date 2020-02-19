@@ -99,12 +99,14 @@ func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression
 	return RequestPayloadHandler(func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer) {
 		if requestLen > reqSizeLimit {
 			onInvalidInput(ctx, peerId, fmt.Errorf("request length %d exceeds request size limit %d", requestLen, reqSizeLimit))
+			return
 		}
 		reqObj := reqType.AllocRequest()
 
 		if comp != nil {
 			r = comp.Decompress(r)
 		}
+
 		if err := zssz.Decode(r, requestLen, reqObj, reqType.ReqSSZ); err != nil {
 			onInvalidInput(ctx, peerId, err)
 			return
@@ -112,11 +114,10 @@ func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression
 		var buf bytes.Buffer
 
 		if err := handle(ctx, peerId, reqObj, func(data interface{}) error {
-			buf.Reset()
 			if _, err := zssz.Encode(&buf, data, reqType.RespChunkSSZ); err != nil {
 				return err
 			}
-			return EncodeChunk(SuccessCode, &buf, w, comp)
+			return EncodeChunk(SuccessCode, bytes.NewReader(buf.Bytes()), w, comp)
 		}, func(msg string) error {
 			return EncodeChunk(InvalidReqCode, bytes.NewReader([]byte(msg)), w, comp)
 		}, func(msg string) error {
