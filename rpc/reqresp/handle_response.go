@@ -32,7 +32,8 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 			if err != nil {
 				return fmt.Errorf("failed to read chunk %d result byte: %v", chunkIndex, err)
 			}
-			chunkSize, err := binary.ReadUvarint(bufio.NewReader(r))
+			br := bufio.NewReader(r)
+			chunkSize, err := binary.ReadUvarint(br)
 			if err != nil {
 				// TODO send error back: invalid chunk size encoding
 				return err
@@ -41,7 +42,7 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 				// TODO sender error back: invalid chunk size, too large.
 				return fmt.Errorf("chunk size %d of chunk %d exceeds chunk limit %d", chunkSize, chunkIndex, maxChunkSize)
 			}
-			cr := r
+			cr := io.Reader(br)
 			cw := w
 			if comp != nil {
 				cr = comp.Decompress(cr)

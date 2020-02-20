@@ -11,7 +11,7 @@ help
 # Start the libp2p host
 host start
 
-# Start listening (optionally specify multi addrs to listen at)
+# Start listening (optionally specify ip or tcp/udp ports to listen at)
 host listen
 
 # See the host up and running

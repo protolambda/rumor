@@ -237,90 +237,79 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(startCmd)
-	cmd.AddCommand(&cobra.Command{
-		Use:   "listen [<ip> [<tcp-port> [udp-port]]]",
-		Short: "Start listening on given address. If no IP is specified, network interfaces are checked for one. " +
-			"If no tcp port is specified, it defaults to 9000. If no udp port is specified, UDP equals TCP.",
-		Args:  cobra.RangeArgs(0, 3),
-		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
-				return
-			}
-			var ip net.IP
-			if len(args) > 0 {
-				ip = net.ParseIP(args[0])
-			}
-			// hack to get a non-loopback address, to be improved.
-			if ip == nil {
-				ifaces, err := net.Interfaces()
-				if err != nil {
-					writeErr(cmd, err)
+	{
+		var ipStr string
+		var tcpPort, udpPort uint16
+		listenCmd := &cobra.Command{
+			Use: "listen",
+			Short: "Start listening on given address (see option flags).",
+			Args: cobra.NoArgs,
+			Run: func(cmd *cobra.Command, args []string) {
+				if r.NoHost(cmd) {
 					return
 				}
-				for _, i := range ifaces {
-					addrs, err := i.Addrs()
+				ip := net.ParseIP(ipStr)
+				// hack to get a non-loopback address, to be improved.
+				if ip == nil {
+					ifaces, err := net.Interfaces()
 					if err != nil {
 						writeErr(cmd, err)
 						return
 					}
-					for _, addr := range addrs {
-						var addrIP net.IP
-						switch v := addr.(type) {
-						case *net.IPNet:
-							addrIP = v.IP
-						case *net.IPAddr:
-							addrIP = v.IP
+					for _, i := range ifaces {
+						addrs, err := i.Addrs()
+						if err != nil {
+							writeErr(cmd, err)
+							return
 						}
-						if addrIP.IsGlobalUnicast() {
-							ip = addrIP
+						for _, addr := range addrs {
+							var addrIP net.IP
+							switch v := addr.(type) {
+							case *net.IPNet:
+								addrIP = v.IP
+							case *net.IPAddr:
+								addrIP = v.IP
+							}
+							if addrIP.IsGlobalUnicast() {
+								ip = addrIP
+							}
 						}
 					}
 				}
-			}
-			if ip == nil {
-				writeErrMsg(cmd, "no IP found")
-				return
-			}
-			ipScheme := "ip4"
-			if ip4 := ip.To4(); ip4 == nil {
-				ipScheme = "ip6"
-			} else {
-				ip = ip4
-			}
-			tcpPort := uint64(9000)
-			if len(args) > 1 {
-				var err error
-				tcpPort, err = strconv.ParseUint(args[1], 0, 16)
-				if err != nil {
-					writeErrMsg(cmd, "could not parse tcp port: %v", err)
+				if ip == nil {
+					writeErrMsg(cmd, "no IP found")
 					return
 				}
-			}
-			udpPort := tcpPort
-			if len(args) > 2 {
-				var err error
-				udpPort, err = strconv.ParseUint(args[2], 0, 16)
+				ipScheme := "ip4"
+				if ip4 := ip.To4(); ip4 == nil {
+					ipScheme = "ip6"
+				} else {
+					ip = ip4
+				}
+				if udpPort == 0 {
+					udpPort = tcpPort
+				}
+				log.Infof("ip: %s tcp: %d", ipScheme, tcpPort)
+				mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, ip.String(), tcpPort))
 				if err != nil {
-					writeErrMsg(cmd, "could not parse udp port: %v", err)
+					writeErrMsg(cmd, "could not construct multi addr: %v", err)
 					return
 				}
-			}
-			log.Infof("ip: %s tcp: %d", ipScheme, tcpPort)
-			mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, ip.String(), tcpPort))
-			if err != nil {
-				writeErrMsg(cmd, "could not construct multi addr: %v", err)
-				return
-			}
-			if err := r.Host().Network().Listen(mAddr); err != nil {
-				writeErr(cmd, err)
-				return
-			}
-			r.IP = ip
-			r.TcpPort = uint16(tcpPort)
-			r.UdpPort = uint16(udpPort)
-			printEnr(cmd)
-		},
-	})
+				if err := r.Host().Network().Listen(mAddr); err != nil {
+					writeErr(cmd, err)
+					return
+				}
+				r.IP = ip
+				r.TcpPort = tcpPort
+				r.UdpPort = udpPort
+				printEnr(cmd)
+			},
+		}
+		listenCmd.Flags().StringVar(&ipStr, "ip", "", "If no IP is specified, network interfaces are checked for one.")
+		listenCmd.Flags().Uint16Var(&tcpPort, "tcp", 9000, "If no tcp port is specified, it defaults to 9000.")
+		listenCmd.Flags().Uint16Var(&udpPort, "udp", 0, "If no udp port is specified (= 0), UDP equals TCP.")
+		cmd.AddCommand(listenCmd)
+	}
 	cmd.AddCommand(&cobra.Command{
 		Use:   "view",
 		Short: "View local peer ID, listening addresses, etc.",
@@ -1346,7 +1335,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 
 	makeReqCmd := func(cmd *cobra.Command,
 		rpcMethod func(cmd *cobra.Command) *reqresp.RPCMethod,
-		mkReq func(cmd *cobra.Command, args []string) (interface{}, error),
+		mkReq func(cmd *cobra.Command, args []string) (reqresp.Request, error),
 		onResp func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error,
 		onClose func(peerID peer.ID),
 	) *cobra.Command {
@@ -1427,8 +1416,8 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			handleReqWrap := func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
-				log.Debugf("Got request from %s, protocol %s", peerId.Pretty(), m.Protocol)
+			handleReqWrap := func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
+				log.Debugf("Got request from %s, protocol %s: %s", peerId.Pretty(), m.Protocol, request.String())
 				respChunkWrap := func(data interface{}) error {
 					log.Debugf("Responding SUCCESS to peer %s with data: %v", peerId.Pretty(), data)
 					return respChunk(data)
@@ -1468,7 +1457,8 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 	}
 
 	responseNotImplemented := func(cmd *cobra.Command, args []string) (handler reqresp.ChunkedRequestHandler, err error) {
-		return func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
+		return func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
+			log.Infof("Received request: %s", request.String())
 			return fmt.Errorf("response-type is not implemented to make success responses. Ignoring request and closing stream")
 		}, nil
 	}
@@ -1483,7 +1473,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		Args: cobra.ExactArgs(2),
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.GoodbyeRPCv1
-	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
+	}, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
 			v, err := strconv.ParseUint(args[1], 0, 64)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
@@ -1552,7 +1542,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		Use:   "req <peerID> <start-slot> <count> <step> [head-root-hex]",
 		Short: "Get blocks by range from a peer. The head-root is optional, and defaults to zeroes. Use --v2 for no head-root.",
 		Args: cobra.RangeArgs(4, 5),
-	}, chooseBlocksByRangeVersion, func(cmd *cobra.Command, args []string) (interface{}, error) {
+	}, chooseBlocksByRangeVersion, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
 		startSlot, err := strconv.ParseUint(args[1], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse start slot '%s'", args[1])
@@ -1615,10 +1605,6 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 
 	cmd.AddCommand(blocksByRangeCmd)
 
-	fmtStatus := func(st *methods.Status) string {
-		return fmt.Sprintf("head_fork_version: %x, finalized_root: %x, finalized_epoch: %d, head_root: %x, head_slot: %d",
-		st.HeadForkVersion, st.FinalizedRoot, st.FinalizedEpoch, st.HeadRoot, st.HeadSlot)
-	}
 	var currentStatus methods.Status
 
 	statusCmd := &cobra.Command{
@@ -1630,7 +1616,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		Short: "Show current status",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			log.Infof("Current status: %s", fmtStatus(&currentStatus))
+			log.Infof("Current status: %s", currentStatus.String())
 		},
 	})
 	parseStatus := func(args []string) (*methods.Status, error) {
@@ -1673,7 +1659,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 				return
 			}
 			currentStatus = *stat
-			log.Infof("Set to status: %s", fmtStatus(&currentStatus))
+			log.Infof("Set to status: %s", currentStatus.String())
 		},
 	})
 	statusCmd.AddCommand(makeReqCmd(&cobra.Command{
@@ -1687,7 +1673,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		},
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.StatusRPCv1
-	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
+	}, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
 		if len(args) != 1 {
 			reqStatus, err := parseStatus(args[1:])
 			if err != nil {
@@ -1698,6 +1684,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 			return &currentStatus, nil
 		}
 	}, func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error {
+		log.Infof("status resp %d", chunkIndex)
 		if chunkIndex > 0 {
 			return fmt.Errorf("unexpected second Status response chunk from peer %s", peerID.Pretty())
 		}
@@ -1705,7 +1692,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		if err := readChunk(&data); err != nil {
 			return err
 		}
-		log.Infof("Status RPC response of peer %s: %s", peerID.Pretty(), fmtStatus(&data))
+		log.Infof("Status RPC response of peer %s: %s", peerID.Pretty(), data.String())
 		return nil
 	}, func(peerID peer.ID) {
 		log.Infof("Status RPC responses of peer %s ended", peerID.Pretty())
@@ -1718,7 +1705,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.StatusRPCv1
 	}, func(cmd *cobra.Command, args []string) (handler reqresp.ChunkedRequestHandler, err error) {
-		return func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
+		return func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
 			return respChunk(&currentStatus)
 		}, nil
 	}))

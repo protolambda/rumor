@@ -1,6 +1,8 @@
 package methods
 
 import (
+	"encoding/hex"
+	"fmt"
 	"github.com/protolambda/rumor/rpc/reqresp"
 	"github.com/protolambda/zssz"
 )
@@ -34,6 +36,10 @@ type BlocksByRangeReqV1 struct {
 	Step uint64
 }
 
+func (r *BlocksByRangeReqV1) String() string {
+	return fmt.Sprintf("%v", *r)
+}
+
 var BlocksByRangeReqV1SSZ = zssz.GetSSZ((*BlocksByRangeReqV1)(nil))
 
 var BlocksByRangeRPCv1 = reqresp.RPCMethod{
@@ -41,7 +47,7 @@ var BlocksByRangeRPCv1 = reqresp.RPCMethod{
 	MaxChunkCount: 100, // 100 blocks default maximum
 	ReqSSZ:        BlocksByRangeReqV1SSZ,
 	RespChunkSSZ:  SignedBeaconBlockSSZ,
-	AllocRequest: func() interface{} {
+	AllocRequest: func() reqresp.Request {
 		return new(BlocksByRangeReqV1)
 	},
 }
@@ -52,6 +58,10 @@ type BlocksByRangeReqV2 struct {
 	Step uint64
 }
 
+func (r *BlocksByRangeReqV2) String() string {
+	return fmt.Sprintf("%v", *r)
+}
+
 var BlocksByRangeReqV2SSZ = zssz.GetSSZ((*BlocksByRangeReqV2)(nil))
 
 var BlocksByRangeRPCv2 = reqresp.RPCMethod{
@@ -59,7 +69,7 @@ var BlocksByRangeRPCv2 = reqresp.RPCMethod{
 	MaxChunkCount: 100, // 100 blocks default maximum
 	ReqSSZ:        BlocksByRangeReqV2SSZ,
 	RespChunkSSZ:  SignedBeaconBlockSSZ,
-	AllocRequest: func() interface{} {
+	AllocRequest: func() reqresp.Request {
 		return new(BlocksByRangeReqV2)
 	},
 }
@@ -70,6 +80,19 @@ func (*BlocksByRootReq) Limit() uint64 {
 	return 100
 }
 
+func (r BlocksByRootReq) String() string {
+	if len(r) == 0 {
+		return "empty blocks-by-root request"
+	}
+	out := make([]byte, 0, len(r) * 66)
+	for i, root := range r {
+		hex.Encode(out[i*66:], root[:])
+		out[(i+1)*66-2] = ','
+		out[(i+1)*66-1] = ' '
+	}
+	return "blocks-by-root requested: " + string(out[:len(out) - 1])
+}
+
 var BlocksByRootReqSSZ = zssz.GetSSZ((*BlocksByRootReq)(nil))
 
 var BlocksByRootRPCv1 = reqresp.RPCMethod{
@@ -77,7 +100,7 @@ var BlocksByRootRPCv1 = reqresp.RPCMethod{
 	MaxChunkCount: 100, // 100 blocks default maximum
 	ReqSSZ:        BlocksByRootReqSSZ,
 	RespChunkSSZ:  SignedBeaconBlockSSZ,
-	AllocRequest: func() interface{} {
+	AllocRequest: func() reqresp.Request {
 		return new(BlocksByRootReq)
 	},
 }

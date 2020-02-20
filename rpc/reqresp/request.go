@@ -30,7 +30,7 @@ func (newStreamFn NewStreamFn) WithTimeout(timeout time.Duration) NewStreamFn {
 	}
 }
 
-func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, data interface{},
+func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, data Request,
 	dataType ztypes.SSZ, comp Compression, handle ResponseHandler) error {
 
 	var buf bytes.Buffer

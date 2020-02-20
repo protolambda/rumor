@@ -12,7 +12,11 @@ import (
 	"io"
 )
 
-type AllocRequest func() interface{}
+type Request interface {
+	fmt.Stringer
+}
+
+type AllocRequest func() Request
 
 type RPCMethod struct {
 	Protocol      protocol.ID
@@ -37,7 +41,7 @@ type MethodRespSuccessHandler func(chunkIndex uint64, readChunk func(dest interf
 type MethodRespErrorHandler func(chunkIndex uint64, msg string) error
 
 func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req interface{}, onResponse MethodRespSuccessHandler,
+	peerId peer.ID, comp Compression, req Request, onResponse MethodRespSuccessHandler,
 	onInvalidReqResp MethodRespErrorHandler, onServerErrorResp MethodRespErrorHandler, onClose func()) error {
 
 	defer onClose()
@@ -82,7 +86,7 @@ func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamF
 type WriteSuccessChunkFn func(data interface{}) error
 type WriteMsgFn func(msg string) error
 
-type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request interface{}, respChunk WriteSuccessChunkFn, respChunkInvalidInput WriteMsgFn, respChunkServerError WriteMsgFn) error
+type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request Request, respChunk WriteSuccessChunkFn, respChunkInvalidInput WriteMsgFn, respChunkServerError WriteMsgFn) error
 
 
 func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, handle ChunkedRequestHandler,

@@ -1,6 +1,7 @@
 package methods
 
 import (
+	"fmt"
 	"github.com/protolambda/rumor/rpc/reqresp"
 	"github.com/protolambda/zssz"
 )
@@ -13,6 +14,11 @@ type Status struct {
 	HeadSlot        Slot
 }
 
+func (s *Status) String() string {
+	return fmt.Sprintf("Status(head_fork_version: %x, finalized_root: %x, finalized_epoch: %d, head_root: %x, head_slot: %d)",
+		s.HeadForkVersion, s.FinalizedRoot, s.FinalizedEpoch, s.HeadRoot, s.HeadSlot)
+}
+
 var StatusSSZ = zssz.GetSSZ((*Status)(nil))
 
 var StatusRPCv1 = reqresp.RPCMethod{
@@ -20,7 +26,7 @@ var StatusRPCv1 = reqresp.RPCMethod{
 	MaxChunkCount: 1,
 	ReqSSZ: StatusSSZ,
 	RespChunkSSZ: StatusSSZ,
-	AllocRequest: func() interface{} {
+	AllocRequest: func() reqresp.Request {
 		return new(Status)
 	},
 }
