@@ -1,7 +1,6 @@
 package reqresp
 
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -20,24 +19,26 @@ type OnError func(ctx context.Context, peerId peer.ID, err error)
 type StreamCtxFn func() context.Context
 
 // startReqRPC registers a request handler for the given protocol. Compression is optional and may be nil.
-func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, onInvalidInput OnError) network.StreamHandler {
+func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, onInvalidInput OnError, maxRequestContentSize int) network.StreamHandler {
 	return func(stream network.Stream) {
 		defer stream.Close()
 		peerId := stream.Conn().RemotePeer()
 		ctx, cancel := context.WithCancel(newCtx())
 		defer cancel()
 
-		br := bufio.NewReader(stream)
-		reqLen, err := binary.ReadUvarint(br)
+		blr := NewBufLimitReader(stream, 1024, 0)
+		blr.N = 10  // var ints should be small
+		reqLen, err := binary.ReadUvarint(blr)
 		if err != nil {
 			onInvalidInput(ctx, peerId, err)
 			return
 		}
+		blr.N = maxRequestContentSize
 		if err := stream.SetReadDeadline(time.Now().Add(time.Second * 10)); err != nil {
 			onInvalidInput(ctx, peerId, err)
 			return
 		}
-		r := io.LimitReader(br, 1 << 20)
+		r := io.Reader(blr)
 		w := io.WriteCloser(stream)
 		if comp != nil {
 			r = comp.Decompress(r)

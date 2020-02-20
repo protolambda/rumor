@@ -66,17 +66,17 @@ func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamF
 	})
 
 	protocolId := reqType.Protocol
-	maxChunkSize := reqType.RespChunkSSZ.MaxLen()
+	maxChunkContentSize := reqType.RespChunkSSZ.MaxLen()
 	if comp != nil {
 		protocolId += protocol.ID("_" + comp.Name())
-		if s, err := comp.MaxEncodedLen(maxChunkSize); err != nil {
+		if s, err := comp.MaxEncodedLen(maxChunkContentSize); err != nil {
 			return err
 		} else {
-			maxChunkSize = s
+			maxChunkContentSize = s
 		}
 	}
 
-	respHandler := handleChunks.MakeResponseHandler(reqType.MaxChunkCount, maxChunkSize, comp)
+	respHandler := handleChunks.MakeResponseHandler(reqType.MaxChunkCount, maxChunkContentSize, comp)
 
 	// Runs the request in sync, which processes responses,
 	// and then finally closes the channel through the earlier deferred close.
@@ -92,17 +92,17 @@ type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request Req
 func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, handle ChunkedRequestHandler,
 	onInvalidInput OnError, onServerError OnError) (network.StreamHandler, error) {
 
-	reqSizeLimit := reqType.ReqSSZ.MaxLen()
+	maxRequestContentSize := reqType.ReqSSZ.MaxLen()
 	if comp != nil {
-		s, err := comp.MaxEncodedLen(reqSizeLimit)
+		s, err := comp.MaxEncodedLen(maxRequestContentSize)
 		if err != nil {
 			return nil, err
 		}
-		reqSizeLimit = s
+		maxRequestContentSize = s
 	}
 	return RequestPayloadHandler(func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer) {
-		if requestLen > reqSizeLimit {
-			onInvalidInput(ctx, peerId, fmt.Errorf("request length %d exceeds request size limit %d", requestLen, reqSizeLimit))
+		if requestLen > maxRequestContentSize {
+			onInvalidInput(ctx, peerId, fmt.Errorf("request length %d exceeds request size limit %d", requestLen, maxRequestContentSize))
 			return
 		}
 		reqObj := reqType.AllocRequest()
@@ -130,5 +130,5 @@ func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression
 			onServerError(ctx, peerId, err)
 			return
 		}
-	}).MakeStreamHandler(newCtx, comp, onInvalidInput), nil
+	}).MakeStreamHandler(newCtx, comp, onInvalidInput, int(maxRequestContentSize)), nil
 }

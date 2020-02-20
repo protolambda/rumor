@@ -1,7 +1,6 @@
 package reqresp
 
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -16,39 +15,42 @@ type ResponseChunkHandler func(ctx context.Context, chunkIndex uint64, chunkSize
 // ResponseHandler processes a response by internally processing chunks, any error is propagated up.
 type ResponseHandler func(ctx context.Context, r io.Reader, w io.WriteCloser) error
 
-// MakeResponseHandler builds a ResponseHandler, which won't take more than maxChunkCount chunks, or chunks larger than maxChunkSize.
+// MakeResponseHandler builds a ResponseHandler, which won't take more than maxChunkCount chunks, or chunk contents larger than maxChunkContentSize.
 // Compression is optional and may be nil. Chunks are processed by the given ResponseChunkHandler.
-func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64, maxChunkSize uint64, comp Compression) ResponseHandler {
+func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64, maxChunkContentSize uint64, comp Compression) ResponseHandler {
 	//		response  ::= <response_chunk>*
 	//		response_chunk  ::= <result> | <encoding-dependent-header> | <encoded-payload>
 	//		result    ::= “0” | “1” | “2” | [“128” ... ”255”]
 	return func(ctx context.Context, r io.Reader, w io.WriteCloser) error {
+		blr := NewBufLimitReader(r, 1024, 0)
+		defer w.Close()
 		for chunkIndex := uint64(0); chunkIndex < maxChunkCount; chunkIndex++ {
-			resByte := [1]byte{}
-			_, err := r.Read(resByte[:])
+			blr.N = 1
+			resByte, err := blr.ReadByte()
 			if err == io.EOF { // no more chunks left.
 				return nil
 			}
 			if err != nil {
 				return fmt.Errorf("failed to read chunk %d result byte: %v", chunkIndex, err)
 			}
-			br := bufio.NewReader(r)
-			chunkSize, err := binary.ReadUvarint(br)
+			blr.N = 10
+			chunkSize, err := binary.ReadUvarint(blr)
 			if err != nil {
 				// TODO send error back: invalid chunk size encoding
 				return err
 			}
-			if chunkSize > maxChunkSize {
+			if chunkSize > maxChunkContentSize {
 				// TODO sender error back: invalid chunk size, too large.
-				return fmt.Errorf("chunk size %d of chunk %d exceeds chunk limit %d", chunkSize, chunkIndex, maxChunkSize)
+				return fmt.Errorf("chunk size %d of chunk %d exceeds chunk limit %d", chunkSize, chunkIndex, maxChunkContentSize)
 			}
-			cr := io.Reader(br)
+			blr.N = int(maxChunkContentSize)
+			cr := io.Reader(blr)
 			cw := w
 			if comp != nil {
 				cr = comp.Decompress(cr)
 				cw = comp.Compress(cw)
 			}
-			if err := handleChunk(ctx, chunkIndex, chunkSize, ResponseCode(resByte[0]), cr, cw); err != nil {
+			if err := handleChunk(ctx, chunkIndex, chunkSize, ResponseCode(resByte), cr, cw); err != nil {
 				_ = cw.Close()
 				return err
 			}
@@ -58,6 +60,6 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 				}
 			}
 		}
-		return fmt.Errorf("reached maximum chunk count: %d", maxChunkCount)
+		return nil
 	}
 }

@@ -1380,7 +1380,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 					log.Debugf("Responses of peer %s stopped after %d response chunks", peerID.Pretty(),lastRespChunkIndex+1)
 					onClose(peerID)
 				}); err != nil {
-				writeErr(cmd, err)
+				writeErrMsg(cmd, "failed request: %v", err)
 			}
 		}
 		return cmd
