@@ -2,6 +2,19 @@
 
 A REPL written in Go, to run the Eth2 network stack, attach to testnets, debug clients, and extract data for tooling.
 
+## Install
+
+This REPL relies on a forked go-ethereum for discovery-v5, this requires you to run it from source (instead of `go get` to install).
+
+```bash
+git clone git@github.com:protolambda/rumor.git
+cd rumor
+go get ./...
+
+# Now run it
+go run .
+```
+
 ## Usage
 
 ```bash
