@@ -11,8 +11,5 @@
 # Output of the go coverage tool
 *.out
 
-# This is all experimental, no need for go.sum
-go.sum
-
 data
 logs
