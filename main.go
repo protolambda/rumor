@@ -1,10 +1,12 @@
 package main
 
 import (
-	"github.com/protolambda/rumor/repl"
 	"fmt"
 	"github.com/chzyer/readline"
+	"github.com/google/shlex"
+	"github.com/protolambda/rumor/repl"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/pflag"
 	"io"
 	"os"
 	"os/signal"
@@ -59,16 +61,17 @@ func main() {
 
 	log := logrus.New()
 	log.SetFormatter(&LogFormatter{TextFormatter: logrus.TextFormatter{ForceColors: true}})
-	log.SetOutput(l.Stderr())
+	log.SetOutput(l.Stdout())
 	log.SetLevel(logrus.TraceLevel)
 
 	rep := repl.NewRepl(log)
-	rep.ReplCmd.SetOut(l.Stdout())
-	rep.ReplCmd.SetErr(l.Stderr())
-
 	stop := make(chan os.Signal, 1)
 	go func() {
 		for {
+			replCmd := rep.Cmd()
+			replCmd.SetOut(l.Stdout())
+			replCmd.SetErr(l.Stdout())
+
 			line, err := l.Readline()
 			if err == readline.ErrInterrupt {
 				if len(line) == 0 {
@@ -84,11 +87,24 @@ func main() {
 				stop <- syscall.SIGINT
 				break
 			}
-			cmdArgs := strings.Fields(line)
-			rep.ReplCmd.SetArgs(cmdArgs)
-			if err := rep.ReplCmd.Execute(); err != nil {
-				_, _ = fmt.Fprintln(os.Stderr, err)
+			cmdArgs, err := shlex.Split(line)
+			if err != nil {
+				log.Errorf("Failed to parse command: %v\n", err)
+				continue
 			}
+			fmt.Printf("Input args: %s\n", strings.Join(cmdArgs, ", "))
+			replCmd.SetArgs(cmdArgs)
+			fmt.Printf("cmds: %d  flags: %d\n", replCmd.Flags().NArg(), replCmd.Flags().NFlag())
+			if err := replCmd.Execute(); err != nil {
+				log.Errorf("Command error: %v\n", err)
+				continue
+			}
+			replCmd.Flags().VisitAll(func(f *pflag.Flag) {
+				log.Printf("f: %s  - changed: %v\n", f.Name, f.Changed)
+			})
+			replCmd.Flags().VisitAll(func(f *pflag.Flag) {
+				f.Changed = false
+			})
 		}
 	}()
 

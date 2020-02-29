@@ -43,14 +43,21 @@ import (
 
 type Repl struct {
 	P2PHost host.Host
+
 	PrivKey crypto.PrivKey
+
 	IP      net.IP
 	TcpPort uint16
 	UdpPort uint16
+
+	Dv5State Dv5State
+	KadState KadState
+	GossipState GossipState
+	RPCState RPCState
+
 	Log     logrus.FieldLogger
 	Ctx     context.Context
 	Cancel  context.CancelFunc
-	ReplCmd *cobra.Command
 }
 
 // check interface
@@ -65,6 +72,10 @@ func NewRepl(log logrus.FieldLogger) *Repl {
 		repl.Ctx = ctxAll
 		repl.Cancel = cancelAll
 	}
+	return repl
+}
+
+func (r *Repl) Cmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "",
 		Short: "A REPL for Eth2 networking.",
@@ -74,16 +85,15 @@ func NewRepl(log logrus.FieldLogger) *Repl {
 		},
 	}
 	cmd.AddCommand(
-		repl.InitHostCmd(),
-		repl.InitEnrCmd(),
-		repl.InitPeerCmd(),
-		repl.InitDv5Cmd(),
-		repl.InitKadCmd(),
-		repl.InitGossipCmd(),
-		repl.InitRpcCmd(),
+		r.InitHostCmd(),
+		r.InitEnrCmd(),
+		r.InitPeerCmd(),
+		r.InitDv5Cmd(&r.Dv5State),
+		r.InitKadCmd(&r.KadState),
+		r.InitGossipCmd(&r.GossipState),
+		r.InitRpcCmd(&r.RPCState),
 	)
-	repl.ReplCmd = cmd
-	return repl
+	return cmd
 }
 
 func (r *Repl) Host() host.Host {
@@ -603,22 +613,23 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 	return cmd
 }
 
+type Dv5State struct {
+	Dv5Node dv5.Discv5
+	CloseDv5 context.CancelFunc
+}
 
-func (r *Repl) InitDv5Cmd() *cobra.Command {
+func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dv5",
 		Short: "Manage Ethereum Discv5",
 	}
 	log := r.Logger("discv5")
 
-	var dv5Node dv5.Discv5
-	var closeDv5 context.CancelFunc
-
 	noDv5 := func(cmd *cobra.Command) bool {
 		if r.NoHost(cmd) {
 			return true
 		}
-		if dv5Node == nil {
+		if state.Dv5Node == nil {
 			writeErrMsg(cmd, "REPL must have initialized discv5. Try 'dv5 start'")
 			return true
 		}
@@ -638,8 +649,8 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				writeErrMsg(cmd, "Host has no IP yet. Get with 'host listen'")
 				return
 			}
-			if dv5Node != nil {
-				writeErrMsg(cmd, "Already have dv5 open at %s", dv5Node.Self().String())
+			if state.Dv5Node != nil {
+				writeErrMsg(cmd, "Already have dv5 open at %s", state.Dv5Node.Self().String())
 				return
 			}
 			bootNodes := make([]*enode.Node, 0, len(args))
@@ -653,12 +664,12 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			}
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			dv5Node, err = dv5.NewDiscV5(ctx, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
+			state.Dv5Node, err = dv5.NewDiscV5(ctx, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
 			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			closeDv5 = cancel
+			state.CloseDv5 = cancel
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -669,8 +680,8 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			if noDv5(cmd) {
 				return
 			}
-			closeDv5()
-			dv5Node = nil
+			state.CloseDv5()
+			state.Dv5Node = nil
 			log.Info("Stopped discv5")
 		},
 	})
@@ -721,7 +732,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			if err != nil {
 				writeErr(cmd, err)
 			}
-			if err := dv5Node.Ping(target); err != nil {
+			if err := state.Dv5Node.Ping(target); err != nil {
 				writeErrMsg(cmd, "Failed to ping %s: %v", target.String(), err)
 				return
 			}
@@ -741,7 +752,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			if err != nil {
 				writeErr(cmd, err)
 			}
-			resolved := dv5Node.Resolve(target)
+			resolved := state.Dv5Node.Resolve(target)
 			if resolved != nil {
 				writeErrMsg(cmd, "Failed to resolve %s, nil result", target.String())
 				return
@@ -762,7 +773,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			if err != nil {
 				writeErr(cmd, err)
 			}
-			enrRes, err := dv5Node.RequestENR(target)
+			enrRes, err := state.Dv5Node.RequestENR(target)
 			if err != nil {
 				writeErr(cmd, err)
 				return
@@ -786,7 +797,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				return
 			}
 			addrs := make([]*enode.Node, addrsLen)
-			n := dv5Node.ReadRandomNodes(addrs)
+			n := state.Dv5Node.ReadRandomNodes(addrs)
 			if err := handleLookup(addrs[:n], false); err != nil {
 				writeErr(cmd, err)
 				return
@@ -803,7 +814,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			if noDv5(cmd) {
 				return
 			}
-			target := dv5Node.Self().ID()
+			target := state.Dv5Node.Self().ID()
 			if len(args) > 0 {
 				if n, err := addrutil.ParseEnodeAddr(args[0]); err != nil {
 					if h, err := hex.DecodeString(args[0]); err != nil {
@@ -821,7 +832,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 					target = n.ID()
 				}
 			}
-			res := dv5Node.Lookup(target)
+			res := state.Dv5Node.Lookup(target)
 			if err := handleLookup(res, connectLookup); err != nil {
 				writeErr(cmd, err)
 				return
@@ -840,7 +851,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			if noDv5(cmd) {
 				return
 			}
-			res := dv5Node.LookupRandom()
+			res := state.Dv5Node.LookupRandom()
 			if err := handleLookup(res, connectRandom); err != nil {
 				writeErr(cmd, err)
 				return
@@ -864,7 +875,7 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 				return
 			}
 			log.Infof("local ENR: %s", v)
-			enodeAddr := dv5Node.Self()
+			enodeAddr := state.Dv5Node.Self()
 			log.Infof("local dv5 node (no TCP in ENR): %s", enodeAddr.String())
 		},
 	})
@@ -878,22 +889,24 @@ func (r *Repl) InitDv5Cmd() *cobra.Command {
 			}
 			v := strings.ToLower(args[0])
 			tracing := v == "true" || v == "y" || v == "yes" || v == "on"
-			dv5Node.Trace(tracing)
+			state.Dv5Node.Trace(tracing)
 			log.Infof("Set discv5 tracing mode to %v", tracing)
 		},
 	})
 	return cmd
 }
 
-func (r *Repl) InitKadCmd() *cobra.Command {
-	var kadNode kad.Kademlia
-	var closeKad context.CancelFunc
+type KadState struct {
+	KadNode kad.Kademlia
+	CloseKad context.CancelFunc
+}
 
+func (r *Repl) InitKadCmd(state *KadState) *cobra.Command {
 	noKad := func(cmd *cobra.Command) bool {
 		if r.NoHost(cmd) {
 			return true
 		}
-		if kadNode == nil {
+		if state.KadNode == nil {
 			writeErrMsg(cmd, "REPL must have initialized Kademlia DHT. Try 'kad start'")
 			return true
 		}
@@ -911,18 +924,18 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 			if r.NoHost(cmd) {
 				return
 			}
-			if kadNode != nil {
+			if state.KadNode != nil {
 				writeErrMsg(cmd, "Already have a Kademlia DHT open")
 				return
 			}
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			kadNode, err = kad.NewKademlia(ctx, r, protocol.ID(args[0]))
+			state.KadNode, err = kad.NewKademlia(ctx, r, protocol.ID(args[0]))
 			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			closeKad = cancel
+			state.CloseKad = cancel
 		},
 	})
 
@@ -934,8 +947,8 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 			if noKad(cmd) {
 				return
 			}
-			closeKad()
-			kadNode = nil
+			state.CloseKad()
+			state.KadNode = nil
 			r.Logger("kad").Info("Stopped kademlia DHT")
 		},
 	})
@@ -948,7 +961,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 			if noKad(cmd) {
 				return
 			}
-			kadNode.RefreshTable(waitForRefreshResult)
+			state.KadNode.RefreshTable(waitForRefreshResult)
 		},
 	}
 	refreshCmd.Flags().BoolVar(&waitForRefreshResult, "wait", false, "Wait for the table refresh to complete")
@@ -968,7 +981,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 				return
 			}
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
-			addrInfos, err := kadNode.FindPeersConnectedToPeer(ctx, peerID)
+			addrInfos, err := state.KadNode.FindPeersConnectedToPeer(ctx, peerID)
 			if err != nil {
 				writeErr(cmd, err)
 				return
@@ -1003,7 +1016,7 @@ func (r *Repl) InitKadCmd() *cobra.Command {
 				return
 			}
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
-			addrInfo, err := kadNode.FindPeer(ctx, peerID)
+			addrInfo, err := state.KadNode.FindPeer(ctx, peerID)
 			if err != nil {
 				writeErr(cmd, err)
 				return
@@ -1026,11 +1039,14 @@ type topicLogger struct {
 
 type topicLoggers map[string]*topicLogger
 
-func (r *Repl) InitGossipCmd() *cobra.Command {
-	var gsNode gossip.GossipSub
-	var closeGS context.CancelFunc
+type GossipState struct {
+	GsNode gossip.GossipSub
+	CloseGS context.CancelFunc
+	Topics joinedTopics
+	TopicLoggers topicLoggers
+}
 
-	var topics joinedTopics
+func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 
 	log := r.Logger("gossip")
 
@@ -1038,7 +1054,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 		if r.NoHost(cmd) {
 			return true
 		}
-		if gsNode == nil {
+		if state.GsNode == nil {
 			writeErrMsg(cmd, "REPL must have initialized GossipSub. Try 'gossip start'")
 			return true
 		}
@@ -1055,19 +1071,19 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 			if r.NoHost(cmd) {
 				return
 			}
-			if gsNode != nil {
+			if state.GsNode != nil {
 				writeErrMsg(cmd, "Already started GossipSub")
 				return
 			}
-			topics = make(joinedTopics)
+			state.Topics = make(joinedTopics)
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			gsNode, err = gossip.NewGossipSub(ctx, r)
+			state.GsNode, err = gossip.NewGossipSub(ctx, r)
 			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			closeGS = cancel
+			state.CloseGS = cancel
 			log.Info("Started GossipSub")
 		},
 	})
@@ -1078,9 +1094,9 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 			if noGS(cmd) {
 				return
 			}
-			gsNode = nil
+			state.GsNode = nil
 
-			closeGS()
+			state.CloseGS()
 			log.Info("Stopped GossipSub")
 		},
 	})
@@ -1091,8 +1107,8 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 			if noGS(cmd) {
 				return
 			}
-			log.Infof("on %d topics:", len(topics))
-			for topic, _ := range topics {
+			log.Infof("on %d topics:", len(state.Topics))
+			for topic, _ := range state.Topics {
 				log.Infof("topic: %s", topic)
 			}
 		},
@@ -1106,11 +1122,11 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 				return
 			}
 			topicName := args[0]
-			if _, ok := topics[topicName]; ok {
+			if _, ok := state.Topics[topicName]; ok {
 				writeErrMsg(cmd, "already on gossip topic %s", topicName)
 				return
 			}
-			top, err := gsNode.JoinTopic(topicName)
+			top, err := state.GsNode.JoinTopic(topicName)
 			if err != nil {
 				writeErr(cmd, err)
 				return
@@ -1138,7 +1154,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 				}()
 			}
 
-			topics[topicName] = top
+			state.Topics[topicName] = top
 			log.Infof("joined topic %s", topicName)
 		},
 	})
@@ -1152,7 +1168,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 				return
 			}
 			topicName := args[0]
-			if top, ok := topics[topicName]; !ok {
+			if top, ok := state.Topics[topicName]; !ok {
 				writeErrMsg(cmd, "not on gossip topic %s", topicName)
 				return
 			} else {
@@ -1177,7 +1193,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			gsNode.BlacklistPeer(peerID)
+			state.GsNode.BlacklistPeer(peerID)
 			log.Infof("Blacklisted peer %s", peerID.Pretty())
 		},
 	})
@@ -1197,7 +1213,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 				return
 			}
 			topicName := args[0]
-			if top, ok := topics[topicName]; !ok {
+			if top, ok := state.Topics[topicName]; !ok {
 				writeErrMsg(cmd, "not on gossip topic %s", topicName)
 				return
 			} else {
@@ -1205,7 +1221,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 				if err != nil {
 					writeErr(cmd, err)
 				}
-				delete(topics, topicName)
+				delete(state.Topics, topicName)
 			}
 		},
 	})
@@ -1234,10 +1250,8 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 		}()
 		errLogger := gossip.NewErrLoggerChannel(ctx, topicLog, outPath)
 		msgLogger := gossip.NewMessageLogger(ctx, out, errLogger)
-		return gsNode.LogTopic(ctx, loggerName, top, msgLogger, errLogger)
+		return state.GsNode.LogTopic(ctx, loggerName, top, msgLogger, errLogger)
 	}
-
-	topLogs := make(topicLoggers)
 
 	logCmd := &cobra.Command{
 		Use:   "log",
@@ -1255,7 +1269,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 			loggerName := args[0]
 			topicName := args[1]
 			outPath := args[2]
-			if top, ok := topics[topicName]; !ok {
+			if top, ok := state.Topics[topicName]; !ok {
 				writeErrMsg(cmd, "not on gossip topic %s", topicName)
 				return
 			} else {
@@ -1264,7 +1278,7 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 					writeErr(cmd, err)
 					return
 				}
-				topLogs[loggerName] = &topicLogger{
+				state.TopicLoggers[loggerName] = &topicLogger{
 					name:      loggerName,
 					topicName: topicName,
 					outPath:   outPath,
@@ -1282,10 +1296,10 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 				return
 			}
 			loggerName := args[0]
-			if lo, ok := topLogs[loggerName]; ok {
+			if lo, ok := state.TopicLoggers[loggerName]; ok {
 				lo.close()
 				log.Infof("Closed logger '%s', topic: '%s', output path: '%s'", loggerName, lo.topicName, lo.outPath)
-				delete(topLogs, loggerName)
+				delete(state.TopicLoggers, loggerName)
 			} else {
 				log.Infof("Logger '%s' does not exist, cannot stop it.", loggerName)
 			}
@@ -1299,8 +1313,8 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 			if noGS(cmd) {
 				return
 			}
-			log.Infof("%d loggers", len(topLogs))
-			for name, lo := range topLogs {
+			log.Infof("%d loggers", len(state.TopicLoggers))
+			for name, lo := range state.TopicLoggers {
 				log.Infof("%20s: '%s' -> '%s'", name, lo.topicName, lo.outPath)
 			}
 		},
@@ -1309,7 +1323,11 @@ func (r *Repl) InitGossipCmd() *cobra.Command {
 	return cmd
 }
 
-func (r *Repl) InitRpcCmd() *cobra.Command {
+type RPCState struct {
+	CurrentStatus methods.Status
+}
+
+func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rpc",
 		Short: "Manage Eth2 RPC",
@@ -1504,6 +1522,9 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 	cmd.AddCommand(goodbyeCmd)
 
 	parseRoot := func(v string) ([32]byte, error) {
+		if v == "0" {
+			return [32]byte{}, nil
+		}
 		if strings.HasPrefix(v, "0x") {
 			v = v[2:]
 		}
@@ -1605,8 +1626,6 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 
 	cmd.AddCommand(blocksByRangeCmd)
 
-	var currentStatus methods.Status
-
 	statusCmd := &cobra.Command{
 		Use:   "status",
 		Short: "Manage status RPC",
@@ -1616,7 +1635,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		Short: "Show current status",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			log.Infof("Current status: %s", currentStatus.String())
+			log.Infof("Current status: %s", state.CurrentStatus.String())
 		},
 	})
 	parseStatus := func(args []string) (*methods.Status, error) {
@@ -1658,8 +1677,8 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			currentStatus = *stat
-			log.Infof("Set to status: %s", currentStatus.String())
+			state.CurrentStatus = *stat
+			log.Infof("Set to status: %s", state.CurrentStatus.String())
 		},
 	})
 	statusCmd.AddCommand(makeReqCmd(&cobra.Command{
@@ -1681,7 +1700,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 			}
 			return reqStatus, nil
 		} else {
-			return &currentStatus, nil
+			return &state.CurrentStatus, nil
 		}
 	}, func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error {
 		log.Infof("status resp %d", chunkIndex)
@@ -1706,7 +1725,7 @@ func (r *Repl) InitRpcCmd() *cobra.Command {
 		return &methods.StatusRPCv1
 	}, func(cmd *cobra.Command, args []string) (handler reqresp.ChunkedRequestHandler, err error) {
 		return func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
-			return respChunk(&currentStatus)
+			return respChunk(&state.CurrentStatus)
 		}, nil
 	}))
 
