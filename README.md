@@ -64,6 +64,10 @@ gossip log list
 gossip log stop beacon_block
 # Leave channel
 gossip leave /eth2/beacon_block/ssz
+
+# Ask a connected node for a Status
+rpc status req 16Uiu2HAmQ9WByeSsnxLb2tBW3MkGYMfg1BQowkwyVdUD9WwMdnrc
+
 ```
 
 ## License
