@@ -6,7 +6,6 @@ import (
 	"github.com/google/shlex"
 	"github.com/protolambda/rumor/repl"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/pflag"
 	"io"
 	"os"
 	"os/signal"
@@ -92,19 +91,11 @@ func main() {
 				log.Errorf("Failed to parse command: %v\n", err)
 				continue
 			}
-			fmt.Printf("Input args: %s\n", strings.Join(cmdArgs, ", "))
 			replCmd.SetArgs(cmdArgs)
-			fmt.Printf("cmds: %d  flags: %d\n", replCmd.Flags().NArg(), replCmd.Flags().NFlag())
 			if err := replCmd.Execute(); err != nil {
 				log.Errorf("Command error: %v\n", err)
 				continue
 			}
-			replCmd.Flags().VisitAll(func(f *pflag.Flag) {
-				log.Printf("f: %s  - changed: %v\n", f.Name, f.Changed)
-			})
-			replCmd.Flags().VisitAll(func(f *pflag.Flag) {
-				f.Changed = false
-			})
 		}
 	}()
 
