@@ -1076,6 +1076,7 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 				return
 			}
 			state.Topics = make(joinedTopics)
+			state.TopicLoggers = make(topicLoggers)
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
 			state.GsNode, err = gossip.NewGossipSub(ctx, r)
