@@ -5,11 +5,8 @@ import (
 	"crypto/ecdsa"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/ethereum/go-ethereum/common/math"
-	geth_crypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -38,7 +35,7 @@ var EnrEntries = map[string]func() (enr.Entry, func() string) {
 			copy(out[:32], res.X.Bytes())
 			copy(out[32:], res.Y.Bytes())
 			peerID := PeerIDFromPubkey((*ecdsa.PublicKey)(res))
-			nodeID := NodeIDFromPubkey((*ecdsa.PublicKey)(res))
+			nodeID := enode.PubkeyToIDV4((*ecdsa.PublicKey)(res))
 			return fmt.Sprintf("XY: %x NodeID: %s PeerID: %s", out, nodeID.String(), peerID.Pretty())
 		}
 	},
@@ -100,90 +97,6 @@ func ParseEnrBytes(v string) ([]byte, error) {
 		}
 	}
 	return base64.RawURLEncoding.DecodeString(v)
-}
-
-// pair is a key/value pair in a record.
-type EnrInternalPair struct {
-	K string
-	V rlp.RawValue
-}
-
-func (p *EnrInternalPair) ValueEntry() (string, error) {
-	vEnrEntryFn, ok := EnrEntries[p.K]
-	if !ok {
-		return "", fmt.Errorf("enr key %s is unknown", p.K)
-	}
-	res, resToStr := vEnrEntryFn()
-	err := rlp.DecodeBytes(p.V, res)
-	if err != nil {
-		return "", err
-	}
-	return resToStr(), nil
-}
-
-type ENRInternals struct {
-	Pairs []EnrInternalPair
-}
-
-func ParseEnrInternals(r *enr.Record) ([]EnrInternalPair, error) {
-	var buf bytes.Buffer
-	if err := r.EncodeRLP(&buf); err != nil {
-		return nil, err
-	}
-	var internals ENRInternals
-	if err := rlp.Decode(bytes.NewReader(buf.Bytes()), &internals); err != nil {
-		return nil, err
-	}
-	return internals.Pairs, nil
-}
-
-// DecodeRLP implements rlp.Decoder. Decoding doesn't verify the signature.
-func (r *ENRInternals) DecodeRLP(s *rlp.Stream) error {
-	raw, err := s.Raw()
-	if err != nil {
-		return err
-	}
-	// Decode the RLP container.
-	s = rlp.NewStream(bytes.NewReader(raw), 0)
-	if _, err := s.List(); err != nil {
-		return err
-	}
-	var sig []byte
-	if err = s.Decode(&sig); err != nil {
-		return err
-	}
-	var seq uint64
-	if err = s.Decode(&seq); err != nil {
-		return err
-	}
-	// The rest of the record contains sorted k/v pairs.
-	var prevkey string
-	for i := 0; ; i++ {
-		var kv EnrInternalPair
-		if err := s.Decode(&kv.K); err != nil {
-			if err == rlp.EOL {
-				break
-			}
-			return err
-		}
-		if err := s.Decode(&kv.V); err != nil {
-			if err == rlp.EOL {
-				return errors.New("record contains incomplete k/v pair")
-			}
-			return err
-		}
-		if i > 0 {
-			if kv.K == prevkey {
-				return errors.New("record contains duplicate key")
-			}
-			if kv.K < prevkey {
-				return errors.New("record key/value pairs are not sorted by key")
-			}
-		}
-		r.Pairs = append(r.Pairs, kv)
-		prevkey = kv.K
-	}
-	return err
 }
 
 func ParseEnr(v string) (*enr.Record, error) {
@@ -290,16 +203,8 @@ func EnodesToMultiAddrs(nodes []*enode.Node) ([]ma.Multiaddr, error) {
 
 func PeerIDFromPubkey(pubkey *ecdsa.PublicKey) peer.ID {
 	// save for this kind of pubkey
+	// TODO: struct init, instead of type cast
 	id, _ := peer.IDFromPublicKey(crypto.PubKey((*crypto.Secp256k1PublicKey)((*btcec.PublicKey)(pubkey))))
-	return id
-}
-
-func NodeIDFromPubkey(pubkey *ecdsa.PublicKey) enode.ID {
-	buf := make([]byte, 64)
-	math.ReadBits(pubkey.X, buf[:32])
-	math.ReadBits(pubkey.Y, buf[32:])
-	var id enode.ID
-	copy(id[:], geth_crypto.Keccak256(buf))
 	return id
 }
 

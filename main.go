@@ -32,17 +32,30 @@ type LogFormatter struct {
 func (l *LogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 	topic, okTopic := entry.Data["log_topic"]
 	delete(entry.Data, "log_topic")
+	actor, okActor := entry.Data["actor"]
+	delete(entry.Data, "actor")
 	out, err := l.TextFormatter.Format(entry)
 	if okTopic {
 		entry.Data["log_topic"] = topic
+	}
+	if okActor {
+		entry.Data["actor"] = actor
 	}
 	if err != nil {
 		return nil, err
 	}
 	if okTopic {
-		return []byte(fmt.Sprintf("\033[34m[%10s]\033[0m %s", topic, out)), nil
+		if okActor {
+			return []byte(fmt.Sprintf("\033[34m[%s]\033[35m[%s]\033[0m %s", actor, topic, out)), nil
+		} else {
+			return []byte(fmt.Sprintf("\033[35m[%s]\033[0m %s", topic, out)), nil
+		}
 	} else {
-		return out, nil
+		if okActor {
+			return []byte(fmt.Sprintf("\033[34m[%s]\033[0m %s", actor, out)), nil
+		} else {
+			return out, nil
+		}
 	}
 }
 
@@ -143,12 +156,20 @@ func main() {
 func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLine func() (string, error)) {
 	inputLog := log.WithField("log_topic", "input")
 	commentLog := log.WithField("log_topic", "comment")
-	rep := repl.NewRepl(log)
-	for {
-		replCmd := rep.Cmd()
-		replCmd.SetOut(out)
-		replCmd.SetErr(errOut)
 
+	actors := make(map[string]*repl.Repl)
+
+	getActor := func(name string) *repl.Repl{
+		if actor, ok := actors[name]; ok {
+			return actor
+		} else {
+			rep := repl.NewRepl(log.WithField("actor", name))
+			actors[name] = rep
+			return rep
+		}
+	}
+
+	for {
 		line, err := nextLine()
 		if err == readline.ErrInterrupt {
 			if len(line) == 0 {
@@ -178,6 +199,21 @@ func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLi
 			log.Errorf("Failed to parse command: %v\n", err)
 			continue
 		}
+		if len(cmdArgs) == 0 {
+			continue
+		}
+		actorName := "DEFAULT_ACTOR"
+		if firstArg := cmdArgs[0]; strings.HasSuffix(firstArg, ":") {
+			actorName = firstArg[:len(firstArg)-1]
+			cmdArgs = cmdArgs[1:]
+		}
+
+		rep := getActor(actorName)
+
+		replCmd := rep.Cmd()
+		replCmd.SetOut(out)
+		replCmd.SetErr(errOut)
+
 		replCmd.SetArgs(cmdArgs)
 		if err := replCmd.Execute(); err != nil {
 			log.Errorf("Command error: %v\n", err)
@@ -185,5 +221,7 @@ func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLi
 		}
 	}
 
-	rep.Cancel()
+	for _, actorRep := range actors {
+		actorRep.Cancel()
+	}
 }

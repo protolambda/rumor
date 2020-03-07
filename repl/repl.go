@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -50,14 +51,14 @@ type Repl struct {
 	TcpPort uint16
 	UdpPort uint16
 
-	Dv5State Dv5State
-	KadState KadState
+	Dv5State    Dv5State
+	KadState    KadState
 	GossipState GossipState
-	RPCState RPCState
+	RPCState    RPCState
 
-	Log     logrus.FieldLogger
-	Ctx     context.Context
-	Cancel  context.CancelFunc
+	Log    logrus.FieldLogger
+	Ctx    context.Context
+	Cancel context.CancelFunc
 }
 
 // check interface
@@ -251,9 +252,9 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 		var ipStr string
 		var tcpPort, udpPort uint16
 		listenCmd := &cobra.Command{
-			Use: "listen",
+			Use:   "listen",
 			Short: "Start listening on given address (see option flags).",
-			Args: cobra.NoArgs,
+			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
 				if r.NoHost(cmd) {
 					return
@@ -362,26 +363,36 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			enrPairs, err := addrutil.ParseEnrInternals(rec)
-			if err != nil {
-				writeErr(cmd, err)
-				return
-			}
-			for _, p := range enrPairs {
-				ent, err := p.ValueEntry()
-				if err != nil {
-					log.Infof("Enr pair: %s -> (could not decode) -- raw: %x", p.K, p.V)
-				} else {
-					log.Infof("Enr pair: %s -> %s -- raw: %x", p.K, ent, p.V)
+			enrPairs := rec.AppendElements(nil)
+			log.Infof("Enr seq number: %v", enrPairs[0])
+			for i := 1; i < len(enrPairs); i += 2 {
+				key := enrPairs[i].(string)
+				rawValue := enrPairs[i+1].(rlp.RawValue)
+
+				getTypedValue, ok := addrutil.EnrEntries[key]
+				if !ok {
+					log.Infof("Enr pair: %s -> (unrecognized type) -- raw: %x", key, rawValue)
 				}
+				typedValue, getValueStr := getTypedValue()
+				if err := rlp.DecodeBytes(rawValue, typedValue); err != nil {
+					log.Infof("Enr pair: %s -> (failed to decode) -- raw: %x", key, rawValue)
+				}
+				log.Infof("Enr pair: %s -> %s -- raw: %x", key, getValueStr(), rawValue)
 			}
+
 			var enodeRes *enode.Node
 			enodeRes, err = addrutil.EnrToEnode(rec, true)
 			if err != nil {
 				writeErr(cmd, err)
 				return
 			}
-			log.Infof("addr meta: seq: %d  node-ID: %s", enodeRes.Seq(), enodeRes.ID().String())
+
+			pubkey := enodeRes.Pubkey()
+			peerID := addrutil.PeerIDFromPubkey(pubkey)
+			nodeID := enode.PubkeyToIDV4(pubkey)
+			log.Infof("XY: %d %d -- %s", pubkey.X, pubkey.Y, pubkey.Curve.Params().Name)
+			log.Infof("NodeID: %s", nodeID.String())
+			log.Infof("PeerID: %s", peerID.String())
 			log.Infof("enode addr: %s", enodeRes.URLv4())
 			muAddr, err := addrutil.EnodeToMultiAddr(enodeRes)
 			if err != nil {
@@ -614,7 +625,7 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 }
 
 type Dv5State struct {
-	Dv5Node dv5.Discv5
+	Dv5Node  dv5.Discv5
 	CloseDv5 context.CancelFunc
 }
 
@@ -736,7 +747,7 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 				writeErrMsg(cmd, "Failed to ping %s: %v", target.String(), err)
 				return
 			}
-			log.Infof("Succesfully pinged %s: ", target.String())
+			log.Infof("Successfully pinged %s: ", target.String())
 		},
 	})
 
@@ -757,7 +768,7 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 				writeErrMsg(cmd, "Failed to resolve %s, nil result", target.String())
 				return
 			}
-			log.Infof("Succesfully resolved:   %s   -->  %s", target.String(), resolved.String())
+			log.Infof("Successfully resolved:   %s   -->  %s", target.String(), resolved.String())
 		},
 	})
 
@@ -778,10 +789,9 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			log.Infof("Succesfully got ENR for node:   %s   -->  %s", target.String(), enrRes.String())
+			log.Infof("Successfully got ENR for node:   %s   -->  %s", target.String(), enrRes.String())
 		},
 	})
-
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "random <N>",
@@ -897,7 +907,7 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 }
 
 type KadState struct {
-	KadNode kad.Kademlia
+	KadNode  kad.Kademlia
 	CloseKad context.CancelFunc
 }
 
@@ -1040,9 +1050,9 @@ type topicLogger struct {
 type topicLoggers map[string]*topicLogger
 
 type GossipState struct {
-	GsNode gossip.GossipSub
-	CloseGS context.CancelFunc
-	Topics joinedTopics
+	GsNode       gossip.GossipSub
+	CloseGS      context.CancelFunc
+	Topics       joinedTopics
 	TopicLoggers topicLoggers
 }
 
@@ -1067,7 +1077,7 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start",
 		Short: "Start GossipSub",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -1092,7 +1102,7 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "stop",
 		Short: "Stop GossipSub",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1106,13 +1116,13 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List joined gossip topics",
-		Args: cobra.NoArgs,
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
 			}
 			log.Infof("on %d topics:", len(state.Topics))
-			for topic, _ := range state.Topics {
+			for topic := range state.Topics {
 				log.Infof("topic: %s", topic)
 			}
 		},
@@ -1361,7 +1371,7 @@ func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
 			}
 			sFn := reqresp.NewStreamFn(func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
 				return r.P2PHost.NewStream(ctx, peerId, protocolId)
-			}).WithTimeout(time.Second*10)
+			}).WithTimeout(time.Second * 10)
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10) // TODO add timeout option
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
@@ -1392,7 +1402,7 @@ func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
 					log.Errorf("request (protocol %s) to %s was turned down at chunk %d because of SERVER ERROR. Error message from server: %s", m.Protocol, peerID, chunkIndex, msg)
 					return nil
 				}, func() {
-					log.Debugf("Responses of peer %s stopped after %d response chunks", peerID.Pretty(),lastRespChunkIndex+1)
+					log.Debugf("Responses of peer %s stopped after %d response chunks", peerID.Pretty(), lastRespChunkIndex+1)
 					onClose(peerID)
 				}); err != nil {
 				writeErrMsg(cmd, "failed request: %v", err)
@@ -1485,29 +1495,29 @@ func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
 	goodbyeCmd.AddCommand(makeReqCmd(&cobra.Command{
 		Use:   "req <peerID> <code>",
 		Short: "Send a goodbye to a peer, optionally disconnecting the peer after sending the Goodbye.",
-		Args: cobra.ExactArgs(2),
+		Args:  cobra.ExactArgs(2),
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.GoodbyeRPCv1
 	}, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
-			v, err := strconv.ParseUint(args[1], 0, 64)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
-			}
-			req := methods.Goodbye(v)
-			return &req, nil
-		}, func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error {
-			if chunkIndex > 0 {
-				return fmt.Errorf("unexpected second Goodbye response chunk from peer %s", peerID.Pretty())
-			}
-			var data methods.Goodbye
-			if err := readChunk(&data); err != nil {
-				return err
-			}
-			log.Infof("Goodbye RPC response of peer %s: %d", peerID.Pretty(), data)
-			return nil
-		}, func(peerID peer.ID) {
-			log.Infof("Goodbye RPC responses of peer %s ended", peerID.Pretty())
-		},
+		v, err := strconv.ParseUint(args[1], 0, 64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
+		}
+		req := methods.Goodbye(v)
+		return &req, nil
+	}, func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error {
+		if chunkIndex > 0 {
+			return fmt.Errorf("unexpected second Goodbye response chunk from peer %s", peerID.Pretty())
+		}
+		var data methods.Goodbye
+		if err := readChunk(&data); err != nil {
+			return err
+		}
+		log.Infof("Goodbye RPC response of peer %s: %d", peerID.Pretty(), data)
+		return nil
+	}, func(peerID peer.ID) {
+		log.Infof("Goodbye RPC responses of peer %s ended", peerID.Pretty())
+	},
 	))
 	goodbyeCmd.AddCommand(makeRespCmd(&cobra.Command{
 		Use:   "resp",
@@ -1559,7 +1569,7 @@ func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
 	blocksByRangeReqCmd := makeReqCmd(&cobra.Command{
 		Use:   "req <peerID> <start-slot> <count> <step> [head-root-hex]",
 		Short: "Get blocks by range from a peer. The head-root is optional, and defaults to zeroes. Use --v2 for no head-root.",
-		Args: cobra.RangeArgs(4, 5),
+		Args:  cobra.RangeArgs(4, 5),
 	}, chooseBlocksByRangeVersion, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
 		startSlot, err := strconv.ParseUint(args[1], 0, 64)
 		if err != nil {
@@ -1579,15 +1589,15 @@ func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
 		}
 		if v2 {
 			return &methods.BlocksByRangeReqV2{
-				StartSlot:     methods.Slot(startSlot),
-				Count:         count,
-				Step:          step,
+				StartSlot: methods.Slot(startSlot),
+				Count:     count,
+				Step:      step,
 			}, nil
 		} else {
 			var root [32]byte
 			if len(args) > 4 {
 				root, err = parseRoot(args[4])
-				if err != nil{
+				if err != nil {
 					return nil, err
 				}
 			}
@@ -1681,7 +1691,7 @@ func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
 	statusCmd.AddCommand(makeReqCmd(&cobra.Command{
 		Use:   "req <peerID> [<head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>]",
 		Short: "Ask peer for status. Request with given status, or current status if not defined.",
-		Args:  func(cmd *cobra.Command, args []string) error {
+		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 && len(args) != 6 {
 				return fmt.Errorf("accepts either 1 or 6 args, received %d", len(args))
 			}

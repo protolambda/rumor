@@ -5,11 +5,9 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/ethereum/go-ethereum/common/mclock"
 	geth_log "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/protolambda/rumor/node"
 	"github.com/sirupsen/logrus"
@@ -94,8 +92,8 @@ func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey
 
 	localNodeDB, err := enode.OpenDB("") // memory-DB
 	localNode := enode.NewLocalNode(localNodeDB, ecdsaPrivKey)
-	localNode.Set(enr.IPv4(udpAddr.IP))
-	localNode.Set(enr.UDP(udpAddr.Port))
+	localNode.SetFallbackIP(udpAddr.IP)
+	localNode.SetFallbackUDP(udpAddr.Port)
 
 	unhandledMsgs := make(chan discover.ReadPacket)
 	go func() {
@@ -116,10 +114,9 @@ func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey
 		PrivateKey:   ecdsaPrivKey,
 		NetRestrict:  nil,
 		Bootnodes:    bootNodes,
-		Unhandled:    unhandledMsgs,
+		Unhandled:    nil, // Not used in dv5
 		Log:          gethLogger,
-		ValidSchemes: enode.V4ID{},
-		Clock:        mclock.System{},
+		ValidSchemes: enode.ValidSchemes,
 	}
 	udpV5, err := discover.ListenV5(conn, localNode, cfg)
 	if err != nil {
