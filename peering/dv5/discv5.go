@@ -20,10 +20,8 @@ type Discv5 interface {
 	LookupRandom() []*enode.Node
 	Close()
 	Ping(n *enode.Node) error
-	ReadRandomNodes(buf []*enode.Node) int
 	Resolve(n *enode.Node) *enode.Node
 	RequestENR(n *enode.Node) (*enode.Node, error)
-	Trace(v bool)
 }
 
 type Discv5Impl struct {
@@ -33,23 +31,16 @@ type Discv5Impl struct {
 	gLog *GethLogger
 }
 
-func (d Discv5Impl) Trace(v bool) {
-	if v {
-		d.gLog.LogLevel = geth_log.LvlTrace
-	} else {
-		d.gLog.LogLevel = geth_log.LvlInfo
-	}
-}
-
 type GethLogger struct {
 	logrus.FieldLogger
-	LogLevel geth_log.Lvl
 }
 
 // New returns a new Logger that has this logger's context plus the given context
-func (l *GethLogger) Log(r *geth_log.Record) error {
-	if l.LogLevel < r.Lvl {
-		return nil
+func (gl *GethLogger) Log(r *geth_log.Record) error {
+	rCtx := r.Ctx
+	l := gl.FieldLogger
+	for i := 0; i < len(rCtx); i += 2 {
+		l = l.WithField(rCtx[i].(string), rCtx[i+1])
 	}
 	switch r.Lvl {
 	case geth_log.LvlCrit:
@@ -106,7 +97,7 @@ func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey
 			}
 		}
 	}()
-	gethLogWrap := GethLogger{FieldLogger: dv5Log, LogLevel: geth_log.LvlWarn}
+	gethLogWrap := GethLogger{FieldLogger: dv5Log}
 	gethLogger := geth_log.New()
 	gethLogger.SetHandler(&gethLogWrap)
 

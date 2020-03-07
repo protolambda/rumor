@@ -793,28 +793,6 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 		},
 	})
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "random <N>",
-		Short: "Get random list of N nodes.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			addrsLen, err := strconv.ParseUint(args[0], 0, 64)
-			if err != nil {
-				writeErr(cmd, err)
-				return
-			}
-			addrs := make([]*enode.Node, addrsLen)
-			n := state.Dv5Node.ReadRandomNodes(addrs)
-			if err := handleLookup(addrs[:n], false); err != nil {
-				writeErr(cmd, err)
-				return
-			}
-		},
-	})
-
 	connectLookup := false
 	lookupCmd := &cobra.Command{
 		Use:   "lookup [target node: hex node ID, enode address or ENR (url-base64)]",
@@ -831,8 +809,8 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 						writeErrMsg(cmd, "provided target node is not a valid node ID, enode address or ENR")
 						return
 					} else {
-						if len(h) != 64 {
-							writeErrMsg(cmd, "hex node ID is not 64 bytes")
+						if len(h) != 32 {
+							writeErrMsg(cmd, "hex node ID is not 32 bytes")
 							return
 						} else {
 							copy(target[:], h)
@@ -887,20 +865,6 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 			log.Infof("local ENR: %s", v)
 			enodeAddr := state.Dv5Node.Self()
 			log.Infof("local dv5 node (no TCP in ENR): %s", enodeAddr.String())
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "trace <bool>",
-		Short: "be very verbose about discv5 interactions",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			v := strings.ToLower(args[0])
-			tracing := v == "true" || v == "y" || v == "yes" || v == "on"
-			state.Dv5Node.Trace(tracing)
-			log.Infof("Set discv5 tracing mode to %v", tracing)
 		},
 	})
 	return cmd
