@@ -11,8 +11,8 @@ git clone git@github.com:protolambda/rumor.git
 cd rumor
 go get ./...
 
-# Now run it
-go run .
+# Now run it (in interactive mode, a.k.a. REPL functionality)
+go run . -i
 ```
 
 ## Usage

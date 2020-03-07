@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/chzyer/readline"
 	"github.com/google/shlex"
 	"github.com/protolambda/rumor/repl"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"os/signal"
@@ -45,65 +47,143 @@ func (l *LogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
 }
 
 func main() {
-	l, err := readline.NewEx(&readline.Config{
-		Prompt:          "\033[31m»\033[0m ",
-		HistoryFile:     "/tmp/eth2-network-repl.tmp",
-		InterruptPrompt: "^C",
-		EOFPrompt:       "exit",
-
-		HistorySearchFold:   true,
-		FuncFilterInputRune: filterInput,
-	})
-	if err != nil {
-		panic(err)
-	}
+	var interactive bool
+	fromFilepath := ""
+	var level string
 
 	log := logrus.New()
-	log.SetFormatter(&LogFormatter{TextFormatter: logrus.TextFormatter{ForceColors: true}})
-	log.SetOutput(l.Stdout())
-	log.SetLevel(logrus.TraceLevel)
+	log.SetOutput(os.Stdout)
+	log.SetLevel(logrus.InfoLevel)
 
-	rep := repl.NewRepl(log)
-	stop := make(chan os.Signal, 1)
-	go func() {
-		for {
-			replCmd := rep.Cmd()
-			replCmd.SetOut(l.Stdout())
-			replCmd.SetErr(l.Stdout())
-
-			line, err := l.Readline()
-			if err == readline.ErrInterrupt {
-				if len(line) == 0 {
-					break
-				} else {
-					continue
+	mainCmd := cobra.Command{
+		Use:   "rumor",
+		Short: "Start Rumor",
+		Args: func(cmd *cobra.Command, args []string) error {
+			if level != "" {
+				logLevel, err := logrus.ParseLevel(level)
+				if err != nil {
+					return err
 				}
-			} else if err == io.EOF {
-				break
+				log.SetLevel(logLevel)
 			}
-			line = strings.TrimSpace(line)
-			if line == "exit" {
-				stop <- syscall.SIGINT
-				break
+			if interactive {
+				if len(args) != 0 {
+					return fmt.Errorf("interactive mode cannot process any arguments. Got: %s", strings.Join(args, " "))
+				}
+				log.SetFormatter(&LogFormatter{TextFormatter: logrus.TextFormatter{ForceColors: true}})
+			} else {
+				if len(args) > 1 {
+					return fmt.Errorf("non-interactive mode cannot have more than 1 argument. Got: %s", strings.Join(args, " "))
+				}
+				if len(args) == 1 {
+					fromFilepath = args[0]
+				}
+				log.SetFormatter(&logrus.JSONFormatter{})
 			}
-			cmdArgs, err := shlex.Split(line)
-			if err != nil {
-				log.Errorf("Failed to parse command: %v\n", err)
-				continue
-			}
-			replCmd.SetArgs(cmdArgs)
-			if err := replCmd.Execute(); err != nil {
-				log.Errorf("Command error: %v\n", err)
-				continue
-			}
-		}
-	}()
+			return nil
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			if interactive {
+				l, err := readline.NewEx(&readline.Config{
+					Prompt:              "\033[31m»\033[0m ",
+					HistoryFile:         "/tmp/rumor-history.tmp",
+					InterruptPrompt:     "^C",
+					EOFPrompt:           "exit",
+					HistorySearchFold:   true,
+					FuncFilterInputRune: filterInput,
+				})
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				defer l.Close()
 
-	signal.Notify(stop, syscall.SIGINT)
+				stop := make(chan os.Signal, 1)
+				signal.Notify(stop, syscall.SIGINT)
 
-	<-stop
-	log.Info("Exiting...")
-	_ = l.Close()
-	rep.Cancel()
+				go runCommands(log, l.Stdout(), l.Stderr(), l.Readline)
+
+				<-stop
+				log.Info("Exiting...")
+			} else {
+				r := io.Reader(os.Stdin)
+				if fromFilepath != "" {
+					inputFile, err := os.Open(fromFilepath)
+					if err != nil {
+						log.Error(err)
+						return
+					}
+					r = inputFile
+					defer inputFile.Close()
+				}
+				sc := bufio.NewScanner(r)
+				nextLine := func() (s string, err error) {
+					hasMore := sc.Scan()
+					text := sc.Text()
+					err = sc.Err()
+					if err == nil && !hasMore {
+						err = io.EOF
+					}
+					return text, err
+				}
+				runCommands(log, os.Stdout, os.Stderr, nextLine)
+			}
+
+		},
+	}
+	mainCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Interactive mode: run as REPL.")
+	mainCmd.Flags().StringVar(&level, "level", "info", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
+
+	if err := mainCmd.Execute(); err != nil {
+		log.Error(err)
+	}
 	os.Exit(0)
+}
+
+func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLine func() (string, error)) {
+	inputLog := log.WithField("log_topic", "input")
+	commentLog := log.WithField("log_topic", "comment")
+	rep := repl.NewRepl(log)
+	for {
+		replCmd := rep.Cmd()
+		replCmd.SetOut(out)
+		replCmd.SetErr(errOut)
+
+		line, err := nextLine()
+		if err == readline.ErrInterrupt {
+			if len(line) == 0 {
+				break
+			} else {
+				continue
+			}
+		} else if err == io.EOF {
+			break
+		}
+		line = strings.TrimSpace(line)
+		// skip empty lines
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			commentLog.Info(line)
+			continue
+		}
+		inputLog.Info(line)
+		// exits
+		if line == "exit" {
+			return
+		}
+		cmdArgs, err := shlex.Split(line)
+		if err != nil {
+			log.Errorf("Failed to parse command: %v\n", err)
+			continue
+		}
+		replCmd.SetArgs(cmdArgs)
+		if err := replCmd.Execute(); err != nil {
+			log.Errorf("Command error: %v\n", err)
+			continue
+		}
+	}
+
+	rep.Cancel()
 }

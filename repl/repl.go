@@ -1067,6 +1067,7 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "start",
 		Short: "Start GossipSub",
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.NoHost(cmd) {
 				return
@@ -1091,6 +1092,7 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "stop",
 		Short: "Stop GossipSub",
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1104,6 +1106,7 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List joined gossip topics",
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
@@ -1196,13 +1199,6 @@ func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
 			}
 			state.GsNode.BlacklistPeer(peerID)
 			log.Infof("Blacklisted peer %s", peerID.Pretty())
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "lurk <topic>",
-		Short: "Lurk a gossip topic. Propagate nothing.",
-		Run: func(cmd *cobra.Command, args []string) {
-			// TODO
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
