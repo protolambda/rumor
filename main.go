@@ -163,7 +163,7 @@ func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLi
 		if actor, ok := actors[name]; ok {
 			return actor
 		} else {
-			rep := repl.NewRepl(log.WithField("actor", name))
+			rep := repl.NewRepl()
 			actors[name] = rep
 			return rep
 		}
@@ -210,12 +210,18 @@ func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLi
 
 		rep := getActor(actorName)
 
-		replCmd := rep.Cmd()
-		replCmd.SetOut(out)
-		replCmd.SetErr(errOut)
-
-		replCmd.SetArgs(cmdArgs)
-		if err := replCmd.Execute(); err != nil {
+		replCmd := rep.Cmd(log.WithField("actor", actorName))
+		cmd, remainingArgs, err := replCmd.Find(cmdArgs)
+		if err != nil {
+			log.Errorf("Failed to find command: %v\n", err)
+			continue
+		}
+		path := strings.Join(cmdArgs[len(cmdArgs) - len(remainingArgs):], "/")
+		// TODO: fix log to include command path
+		cmd.SetOut(out)
+		cmd.SetErr(errOut)
+		cmd.SetArgs(remainingArgs)
+		if err := cmd.Execute(); err != nil {
 			log.Errorf("Command error: %v\n", err)
 			continue
 		}

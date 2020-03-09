@@ -56,7 +56,6 @@ type Repl struct {
 	GossipState GossipState
 	RPCState    RPCState
 
-	Log    logrus.FieldLogger
 	Ctx    context.Context
 	Cancel context.CancelFunc
 }
@@ -64,45 +63,41 @@ type Repl struct {
 // check interface
 var _ = (node.Node)((*Repl)(nil))
 
-func NewRepl(log logrus.FieldLogger) *Repl {
-	repl := &Repl{
-		Log: log,
+func NewRepl() *Repl {
+	ctxAll, cancelAll := context.WithCancel(context.Background())
+	return &Repl{
+		Ctx: ctxAll,
+		Cancel: cancelAll,
 	}
-	{
-		ctxAll, cancelAll := context.WithCancel(context.Background())
-		repl.Ctx = ctxAll
-		repl.Cancel = cancelAll
-	}
-	return repl
 }
 
-func (r *Repl) Cmd() *cobra.Command {
+func (r *Repl) Cmd(log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "",
 		Short: "A REPL for Eth2 networking.",
 		Long:  `A REPL for Eth2 networking. For debugging and interacting with Eth2 network components.`,
+		PreRun: func(cmd *cobra.Command, args []string) {
+			log = log.WithField("log_topic", cmd.CommandPath())
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			_ = cmd.Help()
 		},
 	}
+	// TODO: if too slow to initialize all commands, we could initialize just the called command.
 	cmd.AddCommand(
-		r.InitHostCmd(),
-		r.InitEnrCmd(),
-		r.InitPeerCmd(),
-		r.InitDv5Cmd(&r.Dv5State),
-		r.InitKadCmd(&r.KadState),
-		r.InitGossipCmd(&r.GossipState),
-		r.InitRpcCmd(&r.RPCState),
+		r.InitHostCmd(log),
+		r.InitEnrCmd(log),
+		r.InitPeerCmd(log),
+		r.InitDv5Cmd(log, &r.Dv5State),
+		r.InitKadCmd(log, &r.KadState),
+		r.InitGossipCmd(log, &r.GossipState),
+		r.InitRpcCmd(log, &r.RPCState),
 	)
 	return cmd
 }
 
 func (r *Repl) Host() host.Host {
 	return r.P2PHost
-}
-
-func (r *Repl) Logger(logTopic string) logrus.FieldLogger {
-	return r.Log.WithField("log_topic", logTopic)
 }
 
 func writeErrMsg(cmd *cobra.Command, format string, a ...interface{}) {
@@ -126,7 +121,7 @@ func (r *Repl) GetEnr() *enr.Record {
 	return addrutil.MakeENR(r.IP, r.TcpPort, r.UdpPort, priv)
 }
 
-func (r *Repl) InitHostCmd() *cobra.Command {
+func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "host",
 		Short: "Manage host",
@@ -161,7 +156,7 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 						writeErr(cmd, err)
 						return
 					}
-					r.Logger("host-key").Infof("Generated random Secp256k1 private key: %s", hex.EncodeToString(p))
+					log.Infof("Generated random Secp256k1 private key: %s", hex.EncodeToString(p))
 				} else {
 					priv, err := addrutil.ParsePrivateKey(privKeyStr)
 					if err != nil {
@@ -235,8 +230,6 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	startCmd.Flags().IntVar(&loPeers, "lo-peers", 15, "low-water for connection manager to trim peer count to")
 	startCmd.Flags().IntVar(&hiPeers, "hi-peers", 20, "high-water for connection manager to trim peer count from")
 	startCmd.Flags().IntVar(&gracePeriodMs, "peer-grace-period", 20_000, "Time in milliseconds to grace a peer from being trimmed")
-
-	log := r.Logger("host")
 
 	printEnr := func(cmd *cobra.Command) {
 		enrStr, err := addrutil.EnrToString(r.GetEnr())
@@ -346,12 +339,11 @@ func (r *Repl) InitHostCmd() *cobra.Command {
 	return cmd
 }
 
-func (r *Repl) InitEnrCmd() *cobra.Command {
+func (r *Repl) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "enr",
 		Short: "Ethereum Name Record (ENR) utilities",
 	}
-	log := r.Logger("enr")
 	cmd.AddCommand(&cobra.Command{
 		Use:   "view <enr>",
 		Short: "view ENR contents. ENR is url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix.",
@@ -440,7 +432,7 @@ func (r *Repl) InitEnrCmd() *cobra.Command {
 	return cmd
 }
 
-func (r *Repl) InitPeerCmd() *cobra.Command {
+func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "peer",
 		Short: "Manage Libp2p peerstore",
@@ -465,7 +457,6 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 			default:
 				writeErrMsg(cmd, "invalid peer type: %s", args[0])
 			}
-			log := r.Logger("peers")
 			log.Infof("%d peers", len(peers))
 			for i, p := range peers {
 				log.Infof("%4d: %s", i, r.P2PHost.Peerstore().PeerInfo(p).String())
@@ -492,7 +483,6 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 			if r.NoHost(cmd) {
 				return
 			}
-			log := r.Logger("connect-peer")
 			addrStr := args[0]
 			var muAddr ma.Multiaddr
 			if dv5Addr, err := addrutil.ParseEnodeAddr(addrStr); err != nil {
@@ -541,7 +531,6 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 				return
 			}
 			conns := r.P2PHost.Network().ConnsToPeer(peerID)
-			log := r.Logger("disconnect-peer")
 			for _, c := range conns {
 				if err := c.Close(); err != nil {
 					log.Infof("error during disconnect of peer %s (%s)", peerID.Pretty(), c.RemoteMultiaddr().String())
@@ -563,7 +552,6 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			log := r.Logger("protect-peer")
 			tag := args[1]
 			r.P2PHost.ConnManager().Protect(peerID, tag)
 			log.Infof("protected peer %s as %s", peerID.Pretty(), tag)
@@ -582,7 +570,6 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			log := r.Logger("protect-peer")
 			tag := args[1]
 			r.P2PHost.ConnManager().Unprotect(peerID, tag)
 			log.Infof("protected peer %s as %s", peerID.Pretty(), tag)
@@ -596,7 +583,6 @@ func (r *Repl) InitPeerCmd() *cobra.Command {
 			if r.NoHost(cmd) {
 				return
 			}
-			log := r.Logger("peer-addrs")
 			if len(args) > 0 {
 				peerID, err := peer.Decode(args[0])
 				if err != nil {
@@ -629,12 +615,11 @@ type Dv5State struct {
 	CloseDv5 context.CancelFunc
 }
 
-func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
+func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dv5",
 		Short: "Manage Ethereum Discv5",
 	}
-	log := r.Logger("discv5")
 
 	noDv5 := func(cmd *cobra.Command) bool {
 		if r.NoHost(cmd) {
@@ -681,6 +666,7 @@ func (r *Repl) InitDv5Cmd(state *Dv5State) *cobra.Command {
 				return
 			}
 			state.CloseDv5 = cancel
+			log.Info("Started discv5")
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -875,7 +861,7 @@ type KadState struct {
 	CloseKad context.CancelFunc
 }
 
-func (r *Repl) InitKadCmd(state *KadState) *cobra.Command {
+func (r *Repl) InitKadCmd(log logrus.FieldLogger, state *KadState) *cobra.Command {
 	noKad := func(cmd *cobra.Command) bool {
 		if r.NoHost(cmd) {
 			return true
@@ -923,7 +909,7 @@ func (r *Repl) InitKadCmd(state *KadState) *cobra.Command {
 			}
 			state.CloseKad()
 			state.KadNode = nil
-			r.Logger("kad").Info("Stopped kademlia DHT")
+			log.Info("Stopped kademlia DHT")
 		},
 	})
 
@@ -963,12 +949,12 @@ func (r *Repl) InitKadCmd(state *KadState) *cobra.Command {
 			for {
 				select {
 				case <-ctx.Done():
-					r.Logger("kad").Infof("Timed out connected addrs query for peer %s", peerID.Pretty())
+					log.Infof("Timed out connected addrs query for peer %s", peerID.Pretty())
 					return
 				case info, ok := <-addrInfos:
-					r.Logger("kad").Infof("Found connected address for peer %s: %s", peerID.Pretty(), info.String())
+					log.Infof("Found connected address for peer %s: %s", peerID.Pretty(), info.String())
 					if !ok {
-						r.Logger("kad").Infof("Stopped connected addrs query for peer %s", peerID.Pretty())
+						log.Infof("Stopped connected addrs query for peer %s", peerID.Pretty())
 						return
 					}
 				}
@@ -995,7 +981,7 @@ func (r *Repl) InitKadCmd(state *KadState) *cobra.Command {
 				writeErr(cmd, err)
 				return
 			}
-			r.Logger("kad").Infof("Found address for peer %s: %s", peerID.Pretty(), addrInfo.String())
+			log.Infof("Found address for peer %s: %s", peerID.Pretty(), addrInfo.String())
 		},
 	})
 
@@ -1020,10 +1006,7 @@ type GossipState struct {
 	TopicLoggers topicLoggers
 }
 
-func (r *Repl) InitGossipCmd(state *GossipState) *cobra.Command {
-
-	log := r.Logger("gossip")
-
+func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.Command {
 	noGS := func(cmd *cobra.Command) bool {
 		if r.NoHost(cmd) {
 			return true
@@ -1298,12 +1281,11 @@ type RPCState struct {
 	CurrentStatus methods.Status
 }
 
-func (r *Repl) InitRpcCmd(state *RPCState) *cobra.Command {
+func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rpc",
 		Short: "Manage Eth2 RPC",
 	}
-	log := r.Logger("rpc")
 
 	readOptionalComp := func(cmd *cobra.Command) (reqresp.Compression, error) {
 		if compStr, err := cmd.Flags().GetString("compression"); err != nil {
