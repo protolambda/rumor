@@ -26,23 +26,22 @@ type KademliaImpl struct {
 	log logrus.FieldLogger
 }
 
-func NewKademlia(ctx context.Context, n node.Node, id protocol.ID) (Kademlia, error) {
+func NewKademlia(ctx context.Context, log logrus.FieldLogger, n node.Node, id protocol.ID) (Kademlia, error) {
 	// example protocol id: "/prysm/0.0.0/dht"
 	dhtOpts := []dhtopts.Option{
 		dhtopts.Datastore(ds_sync.MutexWrap(ds.NewMapDatastore())), // instead of the default map datastore.
 		dhtopts.Protocols(id), // don't creep onto the default IPFS network, join the configured DHT
 	}
-	logger := n.Logger("kademlia")
 	kd, err := kad_dht.New(ctx, n.Host(), dhtOpts...)
 	if err != nil {
-		logger.Errorf("Failed to start Kademlia DHT, protocol: %s", id)
+		log.Errorf("Failed to start Kademlia DHT, protocol: %s", id)
 		return nil, err
 	}
-	logger.Infof("started Kademlia DHT, protocol: %s", id)
+	log.Infof("started Kademlia DHT, protocol: %s", id)
 	return &KademliaImpl{
 		protocolID: id,
 		dhtData: kd,
-		log:     logger,
+		log:     log,
 	}, nil
 }
 

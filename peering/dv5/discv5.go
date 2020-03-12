@@ -59,8 +59,7 @@ func (gl *GethLogger) Log(r *geth_log.Record) error {
 	return nil
 }
 
-func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
-	dv5Log := n.Logger("discv5")
+func NewDiscV5(ctx context.Context, log logrus.FieldLogger, n node.Node, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
 	k, ok := privKey.(*crypto.Secp256k1PrivateKey)
 	if !ok {
 		return nil, errors.New("libp2p-crypto private key is not a Secp256k1 key")
@@ -72,14 +71,14 @@ func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey
 		Port: int(port),
 	}
 
-	dv5Log = dv5Log.WithField("addr", udpAddr)
+	log = log.WithField("addr", udpAddr)
 
 	conn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		dv5Log.Debugf("UDP listener start err: %v", err)
+		log.Debugf("UDP listener start err: %v", err)
 		return nil, err
 	}
-	dv5Log.Debug("UDP listener up")
+	log.Debug("UDP listener up")
 
 	localNodeDB, err := enode.OpenDB("") // memory-DB
 	localNode := enode.NewLocalNode(localNodeDB, ecdsaPrivKey)
@@ -93,11 +92,11 @@ func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey
 			case <-ctx.Done():
 				return
 			case msg := <-unhandledMsgs:
-				dv5Log.Debugf("Received unhandled message from %s: %x", msg.Addr.String(), msg.Data)
+				log.Debugf("Received unhandled message from %s: %x", msg.Addr.String(), msg.Data)
 			}
 		}
 	}()
-	gethLogWrap := GethLogger{FieldLogger: dv5Log}
+	gethLogWrap := GethLogger{FieldLogger: log}
 	gethLogger := geth_log.New()
 	gethLogger.SetHandler(&gethLogWrap)
 
@@ -111,22 +110,22 @@ func NewDiscV5(ctx context.Context, n node.Node, ip net.IP, port uint16, privKey
 	}
 	udpV5, err := discover.ListenV5(conn, localNode, cfg)
 	if err != nil {
-		dv5Log.Debugf("Discv5 listener start err: %v", err)
+		log.Debugf("Discv5 listener start err: %v", err)
 		return nil, err
 	}
-	dv5Log.Debug("Discv5 listener up")
+	log.Debug("Discv5 listener up")
 	go func() {
 		<-ctx.Done()
-		dv5Log.Info("closing discv5", udpAddr.String())
+		log.Info("closing discv5", udpAddr.String())
 		udpV5.Close()
 		close(unhandledMsgs)
-		dv5Log.Info("closed discv5", udpAddr.String())
+		log.Info("closed discv5", udpAddr.String())
 	}()
 
 	return &Discv5Impl{
 		UDPv5: udpV5,
 		addr:  udpAddr,
-		log:   dv5Log,
+		log:   log,
 		gLog:  &gethLogWrap,
 	}, nil
 }

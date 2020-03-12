@@ -39,6 +39,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -71,14 +72,29 @@ func NewRepl() *Repl {
 	}
 }
 
-func (r *Repl) Cmd(log logrus.FieldLogger) *cobra.Command {
+type Logger struct {
+	// Wrapping the regular logger, to make modifications after passing it to other places.
+	logrus.FieldLogger
+	m sync.Mutex
+}
+
+func NewLogger(inner logrus.FieldLogger) *Logger {
+	return &Logger{
+		FieldLogger: inner,
+	}
+}
+
+func (l *Logger) Modify(modFn func(old logrus.FieldLogger) (new logrus.FieldLogger))  {
+	l.m.Lock()
+	defer l.m.Unlock()
+	l.FieldLogger = modFn(l.FieldLogger)
+}
+
+func (r *Repl) Cmd(log *Logger) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "",
+		Use:   "rumor",
 		Short: "A REPL for Eth2 networking.",
 		Long:  `A REPL for Eth2 networking. For debugging and interacting with Eth2 network components.`,
-		PreRun: func(cmd *cobra.Command, args []string) {
-			log = log.WithField("log_topic", cmd.CommandPath())
-		},
 		Run: func(cmd *cobra.Command, args []string) {
 			_ = cmd.Help()
 		},
@@ -100,17 +116,9 @@ func (r *Repl) Host() host.Host {
 	return r.P2PHost
 }
 
-func writeErrMsg(cmd *cobra.Command, format string, a ...interface{}) {
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), format+"\n", a...)
-}
-
-func writeErr(cmd *cobra.Command, err error) {
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), err.Error()+"\n")
-}
-
-func (r *Repl) NoHost(cmd *cobra.Command) bool {
+func (r *Repl) NoHost(log logrus.FieldLogger) bool {
 	if r.P2PHost == nil {
-		writeErrMsg(cmd, "REPL must have initialized Libp2p host. Try 'host start'")
+		log.Error("REPL must have initialized Libp2p host. Try 'host start'")
 		return true
 	}
 	return false
@@ -140,7 +148,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if r.P2PHost != nil {
-				writeErrMsg(cmd, "Already have a host open.")
+				log.Error("Already have a host open.")
 				return
 			}
 			{
@@ -148,19 +156,19 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 					var err error
 					r.PrivKey, _, err = crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
 					if err != nil {
-						writeErr(cmd, err)
+						log.Error(err)
 						return
 					}
 					p, err := crypto.MarshalPrivateKey(r.PrivKey)
 					if err != nil {
-						writeErr(cmd, err)
+						log.Error(err)
 						return
 					}
 					log.Infof("Generated random Secp256k1 private key: %s", hex.EncodeToString(p))
 				} else {
 					priv, err := addrutil.ParsePrivateKey(privKeyStr)
 					if err != nil {
-						writeErr(cmd, err)
+						log.Error(err)
 						return
 					}
 					r.PrivKey = (*crypto.Secp256k1PrivateKey)(priv)
@@ -176,7 +184,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 				case "ws":
 					hostOptions = append(hostOptions, libp2p.Transport(ws.New))
 				default:
-					writeErrMsg(cmd, "could not recognize transport %s", v)
+					log.Errorf("could not recognize transport %s", v)
 					return
 				}
 			}
@@ -189,7 +197,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 				case "mplex":
 					hostOptions = append(hostOptions, libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport))
 				default:
-					writeErrMsg(cmd, "could not recognize mux %s", v)
+					log.Errorf("could not recognize mux %s", v)
 					return
 				}
 			}
@@ -201,7 +209,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 				case "secio":
 					hostOptions = append(hostOptions, libp2p.Security(secio.ID, secio.New))
 				default:
-					writeErrMsg(cmd, "could not recognize security %s", securityStr)
+					log.Errorf("could not recognize security %s", securityStr)
 					return
 				}
 			}
@@ -216,7 +224,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 			)
 			h, err := libp2p.New(r.Ctx, hostOptions...)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			r.P2PHost = h
@@ -234,7 +242,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 	printEnr := func(cmd *cobra.Command) {
 		enrStr, err := addrutil.EnrToString(r.GetEnr())
 		if err != nil {
-			writeErr(cmd, err)
+			log.Error(err)
 			return
 		}
 		log.Infof("ENR address: %s", enrStr)
@@ -249,7 +257,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 			Short: "Start listening on given address (see option flags).",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				if r.NoHost(cmd) {
+				if r.NoHost(log) {
 					return
 				}
 				ip := net.ParseIP(ipStr)
@@ -257,13 +265,13 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 				if ip == nil {
 					ifaces, err := net.Interfaces()
 					if err != nil {
-						writeErr(cmd, err)
+						log.Error(err)
 						return
 					}
 					for _, i := range ifaces {
 						addrs, err := i.Addrs()
 						if err != nil {
-							writeErr(cmd, err)
+							log.Error(err)
 							return
 						}
 						for _, addr := range addrs {
@@ -281,7 +289,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 					}
 				}
 				if ip == nil {
-					writeErrMsg(cmd, "no IP found")
+					log.Error("no IP found")
 					return
 				}
 				ipScheme := "ip4"
@@ -296,11 +304,11 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 				log.Infof("ip: %s tcp: %d", ipScheme, tcpPort)
 				mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, ip.String(), tcpPort))
 				if err != nil {
-					writeErrMsg(cmd, "could not construct multi addr: %v", err)
+					log.Errorf("could not construct multi addr: %v", err)
 					return
 				}
 				if err := r.Host().Network().Listen(mAddr); err != nil {
-					writeErr(cmd, err)
+					log.Error(err)
 					return
 				}
 				r.IP = ip
@@ -319,7 +327,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "View local peer ID, listening addresses, etc.",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			h := r.Host()
@@ -352,7 +360,7 @@ func (r *Repl) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 			enrStr := args[0]
 			rec, err := addrutil.ParseEnr(enrStr)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			enrPairs := rec.AppendElements(nil)
@@ -375,7 +383,7 @@ func (r *Repl) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 			var enodeRes *enode.Node
 			enodeRes, err = addrutil.EnrToEnode(rec, true)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 
@@ -388,7 +396,7 @@ func (r *Repl) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 			log.Infof("enode addr: %s", enodeRes.URLv4())
 			muAddr, err := addrutil.EnodeToMultiAddr(enodeRes)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			log.Infof("multi addr: %s", muAddr.String())
@@ -402,28 +410,28 @@ func (r *Repl) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			ip := net.ParseIP(args[0])
 			if ip == nil {
-				writeErrMsg(cmd, "could not parse ip: %s", args[0])
+				log.Errorf("could not parse ip: %s", args[0])
 				return
 			}
 			tcpPort, err := strconv.ParseUint(args[1], 0, 16)
 			if err != nil {
-				writeErrMsg(cmd, "could not parse tcp port: %v", err)
+				log.Errorf("could not parse tcp port: %v", err)
 				return
 			}
 			udpPort, err := strconv.ParseUint(args[2], 0, 16)
 			if err != nil {
-				writeErrMsg(cmd, "could not parse udp port: %v", err)
+				log.Errorf("could not parse udp port: %v", err)
 				return
 			}
 			priv, err := addrutil.ParsePrivateKey(args[3])
 			if err != nil {
-				writeErrMsg(cmd, "could not pubkey: %v", err)
+				log.Errorf("could not pubkey: %v", err)
 				return
 			}
 			rec := addrutil.MakeENR(ip, uint16(tcpPort), uint16(udpPort), priv)
 			enrStr, err := addrutil.EnrToString(rec)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			log.Infof("ENR address: %s", enrStr)
@@ -442,7 +450,7 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "List peers in peerstore. Defaults to connected only.",
 		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			if len(args) == 0 {
@@ -455,7 +463,7 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 			case "connected":
 				peers = r.P2PHost.Network().Peers()
 			default:
-				writeErrMsg(cmd, "invalid peer type: %s", args[0])
+				log.Errorf("invalid peer type: %s", args[0])
 			}
 			log.Infof("%d peers", len(peers))
 			for i, p := range peers {
@@ -468,7 +476,7 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "Trim peers (2 second time allowance)",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
@@ -480,7 +488,7 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "Connect to peer. Addr can be a multi-addr, enode or ENR",
 		Args:  cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			addrStr := args[0]
@@ -489,25 +497,25 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 				muAddr, err = ma.NewMultiaddr(args[0])
 				if err != nil {
 					log.Info("addr not an enode or multi addr")
-					writeErr(cmd, err)
+					log.Error(err)
 					return
 				}
 			} else {
 				muAddr, err = addrutil.EnodeToMultiAddr(dv5Addr)
 				if err != nil {
-					writeErr(cmd, err)
+					log.Error(err)
 					return
 				}
 			}
 			log.Infof("parsed multi addr: %s", muAddr.String())
 			addrInfo, err := peer.AddrInfoFromP2pAddr(muAddr)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
 			if err := r.P2PHost.Connect(ctx, *addrInfo); err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			log.Infof("connected to peer %s", addrInfo.ID.Pretty())
@@ -522,12 +530,12 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "Disconnect peer",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			conns := r.P2PHost.Network().ConnsToPeer(peerID)
@@ -544,12 +552,12 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "Protect peer, tagging them as <tag>",
 		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			tag := args[1]
@@ -562,12 +570,12 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "Unprotect peer, un-tagging them as <tag>",
 		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			tag := args[1]
@@ -580,13 +588,13 @@ func (r *Repl) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 		Short: "View known addresses of [peerID]. Defaults to local addresses if no peer id is specified.",
 		Args:  cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			if len(args) > 0 {
 				peerID, err := peer.Decode(args[0])
 				if err != nil {
-					writeErr(cmd, err)
+					log.Error(err)
 					return
 				}
 				addrs := r.P2PHost.Peerstore().Addrs(peerID)
@@ -622,11 +630,11 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 	}
 
 	noDv5 := func(cmd *cobra.Command) bool {
-		if r.NoHost(cmd) {
+		if r.NoHost(log) {
 			return true
 		}
 		if state.Dv5Node == nil {
-			writeErrMsg(cmd, "REPL must have initialized discv5. Try 'dv5 start'")
+			log.Error("REPL must have initialized discv5. Try 'dv5 start'")
 			return true
 		}
 		return false
@@ -638,31 +646,31 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 		Long:  "Start discv5.",
 		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			if r.IP == nil {
-				writeErrMsg(cmd, "Host has no IP yet. Get with 'host listen'")
+				log.Error("Host has no IP yet. Get with 'host listen'")
 				return
 			}
 			if state.Dv5Node != nil {
-				writeErrMsg(cmd, "Already have dv5 open at %s", state.Dv5Node.Self().String())
+				log.Errorf("Already have dv5 open at %s", state.Dv5Node.Self().String())
 				return
 			}
 			bootNodes := make([]*enode.Node, 0, len(args))
 			for i := 1; i < len(args); i++ {
 				dv5Addr, err := addrutil.ParseEnodeAddr(args[i])
 				if err != nil {
-					writeErr(cmd, err)
+					log.Error(err)
 					return
 				}
 				bootNodes = append(bootNodes, dv5Addr)
 			}
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			state.Dv5Node, err = dv5.NewDiscV5(ctx, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
+			state.Dv5Node, err = dv5.NewDiscV5(ctx, log, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			state.CloseDv5 = cancel
@@ -706,7 +714,7 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 		if connect {
 			log.Infof("connecting to nodes (with a 10 second timeout)")
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
-			err := static.ConnectStaticPeers(ctx, r, mAddrs, func(info peer.AddrInfo, alreadyConnected bool) error {
+			err := static.ConnectStaticPeers(ctx, log, r, mAddrs, func(info peer.AddrInfo, alreadyConnected bool) error {
 				log.Infof("connected to peer from discv5 nodes: %s", info.String())
 				return nil
 			})
@@ -727,10 +735,10 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 			}
 			target, err := addrutil.ParseEnodeAddr(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 			}
 			if err := state.Dv5Node.Ping(target); err != nil {
-				writeErrMsg(cmd, "Failed to ping %s: %v", target.String(), err)
+				log.Errorf("Failed to ping %s: %v", target.String(), err)
 				return
 			}
 			log.Infof("Successfully pinged %s: ", target.String())
@@ -747,11 +755,11 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 			}
 			target, err := addrutil.ParseEnodeAddr(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 			}
 			resolved := state.Dv5Node.Resolve(target)
 			if resolved != nil {
-				writeErrMsg(cmd, "Failed to resolve %s, nil result", target.String())
+				log.Errorf("Failed to resolve %s, nil result", target.String())
 				return
 			}
 			log.Infof("Successfully resolved:   %s   -->  %s", target.String(), resolved.String())
@@ -768,11 +776,11 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 			}
 			target, err := addrutil.ParseEnodeAddr(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 			}
 			enrRes, err := state.Dv5Node.RequestENR(target)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			log.Infof("Successfully got ENR for node:   %s   -->  %s", target.String(), enrRes.String())
@@ -792,11 +800,11 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 			if len(args) > 0 {
 				if n, err := addrutil.ParseEnodeAddr(args[0]); err != nil {
 					if h, err := hex.DecodeString(args[0]); err != nil {
-						writeErrMsg(cmd, "provided target node is not a valid node ID, enode address or ENR")
+						log.Error("provided target node is not a valid node ID, enode address or ENR")
 						return
 					} else {
 						if len(h) != 32 {
-							writeErrMsg(cmd, "hex node ID is not 32 bytes")
+							log.Error("hex node ID is not 32 bytes")
 							return
 						} else {
 							copy(target[:], h)
@@ -808,7 +816,7 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 			}
 			res := state.Dv5Node.Lookup(target)
 			if err := handleLookup(res, connectLookup); err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 		},
@@ -827,7 +835,7 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 			}
 			res := state.Dv5Node.LookupRandom()
 			if err := handleLookup(res, connectRandom); err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 		},
@@ -845,7 +853,7 @@ func (r *Repl) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comman
 			}
 			v, err := addrutil.EnrToString(r.GetEnr())
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			log.Infof("local ENR: %s", v)
@@ -863,11 +871,11 @@ type KadState struct {
 
 func (r *Repl) InitKadCmd(log logrus.FieldLogger, state *KadState) *cobra.Command {
 	noKad := func(cmd *cobra.Command) bool {
-		if r.NoHost(cmd) {
+		if r.NoHost(log) {
 			return true
 		}
 		if state.KadNode == nil {
-			writeErrMsg(cmd, "REPL must have initialized Kademlia DHT. Try 'kad start'")
+			log.Error("REPL must have initialized Kademlia DHT. Try 'kad start'")
 			return true
 		}
 		return false
@@ -881,18 +889,18 @@ func (r *Repl) InitKadCmd(log logrus.FieldLogger, state *KadState) *cobra.Comman
 		Short: "Go onto the given Kademlia DHT. (connect to bootnode and refresh table)",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			if state.KadNode != nil {
-				writeErrMsg(cmd, "Already have a Kademlia DHT open")
+				log.Error("Already have a Kademlia DHT open")
 				return
 			}
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			state.KadNode, err = kad.NewKademlia(ctx, r, protocol.ID(args[0]))
+			state.KadNode, err = kad.NewKademlia(ctx, log, r, protocol.ID(args[0]))
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			state.CloseKad = cancel
@@ -937,13 +945,13 @@ func (r *Repl) InitKadCmd(log logrus.FieldLogger, state *KadState) *cobra.Comman
 			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
 			addrInfos, err := state.KadNode.FindPeersConnectedToPeer(ctx, peerID)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			for {
@@ -972,13 +980,13 @@ func (r *Repl) InitKadCmd(log logrus.FieldLogger, state *KadState) *cobra.Comman
 			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
 			addrInfo, err := state.KadNode.FindPeer(ctx, peerID)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			log.Infof("Found address for peer %s: %s", peerID.Pretty(), addrInfo.String())
@@ -1008,11 +1016,11 @@ type GossipState struct {
 
 func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.Command {
 	noGS := func(cmd *cobra.Command) bool {
-		if r.NoHost(cmd) {
+		if r.NoHost(log) {
 			return true
 		}
 		if state.GsNode == nil {
-			writeErrMsg(cmd, "REPL must have initialized GossipSub. Try 'gossip start'")
+			log.Error("REPL must have initialized GossipSub. Try 'gossip start'")
 			return true
 		}
 		return false
@@ -1026,20 +1034,20 @@ func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.
 		Short: "Start GossipSub",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			if state.GsNode != nil {
-				writeErrMsg(cmd, "Already started GossipSub")
+				log.Error("Already started GossipSub")
 				return
 			}
 			state.Topics = make(joinedTopics)
 			state.TopicLoggers = make(topicLoggers)
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			state.GsNode, err = gossip.NewGossipSub(ctx, r)
+			state.GsNode, err = gossip.NewGossipSub(ctx, log, r)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			state.CloseGS = cancel
@@ -1084,17 +1092,17 @@ func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.
 			}
 			topicName := args[0]
 			if _, ok := state.Topics[topicName]; ok {
-				writeErrMsg(cmd, "already on gossip topic %s", topicName)
+				log.Errorf("already on gossip topic %s", topicName)
 				return
 			}
 			top, err := state.GsNode.JoinTopic(topicName)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			evHandler, err := top.EventHandler()
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				// no events, but still joined, don't exit
 			} else {
 				go func() {
@@ -1130,7 +1138,7 @@ func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.
 			}
 			topicName := args[0]
 			if top, ok := state.Topics[topicName]; !ok {
-				writeErrMsg(cmd, "not on gossip topic %s", topicName)
+				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
 				peers := top.ListPeers()
@@ -1151,7 +1159,7 @@ func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.
 			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			state.GsNode.BlacklistPeer(peerID)
@@ -1168,12 +1176,12 @@ func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.
 			}
 			topicName := args[0]
 			if top, ok := state.Topics[topicName]; !ok {
-				writeErrMsg(cmd, "not on gossip topic %s", topicName)
+				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
 				err := top.Close()
 				if err != nil {
-					writeErr(cmd, err)
+					log.Error(err)
 				}
 				delete(state.Topics, topicName)
 			}
@@ -1224,12 +1232,12 @@ func (r *Repl) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.
 			topicName := args[1]
 			outPath := args[2]
 			if top, ok := state.Topics[topicName]; !ok {
-				writeErrMsg(cmd, "not on gossip topic %s", topicName)
+				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
 				ctx, cancelLogger := context.WithCancel(r.Ctx)
 				if err := logToFile(ctx, loggerName, top, outPath); err != nil {
-					writeErr(cmd, err)
+					log.Error(err)
 					return
 				}
 				state.TopicLoggers[loggerName] = &topicLogger{
@@ -1312,7 +1320,7 @@ func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comman
 	) *cobra.Command {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			sFn := reqresp.NewStreamFn(func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
@@ -1321,17 +1329,17 @@ func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comman
 			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10) // TODO add timeout option
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			comp, err := readOptionalComp(cmd)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			req, err := mkReq(cmd, args)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			m := rpcMethod(cmd)
@@ -1351,7 +1359,7 @@ func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comman
 					log.Debugf("Responses of peer %s stopped after %d response chunks", peerID.Pretty(), lastRespChunkIndex+1)
 					onClose(peerID)
 				}); err != nil {
-				writeErrMsg(cmd, "failed request: %v", err)
+				log.Errorf("failed request: %v", err)
 			}
 		}
 		return cmd
@@ -1366,10 +1374,10 @@ func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comman
 		cmd.Flags().String("server-error", "", "If specified, an ServerError(2) will be sent with the given message.")
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			if cmd.Flags().Changed("invalid-input") && cmd.Flags().Changed("server-error") {
-				writeErrMsg(cmd, "cannot write both invalid-input and server-error to response")
+				log.Error("cannot write both invalid-input and server-error to response")
 				return
 			}
-			if r.NoHost(cmd) {
+			if r.NoHost(log) {
 				return
 			}
 			sCtxFn := func() context.Context {
@@ -1378,13 +1386,13 @@ func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comman
 			}
 			comp, err := readOptionalComp(cmd)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			m := rpcMethod(cmd)
 			handleReq, err := handleReqFactory(cmd, args)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			handleReqWrap := func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
@@ -1419,7 +1427,7 @@ func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comman
 			}
 			streamHandler, err := m.MakeStreamHandler(sCtxFn, comp, handleReqWrap, onInvalidInput, onServerError)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler)
@@ -1627,7 +1635,7 @@ func (r *Repl) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comman
 		Run: func(cmd *cobra.Command, args []string) {
 			stat, err := parseStatus(args)
 			if err != nil {
-				writeErr(cmd, err)
+				log.Error(err)
 				return
 			}
 			state.CurrentStatus = *stat

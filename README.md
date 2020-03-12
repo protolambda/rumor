@@ -95,7 +95,7 @@ rpc status req 16Uiu2HAmQ9WByeSsnxLb2tBW3MkGYMfg1BQowkwyVdUD9WwMdnrc
 
 ### Actors
 
-By prefixing a command with `<actor-name>:`, you can run multiple p2p hosts in the same REPL process.
+By prefixing a command with `{actor-name}:`, you can run multiple p2p hosts, by name `{actor-name}` in the same REPL process.
 
 ```
 alice: host start
@@ -107,6 +107,19 @@ alice: host view
 # Connect bob to alice
 bob: peer connect <ENR from alice>
 ```
+
+### Call IDs
+
+By prefixing a command with `{my-call-id}>`, you can see which logs are a result of the given call `{my-call-id}`, even if interleaved with other logs (because of async or concurrent results).
+The call-ID should be placed before the actor name.
+A `@` is prefixed to the call-ID in the resulting logs. If no call-ID is specified, an incremental counter is used for each new call, and the id is prefixed with `#`. 
+
+```
+my_call> alice: host start
+.... log output with call_id="@my_call"
+```
+
+The call-ID is useful to correlate results, and for tooling that interacts with Rumor to get results. 
 
 ## License
 

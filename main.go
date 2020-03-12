@@ -15,6 +15,8 @@ import (
 	"syscall"
 )
 
+const LogKeyActor = "actor"
+const LogKeyCallID = "call_id"
 
 func filterInput(r rune) (rune, bool) {
 	switch r {
@@ -26,36 +28,43 @@ func filterInput(r rune) (rune, bool) {
 }
 
 type LogFormatter struct {
-	logrus.TextFormatter
+	EntryFmtFn
 }
 
-func (l *LogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-	topic, okTopic := entry.Data["log_topic"]
-	delete(entry.Data, "log_topic")
-	actor, okActor := entry.Data["actor"]
-	delete(entry.Data, "actor")
-	out, err := l.TextFormatter.Format(entry)
-	if okTopic {
-		entry.Data["log_topic"] = topic
+type EntryFmtFn func(entry *logrus.Entry) (string, error)
+
+func (fn EntryFmtFn) Format(entry *logrus.Entry) ([]byte, error) {
+	out, err := fn(entry)
+	return []byte(out), err
+}
+
+func (l LogFormatter) WithKeyFormat(
+	key string,
+	fmtFn func(v interface{}, inner string) (string, error)) LogFormatter {
+	return LogFormatter{
+		EntryFmtFn: func(entry *logrus.Entry) (string, error) {
+			value, hasValue := entry.Data[key]
+			if !hasValue {
+				return l.EntryFmtFn(entry)
+			}
+			delete(entry.Data, key)
+			defer func() {
+				if hasValue {
+					entry.Data[key] = value
+				}
+			}()
+			out, err := l.EntryFmtFn(entry)
+			if err != nil {
+				return "", err
+			}
+			return fmtFn(value, out)
+		},
 	}
-	if okActor {
-		entry.Data["actor"] = actor
-	}
-	if err != nil {
-		return nil, err
-	}
-	if okTopic {
-		if okActor {
-			return []byte(fmt.Sprintf("\033[34m[%s]\033[35m[%s]\033[0m %s", actor, topic, out)), nil
-		} else {
-			return []byte(fmt.Sprintf("\033[35m[%s]\033[0m %s", topic, out)), nil
-		}
-	} else {
-		if okActor {
-			return []byte(fmt.Sprintf("\033[34m[%s]\033[0m %s", actor, out)), nil
-		} else {
-			return out, nil
-		}
+}
+
+func simpleLogFmt(fmtStr string) func(v interface{}, inner string) (s string, err error) {
+	return func(v interface{}, inner string) (s string, err error) {
+		return fmt.Sprintf(fmtStr, v) + inner, nil
 	}
 }
 
@@ -83,7 +92,18 @@ func main() {
 				if len(args) != 0 {
 					return fmt.Errorf("interactive mode cannot process any arguments. Got: %s", strings.Join(args, " "))
 				}
-				log.SetFormatter(&LogFormatter{TextFormatter: logrus.TextFormatter{ForceColors: true}})
+				coreLogFmt := logrus.TextFormatter{ForceColors: true, DisableTimestamp: true}
+				logFmt := LogFormatter{EntryFmtFn: func(entry *logrus.Entry) (string, error) {
+					out, err := coreLogFmt.Format(entry)
+					if out == nil {
+						out = []byte{}
+					}
+					return string(out), err
+				}}
+				logFmt = logFmt.WithKeyFormat(LogKeyCallID, simpleLogFmt("\033[33m[%s]\033[0m")) // yellow
+				logFmt = logFmt.WithKeyFormat(LogKeyActor, simpleLogFmt("\033[36m[%s]\033[0m")) // cyan
+
+				log.SetFormatter(logFmt)
 			} else {
 				if len(args) > 1 {
 					return fmt.Errorf("non-interactive mode cannot have more than 1 argument. Got: %s", strings.Join(args, " "))
@@ -114,7 +134,7 @@ func main() {
 				stop := make(chan os.Signal, 1)
 				signal.Notify(stop, syscall.SIGINT)
 
-				go runCommands(log, l.Stdout(), l.Stderr(), l.Readline)
+				go runCommands(log, l.Readline)
 
 				<-stop
 				log.Info("Exiting...")
@@ -139,7 +159,7 @@ func main() {
 					}
 					return text, err
 				}
-				runCommands(log, os.Stdout, os.Stderr, nextLine)
+				runCommands(log, nextLine)
 			}
 
 		},
@@ -153,10 +173,14 @@ func main() {
 	os.Exit(0)
 }
 
-func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLine func() (string, error)) {
-	inputLog := log.WithField("log_topic", "input")
-	commentLog := log.WithField("log_topic", "comment")
+type WriteableFn func(msg string)
 
+func (fn WriteableFn) Write(p []byte) (n int, err error) {
+	fn(string(p))
+	return len(p), nil
+}
+
+func runCommands(log logrus.FieldLogger, nextLine func() (string, error)) {
 	actors := make(map[string]*repl.Repl)
 
 	getActor := func(name string) *repl.Repl{
@@ -169,6 +193,26 @@ func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLi
 		}
 	}
 
+	processCmd := func(actorName string, callID string, cmdArgs []string) {
+		rep := getActor(actorName)
+
+		cmdLogger := repl.NewLogger(log.WithField("actor", actorName).WithField("call_id", callID))
+		replCmd := rep.Cmd(cmdLogger)
+
+		replCmd.SetOut(WriteableFn(func(msg string) {
+			cmdLogger.Info(msg)
+		}))
+		replCmd.SetErr(WriteableFn(func(msg string) {
+			cmdLogger.Error(msg)
+		}))
+		replCmd.SetArgs(cmdArgs)
+		if err := replCmd.Execute(); err != nil {
+			log.Errorf("Command error: %v\n", err)
+		}
+	}
+
+	// count calls, for unique ID (if user does not specify their own ID for the call)
+	callCounter := 0
 	for {
 		line, err := nextLine()
 		if err == readline.ErrInterrupt {
@@ -186,10 +230,8 @@ func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLi
 			continue
 		}
 		if strings.HasPrefix(line, "#") {
-			commentLog.Info(line)
 			continue
 		}
-		inputLog.Info(line)
 		// exits
 		if line == "exit" {
 			return
@@ -202,31 +244,30 @@ func runCommands(log logrus.FieldLogger, out io.Writer, errOut io.Writer, nextLi
 		if len(cmdArgs) == 0 {
 			continue
 		}
+
+		var callID string
+		if firstArg := cmdArgs[0]; strings.HasSuffix(firstArg, ">") {
+			callID = "@" + firstArg[:len(firstArg)-1]
+			cmdArgs = cmdArgs[1:]
+		} else {
+			callID = fmt.Sprintf("#%d", callCounter)
+			callCounter++
+		}
+
+		if len(cmdArgs) == 0 {
+			continue
+		}
+
 		actorName := "DEFAULT_ACTOR"
 		if firstArg := cmdArgs[0]; strings.HasSuffix(firstArg, ":") {
 			actorName = firstArg[:len(firstArg)-1]
 			cmdArgs = cmdArgs[1:]
 		}
 
-		rep := getActor(actorName)
-
-		replCmd := rep.Cmd(log.WithField("actor", actorName))
-		cmd, remainingArgs, err := replCmd.Find(cmdArgs)
-		if err != nil {
-			log.Errorf("Failed to find command: %v\n", err)
-			continue
-		}
-		path := strings.Join(cmdArgs[len(cmdArgs) - len(remainingArgs):], "/")
-		// TODO: fix log to include command path
-		cmd.SetOut(out)
-		cmd.SetErr(errOut)
-		cmd.SetArgs(remainingArgs)
-		if err := cmd.Execute(); err != nil {
-			log.Errorf("Command error: %v\n", err)
-			continue
-		}
+		processCmd(actorName, callID, cmdArgs)
 	}
 
+	// close all libp2p hosts
 	for _, actorRep := range actors {
 		actorRep.Cancel()
 	}

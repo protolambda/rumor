@@ -24,13 +24,12 @@ type GossipSubImpl struct {
 	log logrus.FieldLogger
 }
 
-func NewGossipSub(ctx context.Context, n node.Node) (GossipSub, error) {
+func NewGossipSub(ctx context.Context, log logrus.FieldLogger, n node.Node) (GossipSub, error) {
 	psOptions := []pubsub.Option{
 		pubsub.WithMessageSigning(false),
 		pubsub.WithStrictSignatureVerification(false),
 		pubsub.WithMessageIdFn(msgIDFunction),
 	}
-	log := n.Logger("pubsub")
 	ps, err := pubsub.NewGossipSub(ctx, n.Host(), psOptions...)
 	if err != nil {
 		log.Errorf("failed to init GossipSub: %v", err)
