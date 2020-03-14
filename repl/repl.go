@@ -245,7 +245,7 @@ func (r *Repl) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 			log.Error(err)
 			return
 		}
-		log.Infof("ENR address: %s", enrStr)
+		log.WithField("enr", enrStr).Info("ENR")  // TODO put all data in fields
 	}
 
 	cmd.AddCommand(startCmd)

@@ -134,7 +134,7 @@ func main() {
 				stop := make(chan os.Signal, 1)
 				signal.Notify(stop, syscall.SIGINT)
 
-				go runCommands(log, l.Readline)
+				go runCommands(log, l.Readline, true)
 
 				<-stop
 				log.Info("Exiting...")
@@ -159,7 +159,7 @@ func main() {
 					}
 					return text, err
 				}
-				runCommands(log, nextLine)
+				runCommands(log, nextLine, false)
 			}
 
 		},
@@ -180,7 +180,7 @@ func (fn WriteableFn) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func runCommands(log logrus.FieldLogger, nextLine func() (string, error)) {
+func runCommands(log logrus.FieldLogger, nextLine func() (string, error), interactive bool) {
 	actors := make(map[string]*repl.Repl)
 
 	getActor := func(name string) *repl.Repl{
@@ -207,7 +207,11 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error)) {
 		}))
 		replCmd.SetArgs(cmdArgs)
 		if err := replCmd.Execute(); err != nil {
-			log.Errorf("Command error: %v\n", err)
+			cmdLogger.Errorf("Command error: %v\n", err)
+		}
+		// if not interactive, we need to make the caller aware of completion of the command.
+		if !interactive {
+			cmdLogger.WithField("@success", "").Info("completed call")
 		}
 	}
 
