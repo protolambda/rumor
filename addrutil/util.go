@@ -34,9 +34,7 @@ var EnrEntries = map[string]func() (enr.Entry, func() string) {
 			var out [64]byte
 			copy(out[:32], res.X.Bytes())
 			copy(out[32:], res.Y.Bytes())
-			peerID := PeerIDFromPubkey((*ecdsa.PublicKey)(res))
-			nodeID := enode.PubkeyToIDV4((*ecdsa.PublicKey)(res))
-			return fmt.Sprintf("XY: %x NodeID: %s PeerID: %s", out, nodeID.String(), peerID.Pretty())
+			return hex.EncodeToString(out[:])
 		}
 	},
 	"tcp": func() (enr.Entry, func() string) {
@@ -111,7 +109,7 @@ func ParseEnr(v string) (*enr.Record, error) {
 	return &record, nil
 }
 
-func ParseEnodeAddr(v string) (*enode.Node, error) {
+func ParseEnrOrEnode(v string) (*enode.Node, error) {
 	if strings.HasPrefix(v, "enode://") {
 		addr := new(enode.Node)
 		err := addr.UnmarshalText([]byte(v))

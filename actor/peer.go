@@ -63,7 +63,7 @@ func (r *Actor) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 			}
 			addrStr := args[0]
 			var muAddr ma.Multiaddr
-			if dv5Addr, err := addrutil.ParseEnodeAddr(addrStr); err != nil {
+			if dv5Addr, err := addrutil.ParseEnrOrEnode(addrStr); err != nil {
 				muAddr, err = ma.NewMultiaddr(args[0])
 				if err != nil {
 					log.Info("addr not an enode or multi addr")
@@ -77,7 +77,6 @@ func (r *Actor) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 					return
 				}
 			}
-			log.Infof("parsed multi addr: %s", muAddr.String())
 			addrInfo, err := peer.AddrInfoFromP2pAddr(muAddr)
 			if err != nil {
 				log.Error(err)
@@ -114,7 +113,7 @@ func (r *Actor) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 					log.Infof("error during disconnect of peer %s (%s)", peerID.Pretty(), c.RemoteMultiaddr().String())
 				}
 			}
-			log.Infof("finished disconnecting peer %s", peerID.Pretty())
+			log.Infof("disconnected peer %s", peerID.Pretty())
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -150,7 +149,7 @@ func (r *Actor) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 			}
 			tag := args[1]
 			r.P2PHost.ConnManager().Unprotect(peerID, tag)
-			log.Infof("protected peer %s as %s", peerID.Pretty(), tag)
+			log.Infof("un-protected peer %s as %s", peerID.Pretty(), tag)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -168,20 +167,10 @@ func (r *Actor) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
 					return
 				}
 				addrs := r.P2PHost.Peerstore().Addrs(peerID)
-				for i, a := range addrs {
-					log.Infof("%s addr #%d: %s", peerID.Pretty(), i, a.String())
-				}
-				if len(addrs) == 0 {
-					log.Infof("no known addrs for peer %s", peerID.Pretty())
-				}
+				log.WithField("addrs", addrs).Infof("addrs for peer %s", peerID.Pretty())
 			} else {
 				addrs := r.P2PHost.Addrs()
-				for i, a := range addrs {
-					log.Infof("host addr #%d: %s", i, a.String())
-				}
-				if len(addrs) == 0 {
-					log.Info("no host addrs")
-				}
+				log.WithField("addrs", addrs).Infof("host addrs")
 			}
 		},
 	})

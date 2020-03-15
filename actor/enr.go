@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -16,7 +17,8 @@ func (r *Actor) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 		Use:   "enr",
 		Short: "Ethereum Name Record (ENR) utilities",
 	}
-	cmd.AddCommand(&cobra.Command{
+	var parseEnrKV bool
+	enrViewCmd := &cobra.Command{
 		Use:   "view <enr>",
 		Short: "view ENR contents. ENR is url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix.",
 		Args:  cobra.ExactArgs(1),
@@ -27,20 +29,29 @@ func (r *Actor) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 				log.Error(err)
 				return
 			}
-			enrPairs := rec.AppendElements(nil)
-			for i := 1; i < len(enrPairs); i += 2 {
-				key := enrPairs[i].(string)
-				rawValue := enrPairs[i+1].(rlp.RawValue)
+			if parseEnrKV {
+				enrPairs := rec.AppendElements(nil)
+				enrKV := make(map[string]string)
+				enrKVraw := make(map[string]string)
+				for i := 1; i < len(enrPairs); i += 2 {
+					key := enrPairs[i].(string)
+					rawValue := enrPairs[i+1].(rlp.RawValue)
 
-				getTypedValue, ok := addrutil.EnrEntries[key]
-				if !ok {
-					log.WithField("enr_kv_raw_"+key, rawValue).Info("Unrecognized ENR KV pair type")
+					enrKVraw[key] = hex.EncodeToString(rawValue)
+					getTypedValue, ok := addrutil.EnrEntries[key]
+					if !ok {
+						log.WithField("enr_unknown_"+key, rawValue).Infof("Unrecognized ENR KV pair type: %s", key)
+					} else {
+						typedValue, getValueStr := getTypedValue()
+						if err := rlp.DecodeBytes(rawValue, typedValue); err != nil {
+							log.WithField("enr_fail_"+key, rawValue).Errorf("Failed to decode ENR KV pair: %s", key)
+						}
+						enrKV[key] = getValueStr()
+					}
 				}
-				typedValue, getValueStr := getTypedValue()
-				if err := rlp.DecodeBytes(rawValue, typedValue); err != nil {
-					log.WithField("enr_kv_raw_"+key, rawValue).Info("Failed to decode ENR KV pair")
-				}
-				log.WithField("enr_kv_raw_"+key, rawValue).WithField("enr_kv_parsed_"+key, getValueStr()).Info("Decoded ENR KV pair")
+
+				log.WithField("raw_enr_kv", enrKVraw).Info("Raw ENR key-value pairs")
+				log.WithField("enr_kv", enrKV).Info("Decoded ENR key-value pairs")
 			}
 
 			var enodeRes *enode.Node
@@ -59,16 +70,19 @@ func (r *Actor) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 				return
 			}
 			log.WithFields(logrus.Fields{
-				"seq": enrPairs[0],
-				"xy": fmt.Sprintf("%d %d -- %s", pubkey.X, pubkey.Y, pubkey.Curve.Params().Name),
+				"seq": enodeRes.Seq(),
+				"xy": fmt.Sprintf("%d %d", pubkey.X, pubkey.Y),
 				"node_id": nodeID.String(),
 				"peer_id": peerID.String(),
 				"enode": enodeRes.URLv4(),
 				"multi": muAddr.String(),
-				"enr": enodeRes.String(),
+				"enr": enodeRes.String(),  // formats as url-base64 ENR
 			}).Info("ENR parsed successfully")
 		},
-	})
+	}
+	enrViewCmd.Flags().BoolVar(&parseEnrKV, "kv", false, "Print the full set of Key-Value pairs")
+	cmd.AddCommand(enrViewCmd)
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "make <ip> <tcp-port> <udp-port> <priv>",
 		Short: "make an ENR. ENR is url-base64 (RFC 4648). Pubkey is raw hex encoded format",

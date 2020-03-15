@@ -93,6 +93,11 @@ gossip leave /eth2/beacon_block/ssz
 rpc status req 16Uiu2HAmQ9WByeSsnxLb2tBW3MkGYMfg1BQowkwyVdUD9WwMdnrc
 ```
 
+And there are commands to make debugging various things easy as well:
+```
+enr view --kv enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9X8Im_ZjQYyeoBP_luLLBB4wy39gQ4JgmlkgnY0gmlwhCOhiGqJc2VjcDI1NmsxoQMrmBYg_yR_ZKZKoLiChvlpNqdwXwodXmgw_TRow7RVwYN0Y3CCIyiDdWRwgiMo
+```
+
 ### Actors
 
 By prefixing a command with `{actor-name}:`, you can run multiple p2p hosts, by name `{actor-name}` in the same REPL process.

@@ -54,7 +54,7 @@ func (r *Actor) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comma
 			}
 			bootNodes := make([]*enode.Node, 0, len(args))
 			for i := 1; i < len(args); i++ {
-				dv5Addr, err := addrutil.ParseEnodeAddr(args[i])
+				dv5Addr, err := addrutil.ParseEnrOrEnode(args[i])
 				if err != nil {
 					log.Error(err)
 					return
@@ -128,7 +128,7 @@ func (r *Actor) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comma
 			if noDv5(cmd) {
 				return
 			}
-			target, err := addrutil.ParseEnodeAddr(args[0])
+			target, err := addrutil.ParseEnrOrEnode(args[0])
 			if err != nil {
 				log.Error(err)
 			}
@@ -148,7 +148,7 @@ func (r *Actor) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comma
 			if noDv5(cmd) {
 				return
 			}
-			target, err := addrutil.ParseEnodeAddr(args[0])
+			target, err := addrutil.ParseEnrOrEnode(args[0])
 			if err != nil {
 				log.Error(err)
 			}
@@ -169,7 +169,7 @@ func (r *Actor) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comma
 			if noDv5(cmd) {
 				return
 			}
-			target, err := addrutil.ParseEnodeAddr(args[0])
+			target, err := addrutil.ParseEnrOrEnode(args[0])
 			if err != nil {
 				log.Error(err)
 			}
@@ -193,7 +193,7 @@ func (r *Actor) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Comma
 			}
 			target := state.Dv5Node.Self().ID()
 			if len(args) > 0 {
-				if n, err := addrutil.ParseEnodeAddr(args[0]); err != nil {
+				if n, err := addrutil.ParseEnrOrEnode(args[0]); err != nil {
 					if h, err := hex.DecodeString(args[0]); err != nil {
 						log.Error("provided target node is not a valid node ID, enode address or ENR")
 						return
