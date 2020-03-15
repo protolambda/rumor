@@ -364,20 +364,19 @@ func (r *Repl) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 				return
 			}
 			enrPairs := rec.AppendElements(nil)
-			log.Infof("Enr seq number: %v", enrPairs[0])
 			for i := 1; i < len(enrPairs); i += 2 {
 				key := enrPairs[i].(string)
 				rawValue := enrPairs[i+1].(rlp.RawValue)
 
 				getTypedValue, ok := addrutil.EnrEntries[key]
 				if !ok {
-					log.Infof("Enr pair: %s -> (unrecognized type) -- raw: %x", key, rawValue)
+					log.WithField("enr_kv_raw_"+key, rawValue).Info("Unrecognized ENR KV pair type")
 				}
 				typedValue, getValueStr := getTypedValue()
 				if err := rlp.DecodeBytes(rawValue, typedValue); err != nil {
-					log.Infof("Enr pair: %s -> (failed to decode) -- raw: %x", key, rawValue)
+					log.WithField("enr_kv_raw_"+key, rawValue).Info("Failed to decode ENR KV pair")
 				}
-				log.Infof("Enr pair: %s -> %s -- raw: %x", key, getValueStr(), rawValue)
+				log.WithField("enr_kv_raw_"+key, rawValue).WithField("enr_kv_parsed_"+key, getValueStr()).Info("Decoded ENR KV pair")
 			}
 
 			var enodeRes *enode.Node
@@ -390,17 +389,20 @@ func (r *Repl) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
 			pubkey := enodeRes.Pubkey()
 			peerID := addrutil.PeerIDFromPubkey(pubkey)
 			nodeID := enode.PubkeyToIDV4(pubkey)
-			log.Infof("XY: %d %d -- %s", pubkey.X, pubkey.Y, pubkey.Curve.Params().Name)
-			log.Infof("NodeID: %s", nodeID.String())
-			log.Infof("PeerID: %s", peerID.String())
-			log.Infof("enode addr: %s", enodeRes.URLv4())
 			muAddr, err := addrutil.EnodeToMultiAddr(enodeRes)
 			if err != nil {
 				log.Error(err)
 				return
 			}
-			log.Infof("multi addr: %s", muAddr.String())
-			log.Infof("ENR: %s", enodeRes.String())
+			log.WithFields(logrus.Fields{
+				"seq": enrPairs[0],
+				"xy": fmt.Sprintf("%d %d -- %s", pubkey.X, pubkey.Y, pubkey.Curve.Params().Name),
+				"node_id": nodeID.String(),
+				"peer_id": peerID.String(),
+				"enode": enodeRes.URLv4(),
+				"multi": muAddr.String(),
+				"enr": enodeRes.String(),
+			}).Info("ENR parsed successfully")
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
