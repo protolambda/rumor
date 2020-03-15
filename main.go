@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/chzyer/readline"
 	"github.com/google/shlex"
-	"github.com/protolambda/rumor/repl"
+	"github.com/protolambda/rumor/actor"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"io"
@@ -181,13 +181,13 @@ func (fn WriteableFn) Write(p []byte) (n int, err error) {
 }
 
 func runCommands(log logrus.FieldLogger, nextLine func() (string, error), interactive bool) {
-	actors := make(map[string]*repl.Repl)
+	actors := make(map[string]*actor.Actor)
 
-	getActor := func(name string) *repl.Repl{
-		if actor, ok := actors[name]; ok {
-			return actor
+	getActor := func(name string) *actor.Actor {
+		if a, ok := actors[name]; ok {
+			return a
 		} else {
-			rep := repl.NewRepl()
+			rep := actor.NewActor()
 			actors[name] = rep
 			return rep
 		}
@@ -196,7 +196,7 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 	processCmd := func(actorName string, callID string, cmdArgs []string) {
 		rep := getActor(actorName)
 
-		cmdLogger := repl.NewLogger(log.WithField("actor", actorName).WithField("call_id", callID))
+		cmdLogger := actor.NewLogger(log.WithField("actor", actorName).WithField("call_id", callID))
 		replCmd := rep.Cmd(cmdLogger)
 
 		replCmd.SetOut(WriteableFn(func(msg string) {
@@ -208,10 +208,11 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 		replCmd.SetArgs(cmdArgs)
 		if err := replCmd.Execute(); err != nil {
 			cmdLogger.Errorf("Command error: %v\n", err)
-		}
-		// if not interactive, we need to make the caller aware of completion of the command.
-		if !interactive {
-			cmdLogger.WithField("@success", "").Info("completed call")
+		} else {
+			// if not interactive, we need to make the caller aware of completion of the command.
+			if !interactive {
+				cmdLogger.WithField("@success", "").Info("completed call")
+			}
 		}
 	}
 
