@@ -2,6 +2,7 @@ package actor
 
 import (
 	"context"
+	"encoding/hex"
 	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/protolambda/rumor/gossip"
@@ -9,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -92,15 +94,16 @@ func (r *Actor) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra
 			if noGS(cmd) {
 				return
 			}
-			log.Infof("on %d topics:", len(state.Topics))
+			topics := make([]string, 0, len(state.Topics))
 			for topic := range state.Topics {
-				log.Infof("topic: %s", topic)
+				topics = append(topics, topic)
 			}
+			log.WithField("topics", topics).Infof("On %d topics.", len(topics))
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "join <topic>",
-		Short: "Join a gossip topic. Propagate anything.",
+		Short: "Join a gossip topic. This only sets up the topic, it does not actively find peers. See `gossip log start` and `gossip publish`.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
@@ -116,31 +119,44 @@ func (r *Actor) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra
 				log.Error(err)
 				return
 			}
-			evHandler, err := top.EventHandler()
-			if err != nil {
-				log.Error(err)
-				// no events, but still joined, don't exit
+			state.Topics[topicName] = top
+			log.Infof("joined topic %s", topicName)
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "events <topic>",
+		Short: "Listen for events (not messages) on this topic. Events: 'join=<peer-ID>', 'leave=<peer-ID>'",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			topicName := args[0]
+			if top, ok := state.Topics[topicName]; !ok {
+				log.Errorf("not on gossip topic %s", topicName)
+				return
 			} else {
-				go func() {
+				evHandler, err := top.EventHandler()
+				if err != nil {
+					log.Error(err)
+				} else {
 					log.Infof("Started listening for peer join/leave events for topic %s", topicName)
 					for {
-						ev, err := evHandler.NextPeerEvent(context.Background())
+						ev, err := evHandler.NextPeerEvent(r.Ctx)
 						if err != nil {
 							log.Infof("Stopped listening for peer join/leave events for topic %s", topicName)
 							return
 						}
 						switch ev.Type {
 						case pubsub.PeerJoin:
-							log.Infof("peer %s joined topic %s", ev.Peer.Pretty(), topicName)
+							log.WithField("join", ev.Peer.Pretty()).Infof("peer %s joined topic %s", ev.Peer.Pretty(), topicName)
 						case pubsub.PeerLeave:
-							log.Infof("peer %s left topic %s", ev.Peer.Pretty(), topicName)
+							log.WithField("leave", ev.Peer.Pretty()).Infof("peer %s left topic %s", ev.Peer.Pretty(), topicName)
 						}
 					}
-				}()
+				}
 			}
-
-			state.Topics[topicName] = top
-			log.Infof("joined topic %s", topicName)
 		},
 	})
 
@@ -298,5 +314,35 @@ func (r *Actor) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra
 		},
 	})
 	cmd.AddCommand(logCmd)
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "publish <topic> <message>",
+		Short: "Publish a message to the topic. The message should be hex-encoded.",
+		Args:  cobra.ExactArgs(2),
+		Run: func(cmd *cobra.Command, args []string) {
+			if noGS(cmd) {
+				return
+			}
+			topicName := args[0]
+			if top, ok := state.Topics[topicName]; !ok {
+				log.Errorf("not on gossip topic %s", topicName)
+				return
+			} else {
+				hexData := args[1]
+				if strings.HasPrefix(hexData, "0x") {
+					hexData = hexData[2:]
+				}
+				data, err := hex.DecodeString(hexData)
+				if err != nil {
+					log.Errorf("cannot decode message from hex, err: %v, msg: %s", err, hexData)
+					return
+				}
+				if err := top.Publish(r.Ctx, data); err != nil {
+					log.Errorf("failed to publish message, err: %v", err)
+					return
+				}
+			}
+		},
+	})
 	return cmd
 }
