@@ -42,7 +42,7 @@ func NewActor() *Actor {
 	}
 }
 
-func (r *Actor) Cmd(log *Logger) *cobra.Command {
+func (r *Actor) Cmd(ctx context.Context, log *Logger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rumor",
 		Short: "A REPL for Eth2 networking.",
@@ -53,6 +53,7 @@ func (r *Actor) Cmd(log *Logger) *cobra.Command {
 	}
 	// TODO: if too slow to initialize all commands, we could initialize just the called command.
 	cmd.AddCommand(
+		r.IniDebugCmd(log),
 		r.InitHostCmd(log),
 		r.InitEnrCmd(log),
 		r.InitPeerCmd(log),

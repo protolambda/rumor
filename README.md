@@ -126,6 +126,21 @@ my_call> alice: host start
 
 The call-ID is useful to correlate results, and for tooling that interacts with Rumor to get results. 
 
+### Background / foreground
+
+Calls can be made in, and moved to, foreground and background.
+
+#### Making calls
+ 
+After a command is started, it is in the foreground by default, i.e. the shell waits for it to run the next command.
+To start a command in the background instead, add `bg` before the actual command. E.g. `example_host_call> alice: bg host start`
+
+#### Moving calls
+
+To put the current foreground call in the background, enter `bg`.
+To put a specific call back in the foreground, enter `my_call_id> fg`.
+
+
 ## License
 
 MIT, see [`LICENSE`](./LICENSE) file.

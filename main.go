@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"github.com/chzyer/readline"
 	"github.com/google/shlex"
@@ -130,11 +131,10 @@ func main() {
 					return
 				}
 				defer l.Close()
-
 				stop := make(chan os.Signal, 1)
 				signal.Notify(stop, syscall.SIGINT)
 
-				go runCommands(log, l.Readline, true)
+				go runCommands(log, l.Readline,true)
 
 				<-stop
 				log.Info("Exiting...")
@@ -180,6 +180,16 @@ func (fn WriteableFn) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+type CallID string
+
+type Call struct {
+	ctx context.Context
+	actorName string
+	cancel context.CancelFunc
+	logger *actor.Logger
+	isDone bool
+}
+
 func runCommands(log logrus.FieldLogger, nextLine func() (string, error), interactive bool) {
 	actors := make(map[string]*actor.Actor)
 
@@ -193,11 +203,12 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 		}
 	}
 
-	processCmd := func(actorName string, callID string, cmdArgs []string) {
+	processCmd := func(actorName string, callID CallID, cmdArgs []string) *Call {
 		rep := getActor(actorName)
+		cmdCtx, cmdCancel := context.WithCancel(rep.Ctx)
 
 		cmdLogger := actor.NewLogger(log.WithField("actor", actorName).WithField("call_id", callID))
-		replCmd := rep.Cmd(cmdLogger)
+		replCmd := rep.Cmd(cmdCtx, cmdLogger)
 
 		replCmd.SetOut(WriteableFn(func(msg string) {
 			cmdLogger.Info(msg)
@@ -206,29 +217,77 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 			cmdLogger.Error(msg)
 		}))
 		replCmd.SetArgs(cmdArgs)
-		if err := replCmd.Execute(); err != nil {
-			cmdLogger.Errorf("Command error: %v\n", err)
-		} else {
-			// if not interactive, we need to make the caller aware of completion of the command.
-			if !interactive {
-				cmdLogger.WithField("@success", "").Info("completed call")
-			}
+
+		call := &Call{
+			ctx:       cmdCtx,
+			actorName: actorName,
+			cancel:    cmdCancel,
+			logger:    cmdLogger,
 		}
+
+		go func() {
+			if err := replCmd.Execute(); err != nil {
+				// Already logged to std-err, which is piped to log.
+			} else {
+				// if not interactive, we need to make the caller aware of completion of the command.
+				if !interactive {
+					cmdLogger.WithField("@success", "").Info("completed call")
+				}
+			}
+			cmdCancel()
+			call.isDone = true
+		}()
+		return call
 	}
+
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	lines := make(chan string, 1)
+	go func() {
+		for {
+			line, err := nextLine()
+			if err == readline.ErrInterrupt {
+				if len(line) == 0 {
+					break
+				} else {
+					continue
+				}
+			} else if err == io.EOF {
+				break
+			}
+			lines <- line
+		}
+		loopCancel()
+	}()
+
+	var lastCall *Call = nil
+
+	jobs := make(map[CallID]*Call)
 
 	// count calls, for unique ID (if user does not specify their own ID for the call)
 	callCounter := 0
-	for {
-		line, err := nextLine()
-		if err == readline.ErrInterrupt {
-			if len(line) == 0 {
-				break
-			} else {
-				continue
+	mainLoop: for {
+		// remove done jobs
+		for k, v := range jobs {
+			if v.isDone {
+				delete(jobs, k)
 			}
-		} else if err == io.EOF {
-			break
 		}
+		var lastDone <-chan struct{} = nil
+		if lastCall != nil {
+			lastDone = lastCall.ctx.Done()
+		}
+		line := ""
+		select {
+		case <- loopCtx.Done():
+			break mainLoop
+		case v := <-lines:
+			line = v
+		//noinspection GoNilness
+		case <- lastDone: // waits forever if nil, other select gets hit
+			lastCall = nil
+			continue
+		}
+
 		line = strings.TrimSpace(line)
 		// skip empty lines
 		if line == "" {
@@ -239,8 +298,20 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 		}
 		// exits
 		if line == "exit" {
-			return
+			loopCancel()
+			break
 		}
+
+		if lastCall != nil {
+			if line == "bg" {
+				lastCall.logger.Info("Moved call to background")
+				lastCall = nil
+				continue
+			} else {
+				lastCall.logger.Errorf("Unrecognized command for modifying last call: '%s'", line)
+			}
+		}
+
 		cmdArgs, err := shlex.Split(line)
 		if err != nil {
 			log.Errorf("Failed to parse command: %v\n", err)
@@ -250,16 +321,27 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 			continue
 		}
 
-		var callID string
+		var callID CallID
 		if firstArg := cmdArgs[0]; strings.HasSuffix(firstArg, ">") {
-			callID = "@" + firstArg[:len(firstArg)-1]
+			callID = CallID("@" + firstArg[:len(firstArg)-1])
 			cmdArgs = cmdArgs[1:]
 		} else {
-			callID = fmt.Sprintf("#%d", callCounter)
+			callID = CallID(fmt.Sprintf("#%d", callCounter))
 			callCounter++
 		}
 
 		if len(cmdArgs) == 0 {
+			continue
+		}
+
+		// try historical call if there is no current call
+		if call, ok := jobs[callID]; ok {
+			if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
+				call.logger.Info("Moved call to foreground")
+				lastCall = call
+			} else {
+				call.logger.Errorf("Unrecognized command for modifying call: '%s'", line)
+			}
 			continue
 		}
 
@@ -269,8 +351,31 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 			cmdArgs = cmdArgs[1:]
 		}
 
-		processCmd(actorName, callID, cmdArgs)
+		if len(cmdArgs) == 0 {
+			continue
+		}
+
+		background := false
+		if cmdArgs[0] == "bg" {
+			background = true
+			cmdArgs = cmdArgs[1:]
+		}
+
+		if len(cmdArgs) == 0 {
+			continue
+		}
+
+		call := processCmd(actorName, callID, cmdArgs)
+		jobs[callID] = call
+
+		if background {
+			lastCall = nil
+		} else {
+			lastCall = call
+		}
 	}
+
+	close(lines)
 
 	// close all libp2p hosts
 	for _, actorRep := range actors {
