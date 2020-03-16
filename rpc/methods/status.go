@@ -3,7 +3,6 @@ package methods
 import (
 	"fmt"
 	"github.com/protolambda/rumor/rpc/reqresp"
-	"github.com/protolambda/zssz"
 )
 
 type Status struct {
@@ -19,14 +18,9 @@ func (s *Status) String() string {
 		s.HeadForkVersion, s.FinalizedRoot, s.FinalizedEpoch, s.HeadRoot, s.HeadSlot)
 }
 
-var StatusSSZ = zssz.GetSSZ((*Status)(nil))
-
 var StatusRPCv1 = reqresp.RPCMethod{
 	Protocol: "/eth2/beacon_chain/req/status/1/ssz",
 	MaxChunkCount: 1,
-	ReqSSZ: StatusSSZ,
-	RespChunkSSZ: StatusSSZ,
-	AllocRequest: func() reqresp.Request {
-		return new(Status)
-	},
+	RequestCodec: reqresp.NewSSZCodec((*Status)(nil)),
+	ResponseChunkCodec: reqresp.NewSSZCodec((*Status)(nil)),
 }

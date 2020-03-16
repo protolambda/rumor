@@ -6,8 +6,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
-	"github.com/protolambda/zssz"
-	ztypes "github.com/protolambda/zssz/types"
+	"io"
 	"time"
 )
 
@@ -30,22 +29,16 @@ func (newStreamFn NewStreamFn) WithTimeout(timeout time.Duration) NewStreamFn {
 	}
 }
 
-func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, data Request,
-	dataType ztypes.SSZ, comp Compression, handle ResponseHandler) error {
-
-	var buf bytes.Buffer
-	if _, err := zssz.Encode(&buf, data, dataType); err != nil {
-		return err
-	}
+func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, r io.Reader, comp Compression, handle ResponseHandler) error {
 	stream, err := newStreamFn(ctx, peerId, protocolId)
 	if err != nil {
 		return nil
 	}
-	var buf2 bytes.Buffer
-	if err := EncodePayload(bytes.NewReader(buf.Bytes()), &buf2, comp); err != nil {
+	var buf bytes.Buffer
+	if err := EncodePayload(r, &buf, comp); err != nil {
 		return err
 	}
-	if _, err := stream.Write(buf2.Bytes()); err != nil {
+	if _, err := stream.Write(buf.Bytes()); err != nil {
 		return err
 	}
 	return handle(ctx, stream, stream)

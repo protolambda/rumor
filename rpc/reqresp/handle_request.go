@@ -3,7 +3,6 @@ package reqresp
 import (
 	"context"
 	"encoding/binary"
-	"fmt"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"io"
@@ -46,6 +45,5 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 			defer w.Close()
 		}
 		handle(ctx, peerId, reqLen, r, w)
-		fmt.Sprintln("done handling")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/protolambda/zssz"
 	ztypes "github.com/protolambda/zssz/types"
 	"io"
+	"reflect"
 )
 
 type Request interface {
@@ -18,20 +19,60 @@ type Request interface {
 
 type AllocRequest func() Request
 
+type Codec interface {
+	MaxByteLen() uint64
+	Encode(w io.Writer, input interface{}) error
+	Decode(r io.Reader, bytesLen uint64, dest interface{}) error
+	Alloc() interface{}
+}
+
+type SSZCodec struct {
+	def ztypes.SSZ
+	alloc func() interface{}
+}
+
+func NewSSZCodec(typ interface{}) *SSZCodec {
+	sszDef := zssz.GetSSZ(typ)
+	rTyp := reflect.TypeOf(typ).Elem()
+	alloc := func() interface{} {
+		return reflect.New(rTyp).Interface()
+	}
+	return &SSZCodec{
+		def:   sszDef,
+		alloc: alloc,
+	}
+}
+
+func (c *SSZCodec) MaxByteLen() uint64 {
+	return c.def.MaxLen()
+}
+
+func (c *SSZCodec) Encode(w io.Writer, input interface{}) error {
+	_, err := zssz.Encode(w, input, c.def)
+	return err
+}
+
+func (c *SSZCodec) Decode(r io.Reader, bytesLen uint64, dest interface{}) error {
+	return zssz.Decode(r, bytesLen, dest, c.def)
+}
+
+func (c *SSZCodec) Alloc() interface{} {
+	return c.alloc()
+}
+
 type RPCMethod struct {
-	Protocol      protocol.ID
-	MaxChunkCount uint64
-	ReqSSZ        ztypes.SSZ
-	RespChunkSSZ  ztypes.SSZ
-	AllocRequest  AllocRequest  // TODO update zssz to include this functionality
+	Protocol           protocol.ID
+	MaxChunkCount      uint64
+	RequestCodec       Codec
+	ResponseChunkCodec Codec
 }
 
 type ResponseCode uint8
 
 const (
-	SuccessCode ResponseCode = 0
-	InvalidReqCode = 1
-	ServerErrCode = 2
+	SuccessCode    ResponseCode = 0
+	InvalidReqCode              = 1
+	ServerErrCode               = 2
 )
 
 // 8 KB max error size
@@ -40,7 +81,7 @@ const MAX_ERR_SIZE = 1 << 15
 type MethodRespSuccessHandler func(chunkIndex uint64, readChunk func(dest interface{}) error) error
 type MethodRespErrorHandler func(chunkIndex uint64, msg string) error
 
-func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
+func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 	peerId peer.ID, comp Compression, req Request, onResponse MethodRespSuccessHandler,
 	onInvalidReqResp MethodRespErrorHandler, onServerErrorResp MethodRespErrorHandler, onClose func()) error {
 
@@ -50,7 +91,7 @@ func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamF
 		switch result {
 		case SuccessCode:
 			return onResponse(chunkIndex, func(dest interface{}) error {
-				return zssz.Decode(r, chunkSize, dest, reqType.RespChunkSSZ)
+				return m.RequestCodec.Decode(r, chunkSize, dest)
 			})
 		case InvalidReqCode:
 			var buf bytes.Buffer
@@ -65,8 +106,8 @@ func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamF
 		}
 	})
 
-	protocolId := reqType.Protocol
-	maxChunkContentSize := reqType.RespChunkSSZ.MaxLen()
+	protocolId := m.Protocol
+	maxChunkContentSize := m.ResponseChunkCodec.MaxByteLen()
 	if comp != nil {
 		protocolId += protocol.ID("_" + comp.Name())
 		if s, err := comp.MaxEncodedLen(maxChunkContentSize); err != nil {
@@ -76,23 +117,26 @@ func (reqType *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamF
 		}
 	}
 
-	respHandler := handleChunks.MakeResponseHandler(reqType.MaxChunkCount, maxChunkContentSize, comp)
+	respHandler := handleChunks.MakeResponseHandler(m.MaxChunkCount, maxChunkContentSize, comp)
 
+	var buf bytes.Buffer
+	if err := m.RequestCodec.Encode(&buf, req); err != nil {
+		return err
+	}
 	// Runs the request in sync, which processes responses,
 	// and then finally closes the channel through the earlier deferred close.
-	return newStreamFn.Request(ctx, peerId, protocolId, req, reqType.ReqSSZ, comp, respHandler)
+	return newStreamFn.Request(ctx, peerId, protocolId, &buf, comp, respHandler)
 }
 
 type WriteSuccessChunkFn func(data interface{}) error
 type WriteMsgFn func(msg string) error
 
-type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request Request, respChunk WriteSuccessChunkFn, respChunkInvalidInput WriteMsgFn, respChunkServerError WriteMsgFn) error
+type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request interface{}, respChunk WriteSuccessChunkFn, respChunkInvalidInput WriteMsgFn, respChunkServerError WriteMsgFn) error
 
-
-func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, handle ChunkedRequestHandler,
+func (m *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, handle ChunkedRequestHandler,
 	onInvalidInput OnError, onServerError OnError) (network.StreamHandler, error) {
 
-	maxRequestContentSize := reqType.ReqSSZ.MaxLen()
+	maxRequestContentSize := m.RequestCodec.MaxByteLen()
 	if comp != nil {
 		s, err := comp.MaxEncodedLen(maxRequestContentSize)
 		if err != nil {
@@ -105,20 +149,20 @@ func (reqType *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression
 			onInvalidInput(ctx, peerId, fmt.Errorf("request length %d exceeds request size limit %d", requestLen, maxRequestContentSize))
 			return
 		}
-		reqObj := reqType.AllocRequest()
+		reqObj := m.RequestCodec.Alloc()
 
 		if comp != nil {
 			r = comp.Decompress(r)
 		}
 
-		if err := zssz.Decode(r, requestLen, reqObj, reqType.ReqSSZ); err != nil {
+		if err := m.RequestCodec.Decode(r, requestLen, reqObj); err != nil {
 			onInvalidInput(ctx, peerId, err)
 			return
 		}
 		var buf bytes.Buffer
-
 		if err := handle(ctx, peerId, reqObj, func(data interface{}) error {
-			if _, err := zssz.Encode(&buf, data, reqType.RespChunkSSZ); err != nil {
+			buf.Reset()  // re-use buffer for each response chunk
+			if err := m.ResponseChunkCodec.Encode(&buf, data); err != nil {
 				return err
 			}
 			return EncodeChunk(SuccessCode, bytes.NewReader(buf.Bytes()), w, comp)

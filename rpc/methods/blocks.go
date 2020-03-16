@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/protolambda/rumor/rpc/reqresp"
-	"github.com/protolambda/zssz"
 )
 
 // instead of parsing the whole body, we can just leave it as bytes.
@@ -26,7 +25,6 @@ type SignedBeaconBlock struct {
 	Message BeaconBlock
 	Signature BLSSignature
 }
-var SignedBeaconBlockSSZ = zssz.GetSSZ((*SignedBeaconBlock)(nil))
 
 
 type BlocksByRangeReqV1 struct {
@@ -40,16 +38,11 @@ func (r *BlocksByRangeReqV1) String() string {
 	return fmt.Sprintf("%v", *r)
 }
 
-var BlocksByRangeReqV1SSZ = zssz.GetSSZ((*BlocksByRangeReqV1)(nil))
-
 var BlocksByRangeRPCv1 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
 	MaxChunkCount: 100, // 100 blocks default maximum
-	ReqSSZ:        BlocksByRangeReqV1SSZ,
-	RespChunkSSZ:  SignedBeaconBlockSSZ,
-	AllocRequest: func() reqresp.Request {
-		return new(BlocksByRangeReqV1)
-	},
+	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV1)(nil)),
+	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 }
 
 type BlocksByRangeReqV2 struct {
@@ -62,16 +55,11 @@ func (r *BlocksByRangeReqV2) String() string {
 	return fmt.Sprintf("%v", *r)
 }
 
-var BlocksByRangeReqV2SSZ = zssz.GetSSZ((*BlocksByRangeReqV2)(nil))
-
 var BlocksByRangeRPCv2 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/2/ssz",
 	MaxChunkCount: 100, // 100 blocks default maximum
-	ReqSSZ:        BlocksByRangeReqV2SSZ,
-	RespChunkSSZ:  SignedBeaconBlockSSZ,
-	AllocRequest: func() reqresp.Request {
-		return new(BlocksByRangeReqV2)
-	},
+	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV2)(nil)),
+	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 }
 
 type BlocksByRootReq []Root
@@ -93,14 +81,9 @@ func (r BlocksByRootReq) String() string {
 	return "blocks-by-root requested: " + string(out[:len(out) - 1])
 }
 
-var BlocksByRootReqSSZ = zssz.GetSSZ((*BlocksByRootReq)(nil))
-
 var BlocksByRootRPCv1 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_root/1/ssz",
 	MaxChunkCount: 100, // 100 blocks default maximum
-	ReqSSZ:        BlocksByRootReqSSZ,
-	RespChunkSSZ:  SignedBeaconBlockSSZ,
-	AllocRequest: func() reqresp.Request {
-		return new(BlocksByRootReq)
-	},
+	RequestCodec: reqresp.NewSSZCodec((*BlocksByRootReq)(nil)),
+	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 }

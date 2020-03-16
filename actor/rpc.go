@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -13,12 +14,52 @@ import (
 	"github.com/spf13/cobra"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 type RPCState struct {
-	CurrentStatus methods.Status
+	Goodbye *Responder
+	Status *Responder
+	BlocksByRange *Responder
+	BlocksByRoot *Responder
 }
+
+type RequestKey uint64
+
+type RequestEntry struct {
+	From peer.ID
+	Request reqresp.Request
+	RespChunkFn reqresp.WriteSuccessChunkFn
+	RespChunkInvalidInputFn reqresp.WriteMsgFn
+	RespChunkServerErrorFn reqresp.WriteMsgFn
+	Close func()
+}
+
+type Responder struct {
+	keyCounter RequestKey
+	keyCounterMutex sync.Mutex
+	// RequestKey -> RequestEntry
+	Requests sync.Map
+}
+
+func (r *Responder) AddRequest(req *RequestEntry) RequestKey {
+	r.keyCounterMutex.Lock()
+	key := r.keyCounter
+	r.keyCounter += 1
+	r.keyCounterMutex.Unlock()
+	r.Requests.Store(key, req)
+	return key
+}
+
+/*
+TODO:
+- clean up "listen" command, share more logic, smaller command definitions
+- refactor "req" command
+- generic "listen"/"req"/"resp" command; take protocol-id and ssz-bytes as argument
+- implement "resp" command, take ssz-bytes or type-specific input
+
+ */
 
 func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Command {
 	cmd := &cobra.Command{
@@ -96,18 +137,13 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		return cmd
 	}
 
-	makeRespCmd := func(cmd *cobra.Command,
+	makeListenCmd := func(
+		responder *Responder,
+		cmd *cobra.Command,
 		rpcMethod func(cmd *cobra.Command) *reqresp.RPCMethod,
-		handleReqFactory func(cmd *cobra.Command, args []string) (reqresp.ChunkedRequestHandler, error),
 	) *cobra.Command {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
-		cmd.Flags().String("invalid-input", "", "If specified, an InvalidRequest(1) will be sent with the given message.")
-		cmd.Flags().String("server-error", "", "If specified, an ServerError(2) will be sent with the given message.")
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			if cmd.Flags().Changed("invalid-input") && cmd.Flags().Changed("server-error") {
-				log.Error("cannot write both invalid-input and server-error to response")
-				return
-			}
 			if r.NoHost(log) {
 				return
 			}
@@ -121,13 +157,9 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				return
 			}
 			m := rpcMethod(cmd)
-			handleReq, err := handleReqFactory(cmd, args)
-			if err != nil {
-				log.Error(err)
-				return
-			}
 			handleReqWrap := func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
 				log.Debugf("Got request from %s, protocol %s: %s", peerId.Pretty(), m.Protocol, request.String())
+
 				respChunkWrap := func(data interface{}) error {
 					log.Debugf("Responding SUCCESS to peer %s with data: %v", peerId.Pretty(), data)
 					return respChunk(data)
@@ -140,15 +172,33 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 					log.Debugf("Responding SERVER ERROR to peer %s with message: '%s'", peerId.Pretty(), msg)
 					return respChunkInvalidInput(msg)
 				}
-				if cmd.Flags().Changed("invalid-input") {
-					v, _ := cmd.Flags().GetString("invalid-input")
-					return respChunkInvalidInput(v)
+				ctx, cancel := context.WithCancel(r.Ctx)  // TODO: switch to command ctx
+				reqId := responder.AddRequest(&RequestEntry{
+					From:                    peerId,
+					Request:                 request,
+					RespChunkFn:             respChunkWrap,
+					RespChunkInvalidInputFn: respInvalidInputWrap,
+					RespChunkServerErrorFn:  respServerErrWrap,
+					Close:                   cancel,
+				})
+
+				// TODO: instead of re-encoding the request, use the original data (if refactored to be made accessible)
+				var buf bytes.Buffer
+				if err := m.RequestCodec.Encode(&buf, request); err != nil {
+					return err
 				}
-				if cmd.Flags().Changed("server-error") {
-					v, _ := cmd.Flags().GetString("server-error")
-					return respChunkServerError(v)
-				}
-				return handleReq(ctx, peerId, request, respChunkWrap, respInvalidInputWrap, respServerErrWrap)
+
+				log.WithFields(logrus.Fields{
+					"req_id": reqId,
+					"from": peerId.String(),
+					"protocol": m.Protocol,
+					"req": request.String(),
+					"ssz": hex.EncodeToString(buf.Bytes()),
+				}).Infof("Received request!")
+
+				// Wait for context to stop processing the request (stream will be closed after return)
+				<-ctx.Done()
+				return nil
 			}
 			onInvalidInput := func(ctx context.Context, peerId peer.ID, err error) {
 				log.Warnf("Got invalid input from %s, protocol %s, err: %v", peerId.Pretty(), m.Protocol, err)
@@ -164,13 +214,6 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler)
 		}
 		return cmd
-	}
-
-	responseNotImplemented := func(cmd *cobra.Command, args []string) (handler reqresp.ChunkedRequestHandler, err error) {
-		return func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
-			log.Infof("Received request: %s", request.String())
-			return fmt.Errorf("response-type is not implemented to make success responses. Ignoring request and closing stream")
-		}, nil
 	}
 
 	goodbyeCmd := &cobra.Command{
@@ -204,13 +247,16 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		log.Infof("Goodbye RPC responses of peer %s ended", peerID.Pretty())
 	},
 	))
-	goodbyeCmd.AddCommand(makeRespCmd(&cobra.Command{
-		Use:   "resp",
-		Short: "Respond to peers.",
-		Args:  cobra.NoArgs,
-	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
-		return &methods.GoodbyeRPCv1
-	}, responseNotImplemented))
+	goodbyeCmd.AddCommand(makeListenCmd(
+		state.Goodbye,
+		&cobra.Command{
+			Use:   "listen",
+			Short: "Listen for requests of peers to respond to with `resp`",
+			Args:  cobra.NoArgs,
+		}, func(cmd *cobra.Command) *reqresp.RPCMethod {
+			return &methods.GoodbyeRPCv1
+		}))
+
 	cmd.AddCommand(goodbyeCmd)
 
 	parseRoot := func(v string) ([32]byte, error) {
@@ -299,6 +345,15 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			return err
 		}
 		log.Infof("Block RPC response of peer %s: Slot: %d Parent root: %x Sig: %x", peerID.Pretty(), data.Message.Slot, data.Message.ParentRoot, data.Signature)
+		// TODO: could share buffer between blocks if memory allocation becomes an issue
+
+		var buf bytes.Buffer
+
+		log.WithFields(logrus.Fields{
+			"slot": data.Message.Slot,
+			"parent_root": hex.EncodeToString(data.Message.ParentRoot[:]),
+			"signed_block": hex.EncodeToString(buf.Bytes()),
+		})
 		return nil
 	}, func(peerID peer.ID) {
 		log.Infof("Blocks-by-range RPC responses of peer %s ended", peerID.Pretty())
