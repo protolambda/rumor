@@ -40,7 +40,6 @@ func (r *BlocksByRangeReqV1) String() string {
 
 var BlocksByRangeRPCv1 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
-	MaxChunkCount: 100, // 100 blocks default maximum
 	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV1)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 }
@@ -57,7 +56,6 @@ func (r *BlocksByRangeReqV2) String() string {
 
 var BlocksByRangeRPCv2 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/2/ssz",
-	MaxChunkCount: 100, // 100 blocks default maximum
 	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV2)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 }
@@ -83,7 +81,6 @@ func (r BlocksByRootReq) String() string {
 
 var BlocksByRootRPCv1 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_root/1/ssz",
-	MaxChunkCount: 100, // 100 blocks default maximum
 	RequestCodec: reqresp.NewSSZCodec((*BlocksByRootReq)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 }

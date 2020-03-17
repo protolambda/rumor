@@ -20,7 +20,6 @@ func (s *Status) String() string {
 
 var StatusRPCv1 = reqresp.RPCMethod{
 	Protocol: "/eth2/beacon_chain/req/status/1/ssz",
-	MaxChunkCount: 1,
 	RequestCodec: reqresp.NewSSZCodec((*Status)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*Status)(nil)),
 }

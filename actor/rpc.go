@@ -30,7 +30,7 @@ type RequestKey uint64
 type RequestEntry struct {
 	From peer.ID
 	handler reqresp.RequestResponder
-	Close func()
+	cancel func()
 }
 
 type Responder struct {
@@ -38,6 +38,24 @@ type Responder struct {
 	keyCounterMutex sync.Mutex
 	// RequestKey -> RequestEntry
 	Requests sync.Map
+}
+
+func (r *Responder) GetRequest(key RequestKey) *RequestEntry {
+	e, ok := r.Requests.Load(key)
+	if ok {
+		return e.(*RequestEntry)
+	} else {
+		return nil
+	}
+}
+
+func (r *Responder) CloseRequest(key RequestKey) {
+	e := r.GetRequest(key)
+	if e == nil {
+		return
+	}
+	e.cancel()
+	r.Requests.Delete(key)
 }
 
 func (r *Responder) AddRequest(req *RequestEntry) RequestKey {
@@ -85,8 +103,13 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		mkReq func(cmd *cobra.Command, args []string) (interface{}, error),
 		onResp func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error,
 		onClose func(peerID peer.ID),
+		maxRespChunksDefault uint64,
 	) *cobra.Command {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
+		var maxChunks uint64
+		cmd.Flags().Uint64Var(&maxChunks, "max-chunks", maxRespChunksDefault, "Max response chunk count, if 0, do not wait for a response at all.")
+		var timeout uint64
+		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds the stream (complete request <> response time). 0 to Disable timeout.")
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			if r.NoHost(log) {
 				return
@@ -94,7 +117,10 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			sFn := reqresp.NewStreamFn(func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
 				return r.P2PHost.NewStream(ctx, peerId, protocolId)
 			}).WithTimeout(time.Second * 10)
-			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10) // TODO add timeout option
+			ctx := r.Ctx  // TODO; change to command time-out
+			if timeout != 0 {
+				ctx, _ = context.WithTimeout(ctx, time.Millisecond * time.Duration(timeout))
+			}
 			peerID, err := peer.Decode(args[0])
 			if err != nil {
 				log.Error(err)
@@ -112,7 +138,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			}
 			m := rpcMethod(cmd)
 			lastRespChunkIndex := int64(-1)
-			if err := m.RunRequest(ctx, sFn, peerID, comp, req,
+			if err := m.RunRequest(ctx, sFn, peerID, comp, req, maxChunks,
 				func(chunkIndex uint64, readChunk func(dest interface{}) error) error {
 					log.Debugf("Received response chunk %d from peer %s", chunkIndex, peerID.Pretty())
 					lastRespChunkIndex = int64(chunkIndex)
@@ -196,7 +222,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 					reqId := responder.AddRequest(&RequestEntry{
 						From:                    peerId,
 						handler:                 handler,
-						Close:                   cancel,
+						cancel:                  cancel,
 					})
 
 					log.WithFields(logrus.Fields{
@@ -221,13 +247,161 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		return cmd
 	}
 
+	checkAndGetReq := func(cmd *cobra.Command, args []string, responder *Responder) (key RequestKey, req *RequestEntry, ok bool) {
+		if r.NoHost(log) {
+			return 0, nil, false
+		}
+		reqId, err := strconv.ParseUint(args[0], 0, 64)
+		if err != nil {
+			log.Errorf("Could not parse request key '%s'", args[0])
+			return 0, nil, false
+		}
+
+		key = RequestKey(reqId)
+		req = responder.GetRequest(key)
+		if req == nil {
+			log.Errorf("Could not find request corresponding to key '%s'", key)
+			return 0, nil, false
+		}
+		return key, req, true
+	}
+
+	makeRawRespChunkCmd := func(
+		responder *Responder,
+		cmd *cobra.Command,
+		doneDefault bool,
+	) *cobra.Command {
+		var done bool
+		cmd.Flags().BoolVar(&done, "done", doneDefault, "After writing this chunk, close the response (no more chunks).")
+		cmd.Args = cobra.ExactArgs(2)
+		cmd.Run = func(cmd *cobra.Command, args []string) {
+			key, req, ok := checkAndGetReq(cmd, args, responder)
+			if !ok {
+				return
+			}
+			byteStr := args[1]
+			if strings.HasPrefix(byteStr, "0x") {
+				byteStr = byteStr[2:]
+			}
+			bytez, err := hex.DecodeString(byteStr)
+			if err == nil {
+				log.Errorf("Data is not a valid hex-string: '%s'", byteStr)
+				return
+			}
+
+			if err := req.handler.WriteRawResponseChunk(bytez); err != nil {
+				log.Error(err)
+				return
+			}
+
+			if done {
+				responder.CloseRequest(key)
+			}
+		}
+		return cmd
+	}
+
+	makeInvalidInputCmd := func(
+		responder *Responder,
+		cmd *cobra.Command,
+	) *cobra.Command {
+		var done bool
+		cmd.Flags().BoolVar(&done, "done", true, "After writing this chunk, close the response (no more chunks).")
+		cmd.Args = cobra.ExactArgs(2)
+		cmd.Run = func(cmd *cobra.Command, args []string) {
+			key, req, ok := checkAndGetReq(cmd, args, responder)
+			if !ok {
+				return
+			}
+			if err := req.handler.WriteInvalidMsgChunk(args[1]); err != nil {
+				log.Error(err)
+				return
+			}
+			if done {
+				responder.CloseRequest(key)
+			}
+		}
+		return cmd
+	}
+
+	makeServerErrorCmd := func(
+		responder *Responder,
+		cmd *cobra.Command,
+	) *cobra.Command {
+		var done bool
+		cmd.Flags().BoolVar(&done, "done", true, "After writing this chunk, close the response (no more chunks).")
+		cmd.Args = cobra.ExactArgs(2)
+		cmd.Run = func(cmd *cobra.Command, args []string) {
+			key, req, ok := checkAndGetReq(cmd, args, responder)
+			if !ok {
+				return
+			}
+			if err := req.handler.WriteServerErrorChunk(args[1]); err != nil {
+				log.Error(err)
+				return
+			}
+			if done {
+				responder.CloseRequest(key)
+			}
+		}
+		return cmd
+	}
+
+	/*
+	<rpc type name>   # for 'goodbye', 'status', 'blocks-by-range', 'blocks-by-root'
+	      req
+				with --compression=none --max-chunks=20 <peerID> [args to parse into request]
+				raw  --compression=none --max-chunks=20 <peerID> <hex encoded bytes>
+	      listen --compression=none --always-close=false --raw=false                 # queues requests, logs request-id. Closes listener when command is canceled.
+	      resp
+				chunk
+					with --done=false <req-ID> [args to parse into response chunk]
+					raw  --done=false --result-code=0 <req-ID> <hex encoded bytes>
+				invalid-input --done=true <req-ID> [msg string]
+				server-error --done=true <req-ID> [msg string]
+		  close <req-ID>                                                   # Cancel an open request, closes the response stream, removes it from memory
+
+	    --result-code can be used to write custom chunk data (Test behavior of unspecced chunk types)
+		--drop stops listening for responses immediately after sending the request.
+	    --done closes the response immediately after sending the chunk
+	    --always-close=true prevents requests from being queued, and requests are immediately dropped
+
+		For 'blocks-by-{range, root} req with';
+			--max-chunks, if left unchanged, should change to the request span
+		For 'goodbye req {with, raw}';
+			--max-chunks=0 as default, do not wait for response
+		For 'status req {with, raw}';
+			--max-chunks=1 as default, only single response
+		For 'status resp chunk {with, raw}';
+			--done=true as default, do not write more than one chunk
+
+		Incoming Request logs:
+			{
+				"req_id":    The ID to respond to it, if queued
+				"from":      Peer-ID of request sender
+				"protocol":  Protocol string of request
+				"input_err": if the request was invalid, this is the error message. The responder can decide to respond with `<name> resp invalid-input <red-ID> "some message here to be nice to the client"`
+				"data":      if the request was valid, this is either a hex-encoded string (if listened with --raw) or the parsed request.
+			}
+
+		Incoming Response logs:
+			{
+				W.I.P.
+			}
+	 */
+
 	goodbyeCmd := &cobra.Command{
 		Use:   "goodbye",
 		Short: "Manage goodbye RPC",
 	}
-	goodbyeCmd.AddCommand(makeReqCmd(&cobra.Command{
-		Use:   "req <peerID> <code>",
-		Short: "Send a goodbye to a peer, optionally disconnecting the peer after sending the Goodbye.",
+
+	goodbyeReqCmd := &cobra.Command{
+		Use:   "req",
+		Short: "Make requests",
+	}
+	goodbyeReqCmd.AddCommand(makeReqCmd(&cobra.Command{
+		Use:   " <peerID> <code>",
+		Short: "Send a goodbye to a peer",
 		Args:  cobra.ExactArgs(2),
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.GoodbyeRPCv1
@@ -251,7 +425,9 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 	}, func(peerID peer.ID) {
 		log.Infof("Goodbye RPC responses of peer %s ended", peerID.Pretty())
 	},
+	0,
 	))
+
 	goodbyeCmd.AddCommand(makeListenCmd(
 		state.Goodbye,
 		&cobra.Command{
@@ -260,6 +436,18 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			Args:  cobra.NoArgs,
 		}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 			return &methods.GoodbyeRPCv1
+		}, true))
+
+	goodbyeRespCmd := &cobra.Command{
+		Use:   "resp",
+		Short: "Respond to requests",
+	}
+	goodbyeCmd.AddCommand(makeRawRespChunkCmd(
+		state.Goodbye,
+		&cobra.Command{
+			Use:   "raw",
+			Short: "Write a raw response chunk",
+			Args:  cobra.NoArgs,
 		}, true))
 
 	cmd.AddCommand(goodbyeCmd)

@@ -22,8 +22,11 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 	//		response_chunk  ::= <result> | <encoding-dependent-header> | <encoded-payload>
 	//		result    ::= “0” | “1” | “2” | [“128” ... ”255”]
 	return func(ctx context.Context, r io.Reader, w io.WriteCloser) error {
-		blr := NewBufLimitReader(r, 1024, 0)
 		defer w.Close()
+		if maxChunkCount == 0 {
+			return nil
+		}
+		blr := NewBufLimitReader(r, 1024, 0)
 		for chunkIndex := uint64(0); chunkIndex < maxChunkCount; chunkIndex++ {
 			blr.N = 1
 			resByte, err := blr.ReadByte()

@@ -60,7 +60,6 @@ func (c *SSZCodec) Alloc() interface{} {
 
 type RPCMethod struct {
 	Protocol           protocol.ID
-	MaxChunkCount      uint64
 	RequestCodec       Codec
 	ResponseChunkCodec Codec
 }
@@ -80,7 +79,7 @@ type MethodRespSuccessHandler func(chunkIndex uint64, readChunk func(dest interf
 type MethodRespErrorHandler func(chunkIndex uint64, msg string) error
 
 func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req interface{}, onResponse MethodRespSuccessHandler,
+	peerId peer.ID, comp Compression, req interface{}, maxRespChunks uint64, onResponse MethodRespSuccessHandler,
 	onInvalidReqResp MethodRespErrorHandler, onServerErrorResp MethodRespErrorHandler, onClose func()) error {
 
 	defer onClose()
@@ -115,7 +114,7 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 		}
 	}
 
-	respHandler := handleChunks.MakeResponseHandler(m.MaxChunkCount, maxChunkContentSize, comp)
+	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, comp)
 
 	var buf bytes.Buffer
 	if err := m.RequestCodec.Encode(&buf, req); err != nil {
