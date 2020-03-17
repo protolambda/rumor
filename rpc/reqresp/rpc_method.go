@@ -130,15 +130,21 @@ type ReadRequestFn func (dest interface{}) error
 type WriteSuccessChunkFn func(data interface{}) error
 type WriteMsgFn func(msg string) error
 
-type ChunkedRequestHandler interface {
+type RequestReader interface {
 	// nil if not an invalid input
 	InvalidInput() error
 	ReadRequest(dest interface{}) error
 	RawRequest() ([]byte, error)
+}
+type RequestResponder interface {
 	WriteResponseChunk(data interface{}) error
 	WriteRawResponseChunk(chunk []byte) error
 	WriteInvalidMsgChunk(msg string) error
 	WriteServerErrorChunk(msg string) error
+}
+type ChunkedRequestHandler interface {
+	RequestReader
+	RequestResponder
 }
 
 type chReqHandler struct {

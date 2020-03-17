@@ -29,10 +29,7 @@ type RequestKey uint64
 
 type RequestEntry struct {
 	From peer.ID
-	Request interface{}
-	RespChunkFn reqresp.WriteSuccessChunkFn
-	RespChunkInvalidInputFn reqresp.WriteMsgFn
-	RespChunkServerErrorFn reqresp.WriteMsgFn
+	handler reqresp.RequestResponder
 	Close func()
 }
 
@@ -54,7 +51,6 @@ func (r *Responder) AddRequest(req *RequestEntry) RequestKey {
 
 /*
 TODO:
-- clean up "listen" command, share more logic, smaller command definitions
 - refactor "req" command
 - generic "listen"/"req"/"resp" command; take protocol-id and ssz-bytes as argument
 - implement "resp" command, take ssz-bytes or type-specific input
@@ -146,6 +142,8 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
 		var drop bool
 		cmd.Flags().BoolVar(&drop, "drop", dropDefault, "Drop the requests, do not queue for a response.")
+		var raw bool
+		cmd.Flags().BoolVar(&raw, "raw", false, "Do not decode the request, look at raw bytes")
 		var timeout uint64
 		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout.")
 		cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -166,58 +164,54 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				return
 			}
 			m := rpcMethod(cmd)
-			handleReqWrap := func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
-				respChunkWrap := func(data interface{}) error {
-					log.Debugf("Responding SUCCESS to peer %s with data: %v", peerId.Pretty(), data)
-					return respChunk(data)
-				}
-				respInvalidInputWrap := func(msg string) error {
-					log.Debugf("Responding INVALID INPUT to peer %s with message: '%s'", peerId.Pretty(), msg)
-					return respChunkInvalidInput(msg)
-				}
-				respServerErrWrap := func(msg string) error {
-					log.Debugf("Responding SERVER ERROR to peer %s with message: '%s'", peerId.Pretty(), msg)
-					return respChunkInvalidInput(msg)
-				}
-
-				// TODO: instead of re-encoding the request, use the original data (if refactored to be made accessible)
-				var buf bytes.Buffer
-				if err := m.RequestCodec.Encode(&buf, request); err != nil {
-					return err
+			listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
+				var data interface{}
+				var inputErr error
+				if raw {
+					bytez, err := handler.RawRequest()
+					if err != nil {
+						inputErr = err
+					} else {
+						data = hex.EncodeToString(bytez)
+					}
+				} else {
+					reqObj := m.RequestCodec.Alloc()
+					err := handler.ReadRequest(reqObj)
+					if err != nil {
+						inputErr = err
+					} else {
+						data = reqObj
+					}
 				}
 
 				if drop {
 					log.WithFields(logrus.Fields{
-						"from":     peerId.String(),
-						"protocol": m.Protocol,
-						"req":      fmt.Sprintf("%v", request),
-						"ssz":      hex.EncodeToString(buf.Bytes()),
+						"from":      peerId.String(),
+						"protocol":  m.Protocol,
+						"input_err": inputErr,
+						"data":      data,
 					}).Infof("Received request, dropping it!")
 				} else {
-					ctx, cancel := context.WithCancel(r.Ctx) // TODO: switch to command ctx
+					ctx, cancel := context.WithCancel(ctx)
 					reqId := responder.AddRequest(&RequestEntry{
 						From:                    peerId,
-						Request:                 request,
-						RespChunkFn:             respChunkWrap,
-						RespChunkInvalidInputFn: respInvalidInputWrap,
-						RespChunkServerErrorFn:  respServerErrWrap,
+						handler:                 handler,
 						Close:                   cancel,
 					})
 
 					log.WithFields(logrus.Fields{
-						"req_id":   reqId,
-						"from":     peerId.String(),
-						"protocol": m.Protocol,
-						"req":      request,
-						"ssz":      hex.EncodeToString(buf.Bytes()),
+						"req_id":    reqId,
+						"from":      peerId.String(),
+						"protocol":  m.Protocol,
+						"input_err": inputErr,
+						"data":      data,
 					}).Infof("Received request, queued it to respond to!")
 
 					// Wait for context to stop processing the request (stream will be closed after return)
 					<-ctx.Done()
 				}
-				return nil
 			}
-			streamHandler, err := m.MakeStreamHandler(sCtxFn, comp, handleReqWrap)
+			streamHandler, err := m.MakeStreamHandler(sCtxFn, comp, listenReq)
 			if err != nil {
 				log.Error(err)
 				return
