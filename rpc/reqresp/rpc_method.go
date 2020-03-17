@@ -17,8 +17,6 @@ type Request interface {
 	fmt.Stringer
 }
 
-type AllocRequest func() Request
-
 type Codec interface {
 	MaxByteLen() uint64
 	Encode(w io.Writer, input interface{}) error
@@ -82,7 +80,7 @@ type MethodRespSuccessHandler func(chunkIndex uint64, readChunk func(dest interf
 type MethodRespErrorHandler func(chunkIndex uint64, msg string) error
 
 func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req Request, onResponse MethodRespSuccessHandler,
+	peerId peer.ID, comp Compression, req interface{}, onResponse MethodRespSuccessHandler,
 	onInvalidReqResp MethodRespErrorHandler, onServerErrorResp MethodRespErrorHandler, onClose func()) error {
 
 	defer onClose()
@@ -128,51 +126,79 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 	return newStreamFn.Request(ctx, peerId, protocolId, &buf, comp, respHandler)
 }
 
+type ReadRequestFn func (dest interface{}) error
 type WriteSuccessChunkFn func(data interface{}) error
 type WriteMsgFn func(msg string) error
 
-type ChunkedRequestHandler func(ctx context.Context, peerId peer.ID, request interface{}, respChunk WriteSuccessChunkFn, respChunkInvalidInput WriteMsgFn, respChunkServerError WriteMsgFn) error
+type ChunkedRequestHandler interface {
+	// nil if not an invalid input
+	InvalidInput() error
+	ReadRequest(dest interface{}) error
+	RawRequest() ([]byte, error)
+	WriteResponseChunk(data interface{}) error
+	WriteRawResponseChunk(chunk []byte) error
+	WriteInvalidMsgChunk(msg string) error
+	WriteServerErrorChunk(msg string) error
+}
 
-func (m *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, handle ChunkedRequestHandler,
-	onInvalidInput OnError, onServerError OnError) (network.StreamHandler, error) {
+type chReqHandler struct {
+	m *RPCMethod
+	comp Compression
+	respBuf bytes.Buffer
+	reqLen uint64
+	r io.Reader
+	w io.Writer
+	invalidInputErr error
+}
 
-	maxRequestContentSize := m.RequestCodec.MaxByteLen()
-	if comp != nil {
-		s, err := comp.MaxEncodedLen(maxRequestContentSize)
-		if err != nil {
-			return nil, err
-		}
-		maxRequestContentSize = s
+func (h *chReqHandler) InvalidInput() error {
+	return h.invalidInputErr
+}
+
+func (h *chReqHandler) ReadRequest(dest interface{}) error {
+	if h.invalidInputErr != nil {
+		return h.invalidInputErr
 	}
-	return RequestPayloadHandler(func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer) {
-		if requestLen > maxRequestContentSize {
-			onInvalidInput(ctx, peerId, fmt.Errorf("request length %d exceeds request size limit %d", requestLen, maxRequestContentSize))
-			return
-		}
-		reqObj := m.RequestCodec.Alloc()
+	return h.m.RequestCodec.Decode(h.r, h.reqLen, dest)
+}
 
-		if comp != nil {
-			r = comp.Decompress(r)
-		}
+func (h *chReqHandler) RawRequest() ([]byte, error) {
+	if h.invalidInputErr != nil {
+		return nil, h.invalidInputErr
+	}
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(h.r); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
 
-		if err := m.RequestCodec.Decode(r, requestLen, reqObj); err != nil {
-			onInvalidInput(ctx, peerId, err)
-			return
-		}
-		var buf bytes.Buffer
-		if err := handle(ctx, peerId, reqObj, func(data interface{}) error {
-			buf.Reset()  // re-use buffer for each response chunk
-			if err := m.ResponseChunkCodec.Encode(&buf, data); err != nil {
-				return err
-			}
-			return EncodeChunk(SuccessCode, bytes.NewReader(buf.Bytes()), w, comp)
-		}, func(msg string) error {
-			return EncodeChunk(InvalidReqCode, bytes.NewReader([]byte(msg)), w, comp)
-		}, func(msg string) error {
-			return EncodeChunk(ServerErrCode, bytes.NewReader([]byte(msg)), w, comp)
-		}); err != nil {
-			onServerError(ctx, peerId, err)
-			return
-		}
-	}).MakeStreamHandler(newCtx, comp, onInvalidInput, int(maxRequestContentSize)), nil
+func (h *chReqHandler) WriteResponseChunk(data interface{}) error {
+	h.respBuf.Reset()  // re-use buffer for each response chunk
+	if err := h.m.ResponseChunkCodec.Encode(&h.respBuf, data); err != nil {
+		return err
+	}
+	return EncodeChunk(SuccessCode, bytes.NewReader(h.respBuf.Bytes()), h.w, h.comp)
+}
+
+func (h *chReqHandler) WriteRawResponseChunk(chunk []byte) error {
+	return EncodeChunk(SuccessCode, bytes.NewReader(chunk), h.w, h.comp)
+}
+
+func (h *chReqHandler) WriteInvalidMsgChunk(msg string) error {
+	return EncodeChunk(InvalidReqCode, bytes.NewReader([]byte(msg)), h.w, h.comp)
+}
+
+func (h *chReqHandler) WriteServerErrorChunk(msg string) error {
+	return EncodeChunk(ServerErrCode, bytes.NewReader([]byte(msg)), h.w, h.comp)
+}
+
+type OnRequestListener func(ctx context.Context, peerId peer.ID, handler ChunkedRequestHandler)
+
+func (m *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, listener OnRequestListener) (network.StreamHandler, error) {
+	return RequestPayloadHandler(func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer, invalidInputErr error) {
+		listener(ctx, peerId, &chReqHandler{
+			m: m, comp: comp, reqLen: requestLen, r: r, w: w, invalidInputErr: invalidInputErr,
+		})
+	}).MakeStreamHandler(newCtx, comp, m.RequestCodec.MaxByteLen()), nil
 }

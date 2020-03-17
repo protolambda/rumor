@@ -29,7 +29,7 @@ type RequestKey uint64
 
 type RequestEntry struct {
 	From peer.ID
-	Request reqresp.Request
+	Request interface{}
 	RespChunkFn reqresp.WriteSuccessChunkFn
 	RespChunkInvalidInputFn reqresp.WriteMsgFn
 	RespChunkServerErrorFn reqresp.WriteMsgFn
@@ -86,7 +86,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 
 	makeReqCmd := func(cmd *cobra.Command,
 		rpcMethod func(cmd *cobra.Command) *reqresp.RPCMethod,
-		mkReq func(cmd *cobra.Command, args []string) (reqresp.Request, error),
+		mkReq func(cmd *cobra.Command, args []string) (interface{}, error),
 		onResp func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error,
 		onClose func(peerID peer.ID),
 	) *cobra.Command {
@@ -141,14 +141,23 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		responder *Responder,
 		cmd *cobra.Command,
 		rpcMethod func(cmd *cobra.Command) *reqresp.RPCMethod,
+		dropDefault bool,
 	) *cobra.Command {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
+		var drop bool
+		cmd.Flags().BoolVar(&drop, "drop", dropDefault, "Drop the requests, do not queue for a response.")
+		var timeout uint64
+		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout.")
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			if r.NoHost(log) {
 				return
 			}
+			// TODO; switch to command timeout.
 			sCtxFn := func() context.Context {
-				ctx, _ := context.WithTimeout(r.Ctx, time.Second*10) // TODO add timeout option
+				if timeout == 0 {
+					return r.Ctx
+				}
+				ctx, _ := context.WithTimeout(r.Ctx, time.Millisecond * time.Duration(timeout))
 				return ctx
 			}
 			comp, err := readOptionalComp(cmd)
@@ -157,9 +166,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				return
 			}
 			m := rpcMethod(cmd)
-			handleReqWrap := func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
-				log.Debugf("Got request from %s, protocol %s: %s", peerId.Pretty(), m.Protocol, request.String())
-
+			handleReqWrap := func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, respChunkInvalidInput reqresp.WriteMsgFn, respChunkServerError reqresp.WriteMsgFn) error {
 				respChunkWrap := func(data interface{}) error {
 					log.Debugf("Responding SUCCESS to peer %s with data: %v", peerId.Pretty(), data)
 					return respChunk(data)
@@ -172,15 +179,6 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 					log.Debugf("Responding SERVER ERROR to peer %s with message: '%s'", peerId.Pretty(), msg)
 					return respChunkInvalidInput(msg)
 				}
-				ctx, cancel := context.WithCancel(r.Ctx)  // TODO: switch to command ctx
-				reqId := responder.AddRequest(&RequestEntry{
-					From:                    peerId,
-					Request:                 request,
-					RespChunkFn:             respChunkWrap,
-					RespChunkInvalidInputFn: respInvalidInputWrap,
-					RespChunkServerErrorFn:  respServerErrWrap,
-					Close:                   cancel,
-				})
 
 				// TODO: instead of re-encoding the request, use the original data (if refactored to be made accessible)
 				var buf bytes.Buffer
@@ -188,25 +186,38 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 					return err
 				}
 
-				log.WithFields(logrus.Fields{
-					"req_id": reqId,
-					"from": peerId.String(),
-					"protocol": m.Protocol,
-					"req": request.String(),
-					"ssz": hex.EncodeToString(buf.Bytes()),
-				}).Infof("Received request!")
+				if drop {
+					log.WithFields(logrus.Fields{
+						"from":     peerId.String(),
+						"protocol": m.Protocol,
+						"req":      fmt.Sprintf("%v", request),
+						"ssz":      hex.EncodeToString(buf.Bytes()),
+					}).Infof("Received request, dropping it!")
+				} else {
+					ctx, cancel := context.WithCancel(r.Ctx) // TODO: switch to command ctx
+					reqId := responder.AddRequest(&RequestEntry{
+						From:                    peerId,
+						Request:                 request,
+						RespChunkFn:             respChunkWrap,
+						RespChunkInvalidInputFn: respInvalidInputWrap,
+						RespChunkServerErrorFn:  respServerErrWrap,
+						Close:                   cancel,
+					})
 
-				// Wait for context to stop processing the request (stream will be closed after return)
-				<-ctx.Done()
+					log.WithFields(logrus.Fields{
+						"req_id":   reqId,
+						"from":     peerId.String(),
+						"protocol": m.Protocol,
+						"req":      request,
+						"ssz":      hex.EncodeToString(buf.Bytes()),
+					}).Infof("Received request, queued it to respond to!")
+
+					// Wait for context to stop processing the request (stream will be closed after return)
+					<-ctx.Done()
+				}
 				return nil
 			}
-			onInvalidInput := func(ctx context.Context, peerId peer.ID, err error) {
-				log.Warnf("Got invalid input from %s, protocol %s, err: %v", peerId.Pretty(), m.Protocol, err)
-			}
-			onServerError := func(ctx context.Context, peerId peer.ID, err error) {
-				log.Warnf("Server error on request from %s, protocol %s, err: %v", peerId.Pretty(), m.Protocol, err)
-			}
-			streamHandler, err := m.MakeStreamHandler(sCtxFn, comp, handleReqWrap, onInvalidInput, onServerError)
+			streamHandler, err := m.MakeStreamHandler(sCtxFn, comp, handleReqWrap)
 			if err != nil {
 				log.Error(err)
 				return
@@ -226,7 +237,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		Args:  cobra.ExactArgs(2),
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.GoodbyeRPCv1
-	}, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
+	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
 		v, err := strconv.ParseUint(args[1], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
@@ -255,7 +266,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			Args:  cobra.NoArgs,
 		}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 			return &methods.GoodbyeRPCv1
-		}))
+		}, true))
 
 	cmd.AddCommand(goodbyeCmd)
 
@@ -301,7 +312,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		Use:   "req <peerID> <start-slot> <count> <step> [head-root-hex]",
 		Short: "Get blocks by range from a peer. The head-root is optional, and defaults to zeroes. Use --v2 for no head-root.",
 		Args:  cobra.RangeArgs(4, 5),
-	}, chooseBlocksByRangeVersion, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
+	}, chooseBlocksByRangeVersion, func(cmd *cobra.Command, args []string) (interface{}, error) {
 		startSlot, err := strconv.ParseUint(args[1], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse start slot '%s'", args[1])
@@ -439,7 +450,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		},
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.StatusRPCv1
-	}, func(cmd *cobra.Command, args []string) (reqresp.Request, error) {
+	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
 		if len(args) != 1 {
 			reqStatus, err := parseStatus(args[1:])
 			if err != nil {
@@ -471,7 +482,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
 		return &methods.StatusRPCv1
 	}, func(cmd *cobra.Command, args []string) (handler reqresp.ChunkedRequestHandler, err error) {
-		return func(ctx context.Context, peerId peer.ID, request reqresp.Request, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
+		return func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
 			return respChunk(&state.CurrentStatus)
 		}, nil
 	}))
