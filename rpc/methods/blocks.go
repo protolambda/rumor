@@ -42,6 +42,7 @@ var BlocksByRangeRPCv1 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
 	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV1)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
+	DefaultResponseChunkCount: 20,
 }
 
 type BlocksByRangeReqV2 struct {
@@ -58,6 +59,7 @@ var BlocksByRangeRPCv2 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/2/ssz",
 	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV2)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
+	DefaultResponseChunkCount: 20,
 }
 
 type BlocksByRootReq []Root
@@ -83,4 +85,5 @@ var BlocksByRootRPCv1 = reqresp.RPCMethod{
 	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_root/1/ssz",
 	RequestCodec: reqresp.NewSSZCodec((*BlocksByRootReq)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
+	DefaultResponseChunkCount: 20,
 }

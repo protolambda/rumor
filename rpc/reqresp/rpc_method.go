@@ -62,6 +62,7 @@ type RPCMethod struct {
 	Protocol           protocol.ID
 	RequestCodec       Codec
 	ResponseChunkCodec Codec
+	DefaultResponseChunkCount uint64
 }
 
 type ResponseCode uint8
@@ -78,8 +79,30 @@ const MAX_ERR_SIZE = 1 << 15
 type MethodRespSuccessHandler func(chunkIndex uint64, readChunk func(dest interface{}) error) error
 type MethodRespErrorHandler func(chunkIndex uint64, msg string) error
 
+type RequestInput interface {
+	Reader(c Codec) (io.Reader, error)
+}
+
+type RequestSSZInput struct {
+	Obj interface{}
+}
+
+func (v RequestSSZInput) Reader(c Codec) (io.Reader, error) {
+	var buf bytes.Buffer
+	if err := c.Encode(&buf, v); err != nil {
+		return nil, err
+	}
+	return &buf, nil
+}
+
+type RequestBytesInput []byte
+
+func (v RequestBytesInput) Reader(_ Codec) (io.Reader, error) {
+	return bytes.NewReader(v), nil
+}
+
 func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req interface{}, maxRespChunks uint64, onResponse MethodRespSuccessHandler,
+	peerId peer.ID, comp Compression, req RequestInput, maxRespChunks uint64, onResponse MethodRespSuccessHandler,
 	onInvalidReqResp MethodRespErrorHandler, onServerErrorResp MethodRespErrorHandler, onClose func()) error {
 
 	defer onClose()
@@ -103,6 +126,11 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 		}
 	})
 
+	reqR, err := req.Reader(m.RequestCodec)
+	if err != nil {
+		return err
+	}
+
 	protocolId := m.Protocol
 	maxChunkContentSize := m.ResponseChunkCodec.MaxByteLen()
 	if comp != nil {
@@ -116,13 +144,9 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 
 	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, comp)
 
-	var buf bytes.Buffer
-	if err := m.RequestCodec.Encode(&buf, req); err != nil {
-		return err
-	}
 	// Runs the request in sync, which processes responses,
 	// and then finally closes the channel through the earlier deferred close.
-	return newStreamFn.Request(ctx, peerId, protocolId, &buf, comp, respHandler)
+	return newStreamFn.Request(ctx, peerId, protocolId, reqR, comp, respHandler)
 }
 
 type ReadRequestFn func (dest interface{}) error

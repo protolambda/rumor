@@ -15,4 +15,5 @@ var GoodbyeRPCv1 = reqresp.RPCMethod{
 	Protocol: "/eth2/beacon_chain/req/goodbye/1/ssz",
 	RequestCodec: reqresp.NewSSZCodec((*Goodbye)(nil)),
 	ResponseChunkCodec: reqresp.NewSSZCodec((*Goodbye)(nil)),
+	DefaultResponseChunkCount: 0,
 }

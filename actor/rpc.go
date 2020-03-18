@@ -98,30 +98,26 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 	}
 	// TODO: stop responses command
 
-	makeReqCmd := func(cmd *cobra.Command,
-		rpcMethod func(cmd *cobra.Command) *reqresp.RPCMethod,
-		mkReq func(cmd *cobra.Command, args []string) (interface{}, error),
-		onResp func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error,
-		onClose func(peerID peer.ID),
-		maxRespChunksDefault uint64,
-	) *cobra.Command {
+	prepareReqFn := func(cmd *cobra.Command, m *reqresp.RPCMethod) func(peerIDStr string, reqInput reqresp.RequestInput) {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
 		var maxChunks uint64
-		cmd.Flags().Uint64Var(&maxChunks, "max-chunks", maxRespChunksDefault, "Max response chunk count, if 0, do not wait for a response at all.")
+		cmd.Flags().Uint64Var(&maxChunks, "max-chunks", m.DefaultResponseChunkCount, "Max response chunk count, if 0, do not wait for a response at all.")
 		var timeout uint64
 		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds the stream (complete request <> response time). 0 to Disable timeout.")
-		cmd.Run = func(cmd *cobra.Command, args []string) {
+
+		return func(peerIDStr string, reqInput reqresp.RequestInput) {
 			if r.NoHost(log) {
 				return
 			}
 			sFn := reqresp.NewStreamFn(func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
 				return r.P2PHost.NewStream(ctx, peerId, protocolId)
-			}).WithTimeout(time.Second * 10)
-			ctx := r.Ctx  // TODO; change to command time-out
+			}).WithTimeout(time.Second * 10) // TODO
+
+			ctx := r.Ctx // TODO; change to command time-out
 			if timeout != 0 {
-				ctx, _ = context.WithTimeout(ctx, time.Millisecond * time.Duration(timeout))
+				ctx, _ = context.WithTimeout(ctx, time.Millisecond*time.Duration(timeout))
 			}
-			peerID, err := peer.Decode(args[0])
+			peerID, err := peer.Decode(peerIDStr)
 			if err != nil {
 				log.Error(err)
 				return
@@ -131,14 +127,9 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				log.Error(err)
 				return
 			}
-			req, err := mkReq(cmd, args)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			m := rpcMethod(cmd)
+
 			lastRespChunkIndex := int64(-1)
-			if err := m.RunRequest(ctx, sFn, peerID, comp, req, maxChunks,
+			if err := m.RunRequest(ctx, sFn, peerID, comp, reqInput, maxChunks,
 				func(chunkIndex uint64, readChunk func(dest interface{}) error) error {
 					log.Debugf("Received response chunk %d from peer %s", chunkIndex, peerID.Pretty())
 					lastRespChunkIndex = int64(chunkIndex)
@@ -156,18 +147,16 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				log.Errorf("failed request: %v", err)
 			}
 		}
-		return cmd
 	}
 
 	makeListenCmd := func(
 		responder *Responder,
 		cmd *cobra.Command,
-		rpcMethod func(cmd *cobra.Command) *reqresp.RPCMethod,
-		dropDefault bool,
-	) *cobra.Command {
+		m *reqresp.RPCMethod,
+	) {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
 		var drop bool
-		cmd.Flags().BoolVar(&drop, "drop", dropDefault, "Drop the requests, do not queue for a response.")
+		cmd.Flags().BoolVar(&drop, "drop", m.DefaultResponseChunkCount == 0, "Drop the requests, do not queue for a response.")
 		var raw bool
 		cmd.Flags().BoolVar(&raw, "raw", false, "Do not decode the request, look at raw bytes")
 		var timeout uint64
@@ -189,7 +178,6 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				log.Error(err)
 				return
 			}
-			m := rpcMethod(cmd)
 			listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
 				var data interface{}
 				var inputErr error
@@ -244,16 +232,15 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			}
 			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler)
 		}
-		return cmd
 	}
 
-	checkAndGetReq := func(cmd *cobra.Command, args []string, responder *Responder) (key RequestKey, req *RequestEntry, ok bool) {
+	checkAndGetReq := func(reqKeyStr string, responder *Responder) (key RequestKey, req *RequestEntry, ok bool) {
 		if r.NoHost(log) {
 			return 0, nil, false
 		}
-		reqId, err := strconv.ParseUint(args[0], 0, 64)
+		reqId, err := strconv.ParseUint(reqKeyStr, 0, 64)
 		if err != nil {
-			log.Errorf("Could not parse request key '%s'", args[0])
+			log.Errorf("Could not parse request key '%s'", reqKeyStr)
 			return 0, nil, false
 		}
 
@@ -270,12 +257,12 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		responder *Responder,
 		cmd *cobra.Command,
 		doneDefault bool,
-	) *cobra.Command {
+	) {
 		var done bool
 		cmd.Flags().BoolVar(&done, "done", doneDefault, "After writing this chunk, close the response (no more chunks).")
 		cmd.Args = cobra.ExactArgs(2)
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			key, req, ok := checkAndGetReq(cmd, args, responder)
+			key, req, ok := checkAndGetReq(args[0], responder)
 			if !ok {
 				return
 			}
@@ -298,18 +285,20 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				responder.CloseRequest(key)
 			}
 		}
-		return cmd
 	}
 
 	makeInvalidInputCmd := func(
 		responder *Responder,
-		cmd *cobra.Command,
 	) *cobra.Command {
+		cmd := &cobra.Command{
+			Use:   "invalid-input <request-ID> <message>",
+			Short: "Respond with an invalid-input message chunk",
+		}
 		var done bool
 		cmd.Flags().BoolVar(&done, "done", true, "After writing this chunk, close the response (no more chunks).")
 		cmd.Args = cobra.ExactArgs(2)
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			key, req, ok := checkAndGetReq(cmd, args, responder)
+			key, req, ok := checkAndGetReq(args[0], responder)
 			if !ok {
 				return
 			}
@@ -326,13 +315,16 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 
 	makeServerErrorCmd := func(
 		responder *Responder,
-		cmd *cobra.Command,
 	) *cobra.Command {
+		cmd := &cobra.Command{
+			Use:   "server-error <request-ID> <message>",
+			Short: "Respond with a server-error message chunk",
+		}
 		var done bool
 		cmd.Flags().BoolVar(&done, "done", true, "After writing this chunk, close the response (no more chunks).")
 		cmd.Args = cobra.ExactArgs(2)
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			key, req, ok := checkAndGetReq(cmd, args, responder)
+			key, req, ok := checkAndGetReq(args[0], responder)
 			if !ok {
 				return
 			}
@@ -390,111 +382,104 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			}
 	 */
 
-	goodbyeCmd := &cobra.Command{
-		Use:   "goodbye",
-		Short: "Manage goodbye RPC",
+	makeMethodCmd := func(name string, responder *Responder, m *reqresp.RPCMethod) *cobra.Command {
+		methodCmd := &cobra.Command{
+			Use:   name,
+			Short: fmt.Sprintf("Manage %s RPC", name),
+		}
+		// Requests
+		// -----------------------------------
+		reqCmd := &cobra.Command{
+			Use:   "req",
+			Short: "Make requests",
+		}
+		reqWithCmd := &cobra.Command{
+			Use:   "with <peer-ID>",
+			Short: "Build and make a request with the given arguments",
+		}
+		{
+			reqFn := prepareReqFn(reqWithCmd, m)
+			reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
+
+				reqInput := reqresp.RequestSSZInput{Obj: req}
+				reqFn() // TODO
+			}
+		}
+		reqRawCmd := &cobra.Command{
+			Use:   "raw",
+			Short: "Make raw requests",
+		}
+		{
+			reqFn := prepareReqFn(reqWithCmd, m)
+			reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
+				reqInput := reqresp.RequestBytesInput(b)
+				reqFn() // TODO
+			}
+		}
+		reqCmd.AddCommand(reqWithCmd, reqRawCmd)
+		methodCmd.AddCommand(reqCmd)
+
+		// Listen
+		// -----------------------------------
+		listenCmd := &cobra.Command{
+			Use:   "listen",
+			Short: "Listen for new requests",
+		}
+		makeListenCmd(responder, listenCmd, m)
+
+		methodCmd.AddCommand(listenCmd)
+
+		// Responses
+		// -----------------------------------
+		respCmd := &cobra.Command{
+			Use:   "resp",
+			Short: "Respond to requests",
+		}
+		respChunkCmd := &cobra.Command{
+			Use:   "chunk",
+			Short: "Respond a chunk to a request",
+		}
+		respChunkWithCmd := &cobra.Command{
+			Use:   "with <request-ID>",
+			Short: "Build and make a request with the given arguments",
+		}
+		// TODO: respChunkWithCmd
+
+		respChunkRawCmd := &cobra.Command{
+			Use:   "raw",
+			Short: "Make raw requests",
+		}
+		makeRawRespChunkCmd(responder, respChunkRawCmd, m.DefaultResponseChunkCount > 1)
+		respChunkCmd.AddCommand(respChunkWithCmd, respChunkRawCmd)
+
+		respInvalidInputCmd := makeInvalidInputCmd(responder)
+		respServerErrorCmd := makeServerErrorCmd(responder)
+
+		respCmd.AddCommand(respChunkCmd, respInvalidInputCmd, respServerErrorCmd)
+		methodCmd.AddCommand(respCmd)
+
+		// Close
+		// -----------------------------------
+		closeCmd := &cobra.Command{
+			Use:   "close",
+			Short: "Close open requests",
+		}
+		// TODO
+		methodCmd.AddCommand(closeCmd)
+
+		return methodCmd
 	}
 
-	goodbyeReqCmd := &cobra.Command{
-		Use:   "req",
-		Short: "Make requests",
-	}
-	goodbyeReqCmd.AddCommand(makeReqCmd(&cobra.Command{
-		Use:   " <peerID> <code>",
-		Short: "Send a goodbye to a peer",
-		Args:  cobra.ExactArgs(2),
-	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
-		return &methods.GoodbyeRPCv1
-	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
+	/* <goodbye-code>
 		v, err := strconv.ParseUint(args[1], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse Goodbye code '%s'", args[1])
 		}
 		req := methods.Goodbye(v)
 		return &req, nil
-	}, func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error {
-		if chunkIndex > 0 {
-			return fmt.Errorf("unexpected second Goodbye response chunk from peer %s", peerID.Pretty())
-		}
-		var data methods.Goodbye
-		if err := readChunk(&data); err != nil {
-			return err
-		}
-		log.Infof("Goodbye RPC response of peer %s: %d", peerID.Pretty(), data)
-		return nil
-	}, func(peerID peer.ID) {
-		log.Infof("Goodbye RPC responses of peer %s ended", peerID.Pretty())
-	},
-	0,
-	))
 
-	goodbyeCmd.AddCommand(makeListenCmd(
-		state.Goodbye,
-		&cobra.Command{
-			Use:   "listen",
-			Short: "Listen for requests of peers to respond to with `resp`",
-			Args:  cobra.NoArgs,
-		}, func(cmd *cobra.Command) *reqresp.RPCMethod {
-			return &methods.GoodbyeRPCv1
-		}, true))
 
-	goodbyeRespCmd := &cobra.Command{
-		Use:   "resp",
-		Short: "Respond to requests",
-	}
-	goodbyeCmd.AddCommand(makeRawRespChunkCmd(
-		state.Goodbye,
-		&cobra.Command{
-			Use:   "raw",
-			Short: "Write a raw response chunk",
-			Args:  cobra.NoArgs,
-		}, true))
-
-	cmd.AddCommand(goodbyeCmd)
-
-	parseRoot := func(v string) ([32]byte, error) {
-		if v == "0" {
-			return [32]byte{}, nil
-		}
-		if strings.HasPrefix(v, "0x") {
-			v = v[2:]
-		}
-		if len(v) != 64 {
-			return [32]byte{}, fmt.Errorf("provided root has length %d, expected 64 hex characters (ignoring optional 0x prefix)", len(v))
-		}
-		var out [32]byte
-		_, err := hex.Decode(out[:], []byte(v))
-		return out, err
-	}
-	parseForkVersion := func(v string) ([4]byte, error) {
-		if strings.HasPrefix(v, "0x") {
-			v = v[2:]
-		}
-		if len(v) != 8 {
-			return [4]byte{}, fmt.Errorf("provided root has length %d, expected 8 hex characters (ignoring optional 0x prefix)", len(v))
-		}
-		var out [4]byte
-		_, err := hex.Decode(out[:], []byte(v))
-		return out, err
-	}
-
-	blocksByRangeCmd := &cobra.Command{
-		Use:   "blocks-by-range",
-		Short: "Manage blocks-by-range RPC",
-	}
-	chooseBlocksByRangeVersion := func(cmd *cobra.Command) *reqresp.RPCMethod {
-		v2, _ := cmd.Flags().GetBool("v2")
-		if v2 {
-			return &methods.BlocksByRangeRPCv2
-		} else {
-			return &methods.BlocksByRangeRPCv1
-		}
-	}
-	blocksByRangeReqCmd := makeReqCmd(&cobra.Command{
-		Use:   "req <peerID> <start-slot> <count> <step> [head-root-hex]",
-		Short: "Get blocks by range from a peer. The head-root is optional, and defaults to zeroes. Use --v2 for no head-root.",
-		Args:  cobra.RangeArgs(4, 5),
-	}, chooseBlocksByRangeVersion, func(cmd *cobra.Command, args []string) (interface{}, error) {
+	<start-slot> <count> <step> [head-root-hex]
 		startSlot, err := strconv.ParseUint(args[1], 0, 64)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse start slot '%s'", args[1])
@@ -532,52 +517,37 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				Step:          step,
 			}, nil
 		}
-	}, func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error {
-		var data methods.SignedBeaconBlock
-		if err := readChunk(&data); err != nil {
-			return err
+	 */
+
+
+
+	parseRoot := func(v string) ([32]byte, error) {
+		if v == "0" {
+			return [32]byte{}, nil
 		}
-		log.Infof("Block RPC response of peer %s: Slot: %d Parent root: %x Sig: %x", peerID.Pretty(), data.Message.Slot, data.Message.ParentRoot, data.Signature)
-		// TODO: could share buffer between blocks if memory allocation becomes an issue
-
-		var buf bytes.Buffer
-
-		log.WithFields(logrus.Fields{
-			"slot": data.Message.Slot,
-			"parent_root": hex.EncodeToString(data.Message.ParentRoot[:]),
-			"signed_block": hex.EncodeToString(buf.Bytes()),
-		})
-		return nil
-	}, func(peerID peer.ID) {
-		log.Infof("Blocks-by-range RPC responses of peer %s ended", peerID.Pretty())
-	},
-	)
-	blocksByRangeReqCmd.Flags().Bool("v2", false, "To use v2 (no head root in request)")
-	blocksByRangeCmd.AddCommand(blocksByRangeReqCmd)
-
-	blocksByRangeRespCmd := makeRespCmd(&cobra.Command{
-		Use:   "resp",
-		Short: "Respond to peers.",
-		Args:  cobra.NoArgs,
-	}, chooseBlocksByRangeVersion, responseNotImplemented)
-	blocksByRangeRespCmd.Flags().Bool("v2", false, "To use v2 (no head root in request)")
-
-	blocksByRangeCmd.AddCommand(blocksByRangeRespCmd)
-
-	cmd.AddCommand(blocksByRangeCmd)
-
-	statusCmd := &cobra.Command{
-		Use:   "status",
-		Short: "Manage status RPC",
+		if strings.HasPrefix(v, "0x") {
+			v = v[2:]
+		}
+		if len(v) != 64 {
+			return [32]byte{}, fmt.Errorf("provided root has length %d, expected 64 hex characters (ignoring optional 0x prefix)", len(v))
+		}
+		var out [32]byte
+		_, err := hex.Decode(out[:], []byte(v))
+		return out, err
 	}
-	statusCmd.AddCommand(&cobra.Command{
-		Use:   "view",
-		Short: "Show current status",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			log.Infof("Current status: %s", state.CurrentStatus.String())
-		},
-	})
+	parseForkVersion := func(v string) ([4]byte, error) {
+		if strings.HasPrefix(v, "0x") {
+			v = v[2:]
+		}
+		if len(v) != 8 {
+			return [4]byte{}, fmt.Errorf("provided root has length %d, expected 8 hex characters (ignoring optional 0x prefix)", len(v))
+		}
+		var out [4]byte
+		_, err := hex.Decode(out[:], []byte(v))
+		return out, err
+	}
+
+	// <head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>
 	parseStatus := func(args []string) (*methods.Status, error) {
 		forkVersion, err := parseForkVersion(args[0])
 		if err != nil {
@@ -607,69 +577,12 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			HeadSlot:        methods.Slot(headSlot),
 		}, nil
 	}
-	statusCmd.AddCommand(&cobra.Command{
-		Use:   "set <head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>",
-		Short: "Change current status.",
-		Args:  cobra.ExactArgs(5),
-		Run: func(cmd *cobra.Command, args []string) {
-			stat, err := parseStatus(args)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			state.CurrentStatus = *stat
-			log.Infof("Set to status: %s", state.CurrentStatus.String())
-		},
-	})
-	statusCmd.AddCommand(makeReqCmd(&cobra.Command{
-		Use:   "req <peerID> [<head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>]",
-		Short: "Ask peer for status. Request with given status, or current status if not defined.",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) != 1 && len(args) != 6 {
-				return fmt.Errorf("accepts either 1 or 6 args, received %d", len(args))
-			}
-			return nil
-		},
-	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
-		return &methods.StatusRPCv1
-	}, func(cmd *cobra.Command, args []string) (interface{}, error) {
-		if len(args) != 1 {
-			reqStatus, err := parseStatus(args[1:])
-			if err != nil {
-				return nil, err
-			}
-			return reqStatus, nil
-		} else {
-			return &state.CurrentStatus, nil
-		}
-	}, func(peerID peer.ID, chunkIndex uint64, readChunk func(dest interface{}) error) error {
-		log.Infof("status resp %d", chunkIndex)
-		if chunkIndex > 0 {
-			return fmt.Errorf("unexpected second Status response chunk from peer %s", peerID.Pretty())
-		}
-		var data methods.Status
-		if err := readChunk(&data); err != nil {
-			return err
-		}
-		log.Infof("Status RPC response of peer %s: %s", peerID.Pretty(), data.String())
-		return nil
-	}, func(peerID peer.ID) {
-		log.Infof("Status RPC responses of peer %s ended", peerID.Pretty())
-	},
-	))
-	statusCmd.AddCommand(makeRespCmd(&cobra.Command{
-		Use:   "resp",
-		Short: "Respond to peers with current status.",
-		Args:  cobra.NoArgs,
-	}, func(cmd *cobra.Command) *reqresp.RPCMethod {
-		return &methods.StatusRPCv1
-	}, func(cmd *cobra.Command, args []string) (handler reqresp.ChunkedRequestHandler, err error) {
-		return func(ctx context.Context, peerId peer.ID, request interface{}, respChunk reqresp.WriteSuccessChunkFn, onInvalidInput reqresp.WriteMsgFn, onServerErr reqresp.WriteMsgFn) error {
-			return respChunk(&state.CurrentStatus)
-		}, nil
-	}))
 
-	cmd.AddCommand(statusCmd)
+	cmd.AddCommand(makeMethodCmd("goodbye", state.Goodbye, &methods.GoodbyeRPCv1))
+	cmd.AddCommand(makeMethodCmd("status", state.Status, &methods.StatusRPCv1))
+	cmd.AddCommand(makeMethodCmd("blocks-by-range", state.BlocksByRange, &methods.BlocksByRangeRPCv1))
+	cmd.AddCommand(makeMethodCmd("blocks-by-range-v2", state.BlocksByRange, &methods.BlocksByRangeRPCv2))
+	cmd.AddCommand(makeMethodCmd("blocks-by-root", state.BlocksByRoot, &methods.BlocksByRootRPCv1))
 	return cmd
 }
 
