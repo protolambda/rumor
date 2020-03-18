@@ -53,14 +53,14 @@ func (r *Actor) Cmd(ctx context.Context, log *Logger) *cobra.Command {
 	}
 	// TODO: if too slow to initialize all commands, we could initialize just the called command.
 	cmd.AddCommand(
-		r.IniDebugCmd(log),
-		r.InitHostCmd(log),
-		r.InitEnrCmd(log),
-		r.InitPeerCmd(log),
-		r.InitDv5Cmd(log, &r.Dv5State),
-		r.InitKadCmd(log, &r.KadState),
-		r.InitGossipCmd(log, &r.GossipState),
-		r.InitRpcCmd(log, &r.RPCState),
+		r.IniDebugCmd(ctx, log),
+		r.InitHostCmd(ctx, log),
+		r.InitEnrCmd(ctx, log),
+		r.InitPeerCmd(ctx, log),
+		r.InitDv5Cmd(ctx, log, &r.Dv5State),
+		r.InitKadCmd(ctx, log, &r.KadState),
+		r.InitGossipCmd(ctx, log, &r.GossipState),
+		r.InitRpcCmd(ctx, log, &r.RPCState),
 	)
 	return cmd
 }

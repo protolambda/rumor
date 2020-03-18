@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -22,7 +23,7 @@ import (
 	"time"
 )
 
-func (r *Actor) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
+func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "host",
 		Short: "Manage host",
@@ -224,7 +225,7 @@ func (r *Actor) InitHostCmd(log logrus.FieldLogger) *cobra.Command {
 				return
 			}
 			h := r.Host()
-			log.Infof("Peer ID: %s", h.ID().Pretty())
+			log.WithField("peer_id", h.ID()).Info("Peer ID")
 			for _, a := range h.Addrs() {
 				log.Infof("Listening on: %s", a.String())
 			}

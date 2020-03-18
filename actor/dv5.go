@@ -18,7 +18,7 @@ type Dv5State struct {
 	CloseDv5 context.CancelFunc
 }
 
-func (r *Actor) InitDv5Cmd(log logrus.FieldLogger, state *Dv5State) *cobra.Command {
+func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *Dv5State) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dv5",
 		Short: "Manage Ethereum Discv5",

@@ -72,7 +72,7 @@ TODO:
 
  */
 
-func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Command {
+func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *RPCState) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rpc",
 		Short: "Manage Eth2 RPC",
@@ -198,7 +198,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				return
 			}
 			listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
-				f := logrus.Fields{
+				req := map[string]interface{}{
 					"from":      peerId.String(),
 					"protocol":  m.Protocol,
 				}
@@ -206,23 +206,23 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 					if raw {
 						bytez, err := handler.RawRequest()
 						if err != nil {
-							f["input_err"] = err
+							req["input_err"] = err.Error()
 						} else {
-							f["data"] = hex.EncodeToString(bytez)
+							req["data"] = hex.EncodeToString(bytez)
 						}
 					} else {
 						reqObj := m.RequestCodec.Alloc()
 						err := handler.ReadRequest(reqObj)
 						if err != nil {
-							f["input_err"] = err
+							req["input_err"] = err.Error()
 						} else {
-							f["data"] = reqObj
+							req["data"] = reqObj
 						}
 					}
 				}
 
 				if drop {
-					log.WithFields(f).Infof("Received request, dropping it!")
+					log.WithField("req", req).Infof("Received request, dropping it!")
 				} else {
 					ctx, cancel := context.WithCancel(ctx)
 					reqId := responder.AddRequest(&RequestEntry{
@@ -230,9 +230,9 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 						handler:                 handler,
 						cancel:                  cancel,
 					})
-					f["req_id"] = reqId
+					req["req_id"] = reqId
 
-					log.WithFields(f).Infof("Received request, queued it to respond to!")
+					log.WithField("req", req).Infof("Received request, queued it to respond to!")
 
 					// Wait for context to stop processing the request (stream will be closed after return)
 					<-ctx.Done()
@@ -245,6 +245,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			}
 			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler) // TODO add compression to protocol info
 			log.WithField("protocol", m.Protocol).Infof("Opened listener")
+			<-ctx.Done()
 		}
 	}
 
@@ -307,11 +308,11 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		}
 	}
 
-	makeInvalidInputCmd := func(
+	makeInvalidRequestCmd := func(
 		responder *Responder,
 	) *cobra.Command {
 		cmd := &cobra.Command{
-			Use:   "invalid-input <request-ID> <message>",
+			Use:   "invalid-request <request-ID> <message>",
 			Short: "Respond with an invalid-input message chunk",
 		}
 		var done bool
@@ -322,7 +323,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			if !ok {
 				return
 			}
-			if err := req.handler.WriteInvalidMsgChunk(args[1]); err != nil {
+			if err := req.handler.WriteInvalidRequestChunk(args[1]); err != nil {
 				log.Error(err)
 				return
 			}
@@ -489,7 +490,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		makeRawRespChunkCmd(responder, respChunkRawCmd, m.DefaultResponseChunkCount > 1)
 		respChunkCmd.AddCommand(respChunkRawCmd)
 
-		respInvalidInputCmd := makeInvalidInputCmd(responder)
+		respInvalidInputCmd := makeInvalidRequestCmd(responder)
 		respServerErrorCmd := makeServerErrorCmd(responder)
 
 		respCmd.AddCommand(respChunkCmd, respInvalidInputCmd, respServerErrorCmd)

@@ -17,7 +17,7 @@ type ResponseHandler func(ctx context.Context, r io.Reader, w io.WriteCloser) er
 
 // MakeResponseHandler builds a ResponseHandler, which won't take more than maxChunkCount chunks, or chunk contents larger than maxChunkContentSize.
 // Compression is optional and may be nil. Chunks are processed by the given ResponseChunkHandler.
-func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64, maxChunkContentSize uint64, comp Compression) ResponseHandler {
+func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64, maxChunkContentSize uint64, maxErrSize uint64, comp Compression) ResponseHandler {
 	//		response  ::= <response_chunk>*
 	//		response_chunk  ::= <result> | <encoding-dependent-header> | <encoded-payload>
 	//		result    ::= “0” | “1” | “2” | [“128” ... ”255”]
@@ -38,15 +38,21 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 			}
 			blr.N = 10
 			chunkSize, err := binary.ReadUvarint(blr)
+			// TODO when input is incorrect, return a different type of error.
 			if err != nil {
-				// TODO send error back: invalid chunk size encoding
 				return err
 			}
-			if chunkSize > maxChunkContentSize {
-				// TODO sender error back: invalid chunk size, too large.
-				return fmt.Errorf("chunk size %d of chunk %d exceeds chunk limit %d", chunkSize, chunkIndex, maxChunkContentSize)
+			if resByte == 1 || resByte == 2 {
+				if chunkSize > maxErrSize {
+					return fmt.Errorf("chunk size %d of chunk %d exceeds error size limit %d", chunkSize, chunkIndex, maxErrSize)
+				}
+				blr.N = int(maxErrSize)
+			} else {
+				if chunkSize > maxChunkContentSize {
+					return fmt.Errorf("chunk size %d of chunk %d exceeds chunk limit %d", chunkSize, chunkIndex, maxChunkContentSize)
+				}
+				blr.N = int(maxChunkContentSize)
 			}
-			blr.N = int(maxChunkContentSize)
 			cr := io.Reader(blr)
 			cw := w
 			if comp != nil {

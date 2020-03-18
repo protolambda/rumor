@@ -176,7 +176,7 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 	// TODO: make compression optional, depending on if the other peer supports it.
 	// Pass multiple protocol ids, then check the protocol of the stream, and pick the suitable compression.
 
-	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, comp)
+	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, MAX_ERR_SIZE, comp)
 
 	// Runs the request in sync, which processes responses,
 	// and then finally closes the channel through the earlier deferred close.
@@ -196,7 +196,7 @@ type RequestReader interface {
 type RequestResponder interface {
 	WriteResponseChunk(data interface{}) error
 	WriteRawResponseChunk(chunk []byte) error
-	WriteInvalidMsgChunk(msg string) error
+	WriteInvalidRequestChunk(msg string) error
 	WriteServerErrorChunk(msg string) error
 }
 type ChunkedRequestHandler interface {
@@ -248,7 +248,7 @@ func (h *chReqHandler) WriteRawResponseChunk(chunk []byte) error {
 	return EncodeChunk(SuccessCode, bytes.NewReader(chunk), h.w, h.comp)
 }
 
-func (h *chReqHandler) WriteInvalidMsgChunk(msg string) error {
+func (h *chReqHandler) WriteInvalidRequestChunk(msg string) error {
 	return EncodeChunk(InvalidReqCode, bytes.NewReader([]byte(msg)), h.w, h.comp)
 }
 

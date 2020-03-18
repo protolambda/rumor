@@ -15,7 +15,7 @@ type KadState struct {
 	CloseKad context.CancelFunc
 }
 
-func (r *Actor) InitKadCmd(log logrus.FieldLogger, state *KadState) *cobra.Command {
+func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *KadState) *cobra.Command {
 	noKad := func(cmd *cobra.Command) bool {
 		if r.NoHost(log) {
 			return true

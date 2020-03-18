@@ -32,7 +32,7 @@ type GossipState struct {
 	TopicLoggers topicLoggers
 }
 
-func (r *Actor) InitGossipCmd(log logrus.FieldLogger, state *GossipState) *cobra.Command {
+func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state *GossipState) *cobra.Command {
 	noGS := func(cmd *cobra.Command) bool {
 		if r.NoHost(log) {
 			return true
