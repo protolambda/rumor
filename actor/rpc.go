@@ -1,13 +1,10 @@
 package actor
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/rumor/rpc/methods"
 	"github.com/protolambda/rumor/rpc/reqresp"
 	"github.com/sirupsen/logrus"
@@ -19,10 +16,10 @@ import (
 )
 
 type RPCState struct {
-	Goodbye *Responder
-	Status *Responder
-	BlocksByRange *Responder
-	BlocksByRoot *Responder
+	Goodbye Responder
+	Status Responder
+	BlocksByRange Responder
+	BlocksByRoot Responder
 }
 
 type RequestKey uint64
@@ -246,7 +243,8 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				log.Error(err)
 				return
 			}
-			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler)
+			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler) // TODO add compression to protocol info
+			log.WithField("protocol", m.Protocol).Infof("Opened listener")
 		}
 	}
 
@@ -293,7 +291,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			}
 			byteStr := args[1]
 			bytez, err := decodeByteStr(byteStr)
-			if err == nil {
+			if err != nil {
 				log.Errorf("Data is not a valid hex-string: '%s'", byteStr)
 				return
 			}
@@ -419,27 +417,27 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			Use:   "with <peer-ID>",
 			Short: "Build and make a request with the given arguments",
 		}
-		{
-			reqFn := prepareReqFn(reqWithCmd, m)
-			reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
-				peerID, err := peer.Decode(args[0])
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				// TODO parse args/flags into request input
-				reqInput := reqresp.RequestSSZInput{Obj: req}
-				reqFn(peerID, reqInput)
-			}
-		}
+		//{ TODO
+		//	reqFn := prepareReqFn(reqWithCmd, m)
+		//	reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
+		//		peerID, err := peer.Decode(args[0])
+		//		if err != nil {
+		//			log.Error(err)
+		//			return
+		//		}
+		//		// TODO parse args/flags into request input
+		//		reqInput := reqresp.RequestSSZInput{Obj: req}
+		//		reqFn(peerID, reqInput)
+		//	}
+		//}
 		reqRawCmd := &cobra.Command{
 			Use:   "raw <peer-ID> <hex-data>",
 			Short: "Make raw requests.",
 			Args: cobra.ExactArgs(2),
 		}
 		{
-			reqFn := prepareReqFn(reqWithCmd, m)
-			reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
+			reqFn := prepareReqFn(reqRawCmd, m)
+			reqRawCmd.Run = func(cmd *cobra.Command, args []string) {
 				peerID, err := peer.Decode(args[0])
 				if err != nil {
 					log.Error(err)
@@ -447,7 +445,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				}
 				byteStr := args[1]
 				bytez, err := decodeByteStr(byteStr)
-				if err == nil {
+				if err != nil {
 					log.Errorf("Data is not a valid hex-string: '%s'", byteStr)
 					return
 				}
@@ -570,70 +568,70 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		}
 	 */
 
+	//
+	//
+	//parseRoot := func(v string) ([32]byte, error) {
+	//	if v == "0" {
+	//		return [32]byte{}, nil
+	//	}
+	//	if strings.HasPrefix(v, "0x") {
+	//		v = v[2:]
+	//	}
+	//	if len(v) != 64 {
+	//		return [32]byte{}, fmt.Errorf("provided root has length %d, expected 64 hex characters (ignoring optional 0x prefix)", len(v))
+	//	}
+	//	var out [32]byte
+	//	_, err := hex.Decode(out[:], []byte(v))
+	//	return out, err
+	//}
+	//parseForkVersion := func(v string) ([4]byte, error) {
+	//	if strings.HasPrefix(v, "0x") {
+	//		v = v[2:]
+	//	}
+	//	if len(v) != 8 {
+	//		return [4]byte{}, fmt.Errorf("provided root has length %d, expected 8 hex characters (ignoring optional 0x prefix)", len(v))
+	//	}
+	//	var out [4]byte
+	//	_, err := hex.Decode(out[:], []byte(v))
+	//	return out, err
+	//}
+	//
+	//// <head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>
+	//parseStatus := func(args []string) (*methods.Status, error) {
+	//	forkVersion, err := parseForkVersion(args[0])
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	finalizedRoot, err := parseRoot(args[1])
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	finalizedEpoch, err := strconv.ParseUint(args[2], 0, 64)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	headRoot, err := parseRoot(args[3])
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	headSlot, err := strconv.ParseUint(args[4], 0, 64)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//	return &methods.Status{
+	//		HeadForkVersion: forkVersion,
+	//		FinalizedRoot:   finalizedRoot,
+	//		FinalizedEpoch:  methods.Epoch(finalizedEpoch),
+	//		HeadRoot:        headRoot,
+	//		HeadSlot:        methods.Slot(headSlot),
+	//	}, nil
+	//}
 
-
-	parseRoot := func(v string) ([32]byte, error) {
-		if v == "0" {
-			return [32]byte{}, nil
-		}
-		if strings.HasPrefix(v, "0x") {
-			v = v[2:]
-		}
-		if len(v) != 64 {
-			return [32]byte{}, fmt.Errorf("provided root has length %d, expected 64 hex characters (ignoring optional 0x prefix)", len(v))
-		}
-		var out [32]byte
-		_, err := hex.Decode(out[:], []byte(v))
-		return out, err
-	}
-	parseForkVersion := func(v string) ([4]byte, error) {
-		if strings.HasPrefix(v, "0x") {
-			v = v[2:]
-		}
-		if len(v) != 8 {
-			return [4]byte{}, fmt.Errorf("provided root has length %d, expected 8 hex characters (ignoring optional 0x prefix)", len(v))
-		}
-		var out [4]byte
-		_, err := hex.Decode(out[:], []byte(v))
-		return out, err
-	}
-
-	// <head-fork-version> <finalized-root> <finalized-epoch> <head-root> <head-slot>
-	parseStatus := func(args []string) (*methods.Status, error) {
-		forkVersion, err := parseForkVersion(args[0])
-		if err != nil {
-			return nil, err
-		}
-		finalizedRoot, err := parseRoot(args[1])
-		if err != nil {
-			return nil, err
-		}
-		finalizedEpoch, err := strconv.ParseUint(args[2], 0, 64)
-		if err != nil {
-			return nil, err
-		}
-		headRoot, err := parseRoot(args[3])
-		if err != nil {
-			return nil, err
-		}
-		headSlot, err := strconv.ParseUint(args[4], 0, 64)
-		if err != nil {
-			return nil, err
-		}
-		return &methods.Status{
-			HeadForkVersion: forkVersion,
-			FinalizedRoot:   finalizedRoot,
-			FinalizedEpoch:  methods.Epoch(finalizedEpoch),
-			HeadRoot:        headRoot,
-			HeadSlot:        methods.Slot(headSlot),
-		}, nil
-	}
-
-	cmd.AddCommand(makeMethodCmd("goodbye", state.Goodbye, &methods.GoodbyeRPCv1))
-	cmd.AddCommand(makeMethodCmd("status", state.Status, &methods.StatusRPCv1))
-	cmd.AddCommand(makeMethodCmd("blocks-by-range", state.BlocksByRange, &methods.BlocksByRangeRPCv1))
-	cmd.AddCommand(makeMethodCmd("blocks-by-range-v2", state.BlocksByRange, &methods.BlocksByRangeRPCv2))
-	cmd.AddCommand(makeMethodCmd("blocks-by-root", state.BlocksByRoot, &methods.BlocksByRootRPCv1))
+	cmd.AddCommand(makeMethodCmd("goodbye", &state.Goodbye, &methods.GoodbyeRPCv1))
+	cmd.AddCommand(makeMethodCmd("status", &state.Status, &methods.StatusRPCv1))
+	cmd.AddCommand(makeMethodCmd("blocks-by-range", &state.BlocksByRange, &methods.BlocksByRangeRPCv1))
+	cmd.AddCommand(makeMethodCmd("blocks-by-range-v2", &state.BlocksByRange, &methods.BlocksByRangeRPCv2))
+	cmd.AddCommand(makeMethodCmd("blocks-by-root", &state.BlocksByRoot, &methods.BlocksByRootRPCv1))
 	return cmd
 }
 
