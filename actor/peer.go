@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func (r *Actor) InitPeerCmd(log logrus.FieldLogger) *cobra.Command {
+func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "peer",
 		Short: "Manage Libp2p peerstore",

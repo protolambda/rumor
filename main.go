@@ -190,6 +190,11 @@ type Call struct {
 	isDone bool
 }
 
+func (c *Call) Close() {
+	c.isDone = true
+	c.cancel()
+}
+
 func runCommands(log logrus.FieldLogger, nextLine func() (string, error), interactive bool) {
 	actors := make(map[string]*actor.Actor)
 
@@ -227,15 +232,15 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 
 		go func() {
 			if err := replCmd.Execute(); err != nil {
-				// Already logged to std-err, which is piped to log.
+				cmdLogger.Error(err) // TODO: cobra error output sometimes is written to std-out. Need it in std-err to detect it as error.
+				// For now, take the execute result, and use that instead. (probably better, but still need to throw std-err of cobra somewhere)
 			} else {
 				// if not interactive, we need to make the caller aware of completion of the command.
 				if !interactive {
 					cmdLogger.WithField("@success", "").Info("completed call")
 				}
 			}
-			cmdCancel()
-			call.isDone = true
+			call.Close()
 		}()
 		return call
 	}
@@ -303,7 +308,11 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 		}
 
 		if lastCall != nil {
-			if line == "bg" {
+			if line == "cancel" {
+				lastCall.logger.Info("Canceled call")
+				lastCall.Close()
+				continue
+			} else if line == "bg" {
 				lastCall.logger.Info("Moved call to background")
 				lastCall = nil
 				continue
@@ -339,6 +348,9 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 			if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
 				call.logger.Info("Moved call to foreground")
 				lastCall = call
+			} else if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
+				call.logger.Info("Canceled call")
+				call.Close()
 			} else {
 				call.logger.Errorf("Unrecognized command for modifying call: '%s'", line)
 			}

@@ -1,6 +1,7 @@
 package actor
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
@@ -12,7 +13,7 @@ import (
 	"strconv"
 )
 
-func (r *Actor) InitEnrCmd(log logrus.FieldLogger) *cobra.Command {
+func (r *Actor) InitEnrCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "enr",
 		Short: "Ethereum Name Record (ENR) utilities",

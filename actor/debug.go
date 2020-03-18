@@ -1,13 +1,14 @@
 package actor
 
 import (
+	"context"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"strconv"
 	"time"
 )
 
-func (r *Actor) IniDebugCmd(log logrus.FieldLogger) *cobra.Command {
+func (r *Actor) IniDebugCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "debug",
 		Short: "For debugging purposes",

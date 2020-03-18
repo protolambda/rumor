@@ -36,7 +36,6 @@ var errNegativeRead = errors.New("reader returned negative count from Read")
 // It returns the number of bytes read into p.
 // The bytes are taken from at most one Read on the underlying Reader,
 // hence N may be less than len(p).
-// To read exactly len(p) bytes, use io.ReadFull(b, p).
 // At EOF, the count will be zero and err will be io.EOF.
 func (b *BufLimitReader) Read(p []byte) (n int, err error) {
 	defer func() {
@@ -46,7 +45,10 @@ func (b *BufLimitReader) Read(p []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 	if len(p) > b.N {
-		return 0, fmt.Errorf("reader BufLimitReader tried to read %d bytes, but limit was %d", len(p), b.N)
+		if b.N == 0 {
+			return 0, fmt.Errorf("reader BufLimitReader tried to read %d bytes, but limit was reached", len(p))
+		}
+		p = p[:b.N]
 	}
 	n = len(p)
 	if n == 0 {
