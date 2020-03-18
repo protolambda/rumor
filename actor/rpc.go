@@ -98,29 +98,24 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 	}
 	// TODO: stop responses command
 
-	prepareReqFn := func(cmd *cobra.Command, m *reqresp.RPCMethod) func(peerIDStr string, reqInput reqresp.RequestInput) {
+	prepareReqFn := func(cmd *cobra.Command, m *reqresp.RPCMethod) func(peerID peer.ID, reqInput reqresp.RequestInput) {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
 		var maxChunks uint64
 		cmd.Flags().Uint64Var(&maxChunks, "max-chunks", m.DefaultResponseChunkCount, "Max response chunk count, if 0, do not wait for a response at all.")
 		var timeout uint64
 		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds the stream (complete request <> response time). 0 to Disable timeout.")
+		var rawChunks bool
+		cmd.Flags().BoolVar(&rawChunks, "raw", false, "If chunks should be logged as raw hex-encoded byte strings")
 
-		return func(peerIDStr string, reqInput reqresp.RequestInput) {
+		return func(peerID peer.ID, reqInput reqresp.RequestInput) {
 			if r.NoHost(log) {
 				return
 			}
-			sFn := reqresp.NewStreamFn(func(ctx context.Context, peerId peer.ID, protocolId protocol.ID) (network.Stream, error) {
-				return r.P2PHost.NewStream(ctx, peerId, protocolId)
-			}).WithTimeout(time.Second * 10) // TODO
+			sFn := reqresp.NewStreamFn(r.P2PHost.NewStream)
 
 			ctx := r.Ctx // TODO; change to command time-out
 			if timeout != 0 {
 				ctx, _ = context.WithTimeout(ctx, time.Millisecond*time.Duration(timeout))
-			}
-			peerID, err := peer.Decode(peerIDStr)
-			if err != nil {
-				log.Error(err)
-				return
 			}
 			comp, err := readOptionalComp(cmd)
 			if err != nil {
@@ -128,21 +123,46 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				return
 			}
 
-			lastRespChunkIndex := int64(-1)
 			if err := m.RunRequest(ctx, sFn, peerID, comp, reqInput, maxChunks,
-				func(chunkIndex uint64, readChunk func(dest interface{}) error) error {
-					log.Debugf("Received response chunk %d from peer %s", chunkIndex, peerID.Pretty())
-					lastRespChunkIndex = int64(chunkIndex)
-					return onResp(peerID, chunkIndex, readChunk)
-				}, func(chunkIndex uint64, msg string) error {
-					log.Errorf("request (protocol %s) to %s was turned down at chunk %d because of INVALID INPUT. Error message from server: %s", m.Protocol, peerID, chunkIndex, msg)
+				func(chunk reqresp.ChunkedResponseHandler) error {
+					resultCode := chunk.ResultCode()
+					f := logrus.Fields{
+						"protocol": m.Protocol,
+						"from": peerID.String(),
+						"chunk_index": chunk.ChunkIndex(),
+						"chunk_size": chunk.ChunkSize(),
+						"result_code": resultCode,
+					}
+					if rawChunks {
+						bytez, err := chunk.ReadRaw()
+						if err != nil {
+							return err
+						}
+						f["data"] = hex.EncodeToString(bytez)
+					} else {
+						switch resultCode {
+						case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+							msg, err := chunk.ReadErrMsg()
+							if err != nil {
+								return err
+							}
+							f["msg"] = msg
+						case reqresp.SuccessCode:
+							data := m.ResponseChunkCodec.Alloc()
+							if err := chunk.ReadObj(data); err != nil {
+								return err
+							}
+							f["data"] = data
+						default:
+							bytez, err := chunk.ReadRaw()
+							if err != nil {
+								return err
+							}
+							f["data"] = hex.EncodeToString(bytez)
+						}
+					}
+					log.WithFields(f).Info("Received chunk")
 					return nil
-				}, func(chunkIndex uint64, msg string) error {
-					log.Errorf("request (protocol %s) to %s was turned down at chunk %d because of SERVER ERROR. Error message from server: %s", m.Protocol, peerID, chunkIndex, msg)
-					return nil
-				}, func() {
-					log.Debugf("Responses of peer %s stopped after %d response chunks", peerID.Pretty(), lastRespChunkIndex+1)
-					onClose(peerID)
 				}); err != nil {
 				log.Errorf("failed request: %v", err)
 			}
@@ -155,6 +175,8 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		m *reqresp.RPCMethod,
 	) {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
+		var readContents bool
+		cmd.Flags().BoolVar(&readContents, "read", true, "Read the contents of the request.")
 		var drop bool
 		cmd.Flags().BoolVar(&drop, "drop", m.DefaultResponseChunkCount == 0, "Drop the requests, do not queue for a response.")
 		var raw bool
@@ -179,32 +201,31 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				return
 			}
 			listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
-				var data interface{}
-				var inputErr error
-				if raw {
-					bytez, err := handler.RawRequest()
-					if err != nil {
-						inputErr = err
+				f := logrus.Fields{
+					"from":      peerId.String(),
+					"protocol":  m.Protocol,
+				}
+				if readContents {
+					if raw {
+						bytez, err := handler.RawRequest()
+						if err != nil {
+							f["input_err"] = err
+						} else {
+							f["data"] = hex.EncodeToString(bytez)
+						}
 					} else {
-						data = hex.EncodeToString(bytez)
-					}
-				} else {
-					reqObj := m.RequestCodec.Alloc()
-					err := handler.ReadRequest(reqObj)
-					if err != nil {
-						inputErr = err
-					} else {
-						data = reqObj
+						reqObj := m.RequestCodec.Alloc()
+						err := handler.ReadRequest(reqObj)
+						if err != nil {
+							f["input_err"] = err
+						} else {
+							f["data"] = reqObj
+						}
 					}
 				}
 
 				if drop {
-					log.WithFields(logrus.Fields{
-						"from":      peerId.String(),
-						"protocol":  m.Protocol,
-						"input_err": inputErr,
-						"data":      data,
-					}).Infof("Received request, dropping it!")
+					log.WithFields(f).Infof("Received request, dropping it!")
 				} else {
 					ctx, cancel := context.WithCancel(ctx)
 					reqId := responder.AddRequest(&RequestEntry{
@@ -212,14 +233,9 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 						handler:                 handler,
 						cancel:                  cancel,
 					})
+					f["req_id"] = reqId
 
-					log.WithFields(logrus.Fields{
-						"req_id":    reqId,
-						"from":      peerId.String(),
-						"protocol":  m.Protocol,
-						"input_err": inputErr,
-						"data":      data,
-					}).Infof("Received request, queued it to respond to!")
+					log.WithFields(f).Infof("Received request, queued it to respond to!")
 
 					// Wait for context to stop processing the request (stream will be closed after return)
 					<-ctx.Done()
@@ -253,6 +269,13 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		return key, req, true
 	}
 
+	decodeByteStr := func(byteStr string) ([]byte, error) {
+		if strings.HasPrefix(byteStr, "0x") {
+			byteStr = byteStr[2:]
+		}
+		return hex.DecodeString(byteStr)
+	}
+
 	makeRawRespChunkCmd := func(
 		responder *Responder,
 		cmd *cobra.Command,
@@ -260,6 +283,8 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 	) {
 		var done bool
 		cmd.Flags().BoolVar(&done, "done", doneDefault, "After writing this chunk, close the response (no more chunks).")
+		var resultCode uint8
+		cmd.Flags().Uint8Var(&resultCode, "result-code", 0, "Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)")
 		cmd.Args = cobra.ExactArgs(2)
 		cmd.Run = func(cmd *cobra.Command, args []string) {
 			key, req, ok := checkAndGetReq(args[0], responder)
@@ -267,10 +292,7 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 				return
 			}
 			byteStr := args[1]
-			if strings.HasPrefix(byteStr, "0x") {
-				byteStr = byteStr[2:]
-			}
-			bytez, err := hex.DecodeString(byteStr)
+			bytez, err := decodeByteStr(byteStr)
 			if err == nil {
 				log.Errorf("Data is not a valid hex-string: '%s'", byteStr)
 				return
@@ -400,20 +422,37 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		{
 			reqFn := prepareReqFn(reqWithCmd, m)
 			reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
-
+				peerID, err := peer.Decode(args[0])
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				// TODO parse args/flags into request input
 				reqInput := reqresp.RequestSSZInput{Obj: req}
-				reqFn() // TODO
+				reqFn(peerID, reqInput)
 			}
 		}
 		reqRawCmd := &cobra.Command{
-			Use:   "raw",
-			Short: "Make raw requests",
+			Use:   "raw <peer-ID> <hex-data>",
+			Short: "Make raw requests.",
+			Args: cobra.ExactArgs(2),
 		}
 		{
 			reqFn := prepareReqFn(reqWithCmd, m)
 			reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
-				reqInput := reqresp.RequestBytesInput(b)
-				reqFn() // TODO
+				peerID, err := peer.Decode(args[0])
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				byteStr := args[1]
+				bytez, err := decodeByteStr(byteStr)
+				if err == nil {
+					log.Errorf("Data is not a valid hex-string: '%s'", byteStr)
+					return
+				}
+				reqInput := reqresp.RequestBytesInput(bytez)
+				reqFn(peerID, reqInput)
 			}
 		}
 		reqCmd.AddCommand(reqWithCmd, reqRawCmd)
@@ -439,18 +478,18 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 			Use:   "chunk",
 			Short: "Respond a chunk to a request",
 		}
-		respChunkWithCmd := &cobra.Command{
-			Use:   "with <request-ID>",
-			Short: "Build and make a request with the given arguments",
-		}
+		//respChunkWithCmd := &cobra.Command{
+		//	Use:   "with <request-ID>",
+		//	Short: "Build and make a request with the given arguments",
+		//}
 		// TODO: respChunkWithCmd
 
 		respChunkRawCmd := &cobra.Command{
 			Use:   "raw",
-			Short: "Make raw requests",
+			Short: "Make raw responses",
 		}
 		makeRawRespChunkCmd(responder, respChunkRawCmd, m.DefaultResponseChunkCount > 1)
-		respChunkCmd.AddCommand(respChunkWithCmd, respChunkRawCmd)
+		respChunkCmd.AddCommand(respChunkRawCmd)
 
 		respInvalidInputCmd := makeInvalidInputCmd(responder)
 		respServerErrorCmd := makeServerErrorCmd(responder)
@@ -461,10 +500,22 @@ func (r *Actor) InitRpcCmd(log logrus.FieldLogger, state *RPCState) *cobra.Comma
 		// Close
 		// -----------------------------------
 		closeCmd := &cobra.Command{
-			Use:   "close",
+			Use:   "close <request-id>",
 			Short: "Close open requests",
+			Args: cobra.ExactArgs(1),
+			Run: func(cmd *cobra.Command, args []string) {
+				key, req, ok := checkAndGetReq(args[0], responder)
+				if !ok {
+					return
+				}
+				responder.CloseRequest(key)
+				log.WithFields(logrus.Fields{
+					"req_id": key,
+					"peer": req.From.String(),
+					"protocol": m.Protocol,
+				}).Infof("Closed request.")
+			},
 		}
-		// TODO
 		methodCmd.AddCommand(closeCmd)
 
 		return methodCmd

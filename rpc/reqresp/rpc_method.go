@@ -76,8 +76,7 @@ const (
 // 8 KB max error size
 const MAX_ERR_SIZE = 1 << 15
 
-type MethodRespSuccessHandler func(chunkIndex uint64, readChunk func(dest interface{}) error) error
-type MethodRespErrorHandler func(chunkIndex uint64, msg string) error
+type OnResponseListener func(chunk ChunkedResponseHandler) error
 
 type RequestInput interface {
 	Reader(c Codec) (io.Reader, error)
@@ -101,29 +100,62 @@ func (v RequestBytesInput) Reader(_ Codec) (io.Reader, error) {
 	return bytes.NewReader(v), nil
 }
 
-func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req RequestInput, maxRespChunks uint64, onResponse MethodRespSuccessHandler,
-	onInvalidReqResp MethodRespErrorHandler, onServerErrorResp MethodRespErrorHandler, onClose func()) error {
+type ChunkedResponseHandler interface {
+	ChunkSize() uint64
+	ChunkIndex() uint64
+	ResultCode() ResponseCode
+	ReadRaw() ([]byte, error)
+	ReadErrMsg() (string, error)
+	ReadObj(dest interface{}) error
+}
 
-	defer onClose()
+type chRespHandler struct {
+	m *RPCMethod
+	r io.Reader
+	result ResponseCode
+	chunkSize uint64
+	chunkIndex uint64
+}
+
+func (c *chRespHandler) ChunkSize() uint64 {
+	return c.chunkSize
+}
+
+func (c *chRespHandler) ChunkIndex() uint64 {
+	return c.chunkIndex
+}
+
+func (c *chRespHandler) ResultCode() ResponseCode {
+	return c.result
+}
+
+func (c *chRespHandler) ReadRaw() ([]byte, error) {
+	var buf bytes.Buffer
+	_, err := buf.ReadFrom(io.LimitReader(c.r, int64(c.chunkSize)))
+	return buf.Bytes(), err
+}
+
+func (c *chRespHandler) ReadErrMsg() (string, error) {
+	var buf bytes.Buffer
+	_, err := buf.ReadFrom(io.LimitReader(c.r, int64(c.chunkSize)))
+	return string(buf.Bytes()), err
+}
+
+func (c *chRespHandler) ReadObj(dest interface{}) error {
+	return c.m.RequestCodec.Decode(c.r, c.chunkSize, dest)
+}
+
+func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
+	peerId peer.ID, comp Compression, req RequestInput, maxRespChunks uint64, onResponse OnResponseListener) error {
 
 	handleChunks := ResponseChunkHandler(func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result ResponseCode, r io.Reader, w io.Writer) error {
-		switch result {
-		case SuccessCode:
-			return onResponse(chunkIndex, func(dest interface{}) error {
-				return m.RequestCodec.Decode(r, chunkSize, dest)
-			})
-		case InvalidReqCode:
-			var buf bytes.Buffer
-			_, _ = buf.ReadFrom(io.LimitReader(r, MAX_ERR_SIZE))
-			return onInvalidReqResp(chunkIndex, string(buf.Bytes()))
-		case ServerErrCode:
-			var buf bytes.Buffer
-			_, _ = buf.ReadFrom(io.LimitReader(r, MAX_ERR_SIZE))
-			return onServerErrorResp(chunkIndex, string(buf.Bytes()))
-		default:
-			return fmt.Errorf("unrecognized result code for chunk %d (size %d): %d from peer %s", chunkIndex, chunkSize, result, peerId.Pretty())
-		}
+		return onResponse(&chRespHandler{
+			m:          m,
+			r:          r,
+			result:     result,
+			chunkSize:  chunkSize,
+			chunkIndex: chunkIndex,
+		})
 	})
 
 	reqR, err := req.Reader(m.RequestCodec)
@@ -141,6 +173,8 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 			maxChunkContentSize = s
 		}
 	}
+	// TODO: make compression optional, depending on if the other peer supports it.
+	// Pass multiple protocol ids, then check the protocol of the stream, and pick the suitable compression.
 
 	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, comp)
 
