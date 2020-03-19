@@ -110,9 +110,9 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 			}
 			sFn := reqresp.NewStreamFn(r.P2PHost.NewStream)
 
-			ctx := r.Ctx // TODO; change to command time-out
+			reqCtx := ctx
 			if timeout != 0 {
-				ctx, _ = context.WithTimeout(ctx, time.Millisecond*time.Duration(timeout))
+				reqCtx, _ = context.WithTimeout(reqCtx, time.Millisecond*time.Duration(timeout))
 			}
 			comp, err := readOptionalComp(cmd)
 			if err != nil {
@@ -120,7 +120,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				return
 			}
 
-			if err := m.RunRequest(ctx, sFn, peerID, comp, reqInput, maxChunks,
+			if err := m.RunRequest(reqCtx, sFn, peerID, comp, reqInput, maxChunks,
 				func(chunk reqresp.ChunkedResponseHandler) error {
 					resultCode := chunk.ResultCode()
 					f := logrus.Fields{
@@ -184,13 +184,12 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 			if r.NoHost(log) {
 				return
 			}
-			// TODO; switch to command timeout.
 			sCtxFn := func() context.Context {
 				if timeout == 0 {
-					return r.Ctx
+					return ctx
 				}
-				ctx, _ := context.WithTimeout(r.Ctx, time.Millisecond * time.Duration(timeout))
-				return ctx
+				reqCtx, _ := context.WithTimeout(ctx, time.Millisecond * time.Duration(timeout))
+				return reqCtx
 			}
 			comp, err := readOptionalComp(cmd)
 			if err != nil {

@@ -210,7 +210,7 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 
 	processCmd := func(actorName string, callID CallID, cmdArgs []string) *Call {
 		rep := getActor(actorName)
-		cmdCtx, cmdCancel := context.WithCancel(rep.Ctx)
+		cmdCtx, cmdCancel := context.WithCancel(rep.ActorCtx)
 
 		cmdLogger := actor.NewLogger(log.WithField("actor", actorName).WithField("call_id", callID))
 		replCmd := rep.Cmd(cmdCtx, cmdLogger)
@@ -391,6 +391,6 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 
 	// close all libp2p hosts
 	for _, actorRep := range actors {
-		actorRep.Cancel()
+		actorRep.Close()
 	}
 }

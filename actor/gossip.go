@@ -11,25 +11,15 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
-
-type joinedTopics map[string]*pubsub.Topic
-
-type topicLogger struct {
-	name      string
-	topicName string
-	outPath   string
-	close     context.CancelFunc
-}
-
-type topicLoggers map[string]*topicLogger
 
 type GossipState struct {
 	GsNode       gossip.GossipSub
 	CloseGS      context.CancelFunc
-	Topics       joinedTopics
-	TopicLoggers topicLoggers
+	// string -> *pubsub.Topic
+	Topics       sync.Map
 }
 
 func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state *GossipState) *cobra.Command {
@@ -59,31 +49,13 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				log.Error("Already started GossipSub")
 				return
 			}
-			state.Topics = make(joinedTopics)
-			state.TopicLoggers = make(topicLoggers)
-			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			state.GsNode, err = gossip.NewGossipSub(ctx, log, r)
+			state.GsNode, err = gossip.NewGossipSub(r.ActorCtx, log, r)
 			if err != nil {
 				log.Error(err)
 				return
 			}
-			state.CloseGS = cancel
 			log.Info("Started GossipSub")
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "stop",
-		Short: "Stop GossipSub",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			state.GsNode = nil
-
-			state.CloseGS()
-			log.Info("Stopped GossipSub")
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -94,10 +66,11 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 			if noGS(cmd) {
 				return
 			}
-			topics := make([]string, 0, len(state.Topics))
-			for topic := range state.Topics {
-				topics = append(topics, topic)
-			}
+			topics := make([]string, 0)
+			state.Topics.Range(func(key, value interface{}) bool {
+				topics = append(topics, key.(string))
+				return false
+			})
 			log.WithField("topics", topics).Infof("On %d topics.", len(topics))
 		},
 	})
@@ -110,7 +83,8 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if _, ok := state.Topics[topicName]; ok {
+			_, ok := state.Topics.Load(topicName)
+			if ok {
 				log.Errorf("already on gossip topic %s", topicName)
 				return
 			}
@@ -119,7 +93,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				log.Error(err)
 				return
 			}
-			state.Topics[topicName] = top
+			state.Topics.Store(topicName, top)
 			log.Infof("joined topic %s", topicName)
 		},
 	})
@@ -133,17 +107,17 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics[topicName]; !ok {
+			if top, ok := state.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
-				evHandler, err := top.EventHandler()
+				evHandler, err := top.(*pubsub.Topic).EventHandler()
 				if err != nil {
 					log.Error(err)
 				} else {
 					log.Infof("Started listening for peer join/leave events for topic %s", topicName)
 					for {
-						ev, err := evHandler.NextPeerEvent(r.Ctx)
+						ev, err := evHandler.NextPeerEvent(ctx)
 						if err != nil {
 							log.Infof("Stopped listening for peer join/leave events for topic %s", topicName)
 							return
@@ -169,15 +143,12 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics[topicName]; !ok {
+			if top, ok := state.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
-				peers := top.ListPeers()
-				log.Infof("%d peers on topic %s", len(peers), topicName)
-				for i, p := range peers {
-					log.Infof("%4d: %s", i, r.P2PHost.Peerstore().PeerInfo(p).String())
-				}
+				peers := top.(*pubsub.Topic).ListPeers()
+				log.WithField("peers", peers).Infof("%d peers on topic %s", len(peers), topicName)
 			}
 		},
 	})
@@ -207,15 +178,15 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics[topicName]; !ok {
+			if top, ok := state.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
-				err := top.Close()
+				err := top.(*pubsub.Topic).Close()
 				if err != nil {
 					log.Error(err)
 				}
-				delete(state.Topics, topicName)
+				state.Topics.Delete(topicName)
 			}
 		},
 	})
@@ -253,7 +224,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 	}
 
 	logCmd.AddCommand(&cobra.Command{
-		Use:   "start <name> <topic> <output-file-path>",
+		Use:   "file <name> <topic> <output-file-path>",
 		Short: "Log the messages of a gossip topic to a file. 1 hex-encoded message per line. Join a topic first.",
 		Args:  cobra.ExactArgs(3),
 		Run: func(cmd *cobra.Command, args []string) {
@@ -263,56 +234,19 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 			loggerName := args[0]
 			topicName := args[1]
 			outPath := args[2]
-			if top, ok := state.Topics[topicName]; !ok {
+			if top, ok := state.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
-				ctx, cancelLogger := context.WithCancel(r.Ctx)
-				if err := logToFile(ctx, loggerName, top, outPath); err != nil {
+				if err := logToFile(ctx, loggerName, top.(*pubsub.Topic), outPath); err != nil {
 					log.Error(err)
 					return
 				}
-				state.TopicLoggers[loggerName] = &topicLogger{
-					name:      loggerName,
-					topicName: topicName,
-					outPath:   outPath,
-					close:     cancelLogger,
-				}
+				<-ctx.Done()
 			}
 		},
 	})
-	logCmd.AddCommand(&cobra.Command{
-		Use:   "stop <name>",
-		Short: "Stop logging messages for a logger started with 'log start' earlier",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			loggerName := args[0]
-			if lo, ok := state.TopicLoggers[loggerName]; ok {
-				lo.close()
-				log.Infof("Closed logger '%s', topic: '%s', output path: '%s'", loggerName, lo.topicName, lo.outPath)
-				delete(state.TopicLoggers, loggerName)
-			} else {
-				log.Infof("Logger '%s' does not exist, cannot stop it.", loggerName)
-			}
-		},
-	})
-	logCmd.AddCommand(&cobra.Command{
-		Use:   "list",
-		Short: "List gossip loggers",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			log.Infof("%d loggers", len(state.TopicLoggers))
-			for name, lo := range state.TopicLoggers {
-				log.Infof("%20s: '%s' -> '%s'", name, lo.topicName, lo.outPath)
-			}
-		},
-	})
+	// TODO; log to rumor log cmd
 	cmd.AddCommand(logCmd)
 
 	cmd.AddCommand(&cobra.Command{
@@ -324,7 +258,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics[topicName]; !ok {
+			if top, ok := state.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
@@ -337,7 +271,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 					log.Errorf("cannot decode message from hex, err: %v, msg: %s", err, hexData)
 					return
 				}
-				if err := top.Publish(r.Ctx, data); err != nil {
+				if err := top.(*pubsub.Topic).Publish(ctx, data); err != nil {
 					log.Errorf("failed to publish message, err: %v", err)
 					return
 				}

@@ -1,7 +1,6 @@
 package dv5
 
 import (
-	"context"
 	"crypto/ecdsa"
 	"errors"
 	"github.com/btcsuite/btcd/btcec"
@@ -59,7 +58,7 @@ func (gl *GethLogger) Log(r *geth_log.Record) error {
 	return nil
 }
 
-func NewDiscV5(ctx context.Context, log logrus.FieldLogger, n node.Node, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
+func NewDiscV5(log logrus.FieldLogger, n node.Node, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
 	k, ok := privKey.(*crypto.Secp256k1PrivateKey)
 	if !ok {
 		return nil, errors.New("libp2p-crypto private key is not a Secp256k1 key")
@@ -71,31 +70,16 @@ func NewDiscV5(ctx context.Context, log logrus.FieldLogger, n node.Node, ip net.
 		Port: int(port),
 	}
 
-	log = log.WithField("addr", udpAddr)
-
 	conn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		log.Debugf("UDP listener start err: %v", err)
 		return nil, err
 	}
-	log.Debug("UDP listener up")
 
 	localNodeDB, err := enode.OpenDB("") // memory-DB
 	localNode := enode.NewLocalNode(localNodeDB, ecdsaPrivKey)
 	localNode.SetFallbackIP(udpAddr.IP)
 	localNode.SetFallbackUDP(udpAddr.Port)
 
-	unhandledMsgs := make(chan discover.ReadPacket)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case msg := <-unhandledMsgs:
-				log.Debugf("Received unhandled message from %s: %x", msg.Addr.String(), msg.Data)
-			}
-		}
-	}()
 	gethLogWrap := GethLogger{FieldLogger: log}
 	gethLogger := geth_log.New()
 	gethLogger.SetHandler(&gethLogWrap)
@@ -110,22 +94,12 @@ func NewDiscV5(ctx context.Context, log logrus.FieldLogger, n node.Node, ip net.
 	}
 	udpV5, err := discover.ListenV5(conn, localNode, cfg)
 	if err != nil {
-		log.Debugf("Discv5 listener start err: %v", err)
 		return nil, err
 	}
-	log.Debug("Discv5 listener up")
-	go func() {
-		<-ctx.Done()
-		log.Info("closing discv5", udpAddr.String())
-		udpV5.Close()
-		close(unhandledMsgs)
-		log.Info("closed discv5", udpAddr.String())
-	}()
 
 	return &Discv5Impl{
 		UDPv5: udpV5,
 		addr:  udpAddr,
-		log:   log,
 		gLog:  &gethLogWrap,
 	}, nil
 }

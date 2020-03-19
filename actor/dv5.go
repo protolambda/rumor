@@ -4,18 +4,14 @@ import (
 	"context"
 	"encoding/hex"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/rumor/addrutil"
 	"github.com/protolambda/rumor/peering/dv5"
-	"github.com/protolambda/rumor/peering/static"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"time"
 )
 
 type Dv5State struct {
 	Dv5Node  dv5.Discv5
-	CloseDv5 context.CancelFunc
 }
 
 func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *Dv5State) *cobra.Command {
@@ -61,14 +57,12 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 				}
 				bootNodes = append(bootNodes, dv5Addr)
 			}
-			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			state.Dv5Node, err = dv5.NewDiscV5(ctx, log, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
+			state.Dv5Node, err = dv5.NewDiscV5(log, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
 			if err != nil {
 				log.Error(err)
 				return
 			}
-			state.CloseDv5 = cancel
 			log.Info("Started discv5")
 		},
 	})
@@ -80,44 +74,18 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if noDv5(cmd) {
 				return
 			}
-			state.CloseDv5()
+			state.Dv5Node.Close()
 			state.Dv5Node = nil
 			log.Info("Stopped discv5")
 		},
 	})
 
-	handleLookup := func(nodes []*enode.Node, connect bool) error {
-		dv5AddrsOut := ""
-		for i, v := range nodes {
-			if i > 0 {
-				dv5AddrsOut += "  "
-			}
-			dv5AddrsOut += v.String()
+	printLookupResult := func(nodes []*enode.Node) {
+		enrs := make([]string, 0, len(nodes))
+		for _, v := range nodes {
+			enrs = append(enrs, v.String())
 		}
-		mAddrs, err := addrutil.EnodesToMultiAddrs(nodes)
-		if err != nil {
-			return err
-		}
-		mAddrsOut := ""
-		for i, v := range mAddrs {
-			if i > 0 {
-				mAddrsOut += "  "
-			}
-			mAddrsOut += v.String()
-		}
-		log.Infof("addresses of nodes (%d): %s", len(mAddrs), mAddrsOut)
-		if connect {
-			log.Infof("connecting to nodes (with a 10 second timeout)")
-			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
-			err := static.ConnectStaticPeers(ctx, log, r, mAddrs, func(info peer.AddrInfo, alreadyConnected bool) error {
-				log.Infof("connected to peer from discv5 nodes: %s", info.String())
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return nil
+		log.WithField("nodes", enrs).Infof("Lookup complete")
 	}
 
 	cmd.AddCommand(&cobra.Command{
@@ -133,10 +101,10 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 				log.Error(err)
 			}
 			if err := state.Dv5Node.Ping(target); err != nil {
-				log.Errorf("Failed to ping %s: %v", target.String(), err)
+				log.Errorf("Failed to ping: %v", err)
 				return
 			}
-			log.Infof("Successfully pinged %s: ", target.String())
+			log.Infof("Successfully pinged")
 		},
 	})
 
@@ -157,7 +125,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 				log.Errorf("Failed to resolve %s, nil result", target.String())
 				return
 			}
-			log.Infof("Successfully resolved:   %s   -->  %s", target.String(), resolved.String())
+			log.WithField("enr", resolved.String()).Infof("Successfully resolved")
 		},
 	})
 
@@ -178,14 +146,13 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 				log.Error(err)
 				return
 			}
-			log.Infof("Successfully got ENR for node:   %s   -->  %s", target.String(), enrRes.String())
+			log.WithField("enr", enrRes.String()).Infof("Successfully got ENR for node")
 		},
 	})
 
-	connectLookup := false
 	lookupCmd := &cobra.Command{
 		Use:   "lookup [target node: hex node ID, enode address or ENR (url-base64)]",
-		Short: "Get list of nearby multi addrs. If no target node is provided, then find nodes nearby to self.",
+		Short: "Get list of nearby nodes. If no target node is provided, then find nodes nearby to self.",
 		Args:  cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
@@ -209,17 +176,11 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 					target = n.ID()
 				}
 			}
-			res := state.Dv5Node.Lookup(target)
-			if err := handleLookup(res, connectLookup); err != nil {
-				log.Error(err)
-				return
-			}
+			printLookupResult(state.Dv5Node.Lookup(target))
 		},
 	}
-	lookupCmd.Flags().BoolVar(&connectLookup, "connect", false, "Connect to the resulting nodes")
 	cmd.AddCommand(lookupCmd)
 
-	connectRandom := false
 	randomCommand := &cobra.Command{
 		Use:   "lookup-random",
 		Short: "Get list of random multi addrs.",
@@ -228,14 +189,9 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if noDv5(cmd) {
 				return
 			}
-			res := state.Dv5Node.LookupRandom()
-			if err := handleLookup(res, connectRandom); err != nil {
-				log.Error(err)
-				return
-			}
+			printLookupResult(state.Dv5Node.LookupRandom())
 		},
 	}
-	randomCommand.Flags().BoolVar(&connectRandom, "connect", false, "Connect to the resulting nodes")
 	cmd.AddCommand(randomCommand)
 
 	cmd.AddCommand(&cobra.Command{
@@ -246,14 +202,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if noDv5(cmd) {
 				return
 			}
-			v, err := addrutil.EnrToString(r.GetEnr())
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.Infof("local ENR: %s", v)
-			enodeAddr := state.Dv5Node.Self()
-			log.Infof("local dv5 node (no TCP in ENR): %s", enodeAddr.String())
+			log.WithField("enr", state.Dv5Node.Self()).Infof("local dv5 node")
 		},
 	})
 	return cmd

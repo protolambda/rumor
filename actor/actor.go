@@ -27,8 +27,8 @@ type Actor struct {
 	GossipState GossipState
 	RPCState    RPCState
 
-	Ctx    context.Context
-	Cancel context.CancelFunc
+	ActorCtx context.Context
+	actorCancel   context.CancelFunc
 }
 
 // check interface
@@ -37,9 +37,13 @@ var _ = (node.Node)((*Actor)(nil))
 func NewActor() *Actor {
 	ctxAll, cancelAll := context.WithCancel(context.Background())
 	return &Actor{
-		Ctx: ctxAll,
-		Cancel: cancelAll,
+		ActorCtx: ctxAll,
+		actorCancel: cancelAll,
 	}
+}
+
+func (r *Actor) Close() {
+	r.actorCancel()
 }
 
 func (r *Actor) Cmd(ctx context.Context, log *Logger) *cobra.Command {

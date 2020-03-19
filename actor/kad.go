@@ -42,7 +42,7 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 				log.Error("Already have a Kademlia DHT open")
 				return
 			}
-			ctx, cancel := context.WithCancel(r.Ctx)
+			ctx, cancel := context.WithCancel(r.ActorCtx)
 			var err error
 			state.KadNode, err = kad.NewKademlia(ctx, r, protocol.ID(args[0]))
 			if err != nil {
@@ -83,63 +83,79 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 	}
 	cmd.AddCommand(refreshCmd)
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "find-conn-peers <peer-ID>",
-		Short: "Find connected peer addresses of the given peer in the DHT",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noKad(cmd) {
-				return
-			}
-			peerID, err := peer.Decode(args[0])
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
-			addrInfos, err := state.KadNode.FindPeersConnectedToPeer(ctx, peerID)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			for {
-				select {
-				case <-ctx.Done():
-					log.Infof("Timed out connected addrs query for peer %s", peerID.Pretty())
+	{
+		var timeout uint64
+		findConnPeersCmd := &cobra.Command{
+			Use:   "find-conn-peers <peer-ID>",
+			Short: "Find connected peer addresses of the given peer in the DHT",
+			Args:  cobra.ExactArgs(1),
+			Run: func(cmd *cobra.Command, args []string) {
+				if noKad(cmd) {
 					return
-				case info, ok := <-addrInfos:
-					log.Infof("Found connected address for peer %s: %s", peerID.Pretty(), info.String())
-					if !ok {
-						log.Infof("Stopped connected addrs query for peer %s", peerID.Pretty())
+				}
+				peerID, err := peer.Decode(args[0])
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				findConnPeerCtx := ctx
+				if timeout != 0 {
+					findConnPeerCtx, _ = context.WithTimeout(findConnPeerCtx, time.Millisecond*time.Duration(timeout))
+				}
+				addrInfos, err := state.KadNode.FindPeersConnectedToPeer(findConnPeerCtx, peerID)
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				for {
+					select {
+					case <-ctx.Done():
+						log.Infof("Timed out connected addrs query for peer %s", peerID.Pretty())
 						return
+					case info, ok := <-addrInfos:
+						log.Infof("Found connected address for peer %s: %s", peerID.Pretty(), info.String())
+						if !ok {
+							log.Infof("Stopped connected addrs query for peer %s", peerID.Pretty())
+							return
+						}
 					}
 				}
-			}
-		},
-	})
+			},
+		}
+		findConnPeersCmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Timeout to find anything, in milliseconds. Or 0 to disable.")
+		cmd.AddCommand(findConnPeersCmd)
+	}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "find-peer <peer-ID>",
-		Short: "Find address info of the given peer in the DHT",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noKad(cmd) {
-				return
-			}
-			peerID, err := peer.Decode(args[0])
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			ctx, _ := context.WithTimeout(r.Ctx, time.Second*10)
-			addrInfo, err := state.KadNode.FindPeer(ctx, peerID)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.Infof("Found address for peer %s: %s", peerID.Pretty(), addrInfo.String())
-		},
-	})
+	{
+		var timeout uint64
+		findPeerCmd := &cobra.Command{
+			Use:   "find-peer <peer-ID>",
+			Short: "Find address info of the given peer in the DHT",
+			Args:  cobra.ExactArgs(1),
+			Run: func(cmd *cobra.Command, args []string) {
+				if noKad(cmd) {
+					return
+				}
+				peerID, err := peer.Decode(args[0])
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				findPeerCtx := ctx
+				if timeout != 0 {
+					findPeerCtx, _ = context.WithTimeout(findPeerCtx, time.Millisecond*time.Duration(timeout))
+				}
+				addrInfo, err := state.KadNode.FindPeer(findPeerCtx, peerID)
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				log.WithField("addrs", addrInfo.Addrs).WithField("peer", peerID.Pretty()).Infof("Found addresses for peer")
+			},
+		}
+		findPeerCmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Timeout to find a peer, in milliseconds. Or 0 to disable.")
+		cmd.AddCommand(findPeerCmd)
+	}
 
 	return cmd
 }

@@ -122,7 +122,8 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
 				libp2p.ConnectionManager(connmgr.NewConnManager(loPeers, hiPeers, time.Millisecond*time.Duration(gracePeriodMs))),
 			)
-			h, err := libp2p.New(r.Ctx, hostOptions...)
+			// Not the command ctx, we want the host to stay open after the command.
+			h, err := libp2p.New(r.ActorCtx, hostOptions...)
 			if err != nil {
 				log.Error(err)
 				return
