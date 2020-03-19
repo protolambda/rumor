@@ -87,7 +87,7 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				log.Error(err)
 				return
 			}
-			log.Infof("connected to peer %s", addrInfo.ID.Pretty())
+			log.WithField("peer_id", addrInfo.ID.Pretty()).Infof("connected to peer")
 			if len(args) > 1 {
 				r.P2PHost.ConnManager().Protect(addrInfo.ID, args[1])
 				log.Infof("protected peer %s as tag %s", addrInfo.ID.Pretty(), args[1])

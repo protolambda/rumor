@@ -123,7 +123,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 			if err := m.RunRequest(reqCtx, sFn, peerID, comp, reqInput, maxChunks,
 				func(chunk reqresp.ChunkedResponseHandler) error {
 					resultCode := chunk.ResultCode()
-					f := logrus.Fields{
+					f := map[string]interface{}{
 						"protocol": m.Protocol,
 						"from": peerID.String(),
 						"chunk_index": chunk.ChunkIndex(),
@@ -158,7 +158,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 							f["data"] = hex.EncodeToString(bytez)
 						}
 					}
-					log.WithFields(f).Info("Received chunk")
+					log.WithField("chunk", f).Info("Received chunk")
 					return nil
 				}); err != nil {
 				log.Errorf("failed request: %v", err)

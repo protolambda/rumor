@@ -142,7 +142,7 @@ func (c *chRespHandler) ReadErrMsg() (string, error) {
 }
 
 func (c *chRespHandler) ReadObj(dest interface{}) error {
-	return c.m.RequestCodec.Decode(c.r, c.chunkSize, dest)
+	return c.m.ResponseChunkCodec.Decode(c.r, c.chunkSize, dest)
 }
 
 func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
