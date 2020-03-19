@@ -35,6 +35,7 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 	var relayEnabled bool
 	var loPeers, hiPeers int
 	var gracePeriodMs int
+	var natEnabled bool
 
 	startCmd := &cobra.Command{
 		Use:   "start",
@@ -108,9 +109,14 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				}
 			}
 
+			if natEnabled {
+				hostOptions = append(hostOptions, libp2p.NATPortMap())
+			}
+
 			if relayEnabled {
 				hostOptions = append(hostOptions, libp2p.EnableRelay())
 			}
+
 			hostOptions = append(hostOptions,
 				libp2p.Identity(r.PrivKey),
 				libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
@@ -129,6 +135,7 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 	startCmd.Flags().StringArrayVar(&transportsStrArr, "transports", []string{"tcp"}, "Transports to use. Options: tcp, ws")
 	startCmd.Flags().StringVar(&securityStr, "security", "secio", "Security to use. Options: secio, none")
 	startCmd.Flags().BoolVar(&relayEnabled, "relay", false, "enable relayer functionality")
+	startCmd.Flags().BoolVar(&natEnabled, "nat", true, "enable nat address discovery (upnp/pmp)")
 	startCmd.Flags().IntVar(&loPeers, "lo-peers", 15, "low-water for connection manager to trim peer count to")
 	startCmd.Flags().IntVar(&hiPeers, "hi-peers", 20, "high-water for connection manager to trim peer count from")
 	startCmd.Flags().IntVar(&gracePeriodMs, "peer-grace-period", 20_000, "Time in milliseconds to grace a peer from being trimmed")
