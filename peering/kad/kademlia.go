@@ -2,19 +2,18 @@ package kad
 
 import (
 	"context"
-	"github.com/protolambda/rumor/node"
 	ds "github.com/ipfs/go-datastore"
 	ds_sync "github.com/ipfs/go-datastore/sync"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	kad_dht "github.com/libp2p/go-libp2p-kad-dht"
 	dhtopts "github.com/libp2p/go-libp2p-kad-dht/opts"
-	"github.com/sirupsen/logrus"
+	"github.com/protolambda/rumor/node"
 )
 
 type Kademlia interface {
 	ProtocolID() protocol.ID
-	RefreshTable(wait bool)
+	RefreshTable() error
 	FindPeer(ctx context.Context, id peer.ID) (peer.AddrInfo, error)
 	FindPeersConnectedToPeer(ctx context.Context, id peer.ID) (<-chan *peer.AddrInfo, error)
 	// TODO more methods to connect to nodes etc.
@@ -23,10 +22,9 @@ type Kademlia interface {
 type KademliaImpl struct {
 	protocolID protocol.ID
 	dhtData *kad_dht.IpfsDHT
-	log logrus.FieldLogger
 }
 
-func NewKademlia(ctx context.Context, log logrus.FieldLogger, n node.Node, id protocol.ID) (Kademlia, error) {
+func NewKademlia(ctx context.Context, n node.Node, id protocol.ID) (Kademlia, error) {
 	// example protocol id: "/prysm/0.0.0/dht"
 	dhtOpts := []dhtopts.Option{
 		dhtopts.Datastore(ds_sync.MutexWrap(ds.NewMapDatastore())), // instead of the default map datastore.
@@ -34,14 +32,11 @@ func NewKademlia(ctx context.Context, log logrus.FieldLogger, n node.Node, id pr
 	}
 	kd, err := kad_dht.New(ctx, n.Host(), dhtOpts...)
 	if err != nil {
-		log.Errorf("Failed to start Kademlia DHT, protocol: %s", id)
 		return nil, err
 	}
-	log.Infof("started Kademlia DHT, protocol: %s", id)
 	return &KademliaImpl{
 		protocolID: id,
 		dhtData: kd,
-		log:     log,
 	}, nil
 }
 
@@ -57,21 +52,8 @@ func (kad *KademliaImpl) FindPeersConnectedToPeer(ctx context.Context, id peer.I
 	return kad.dhtData.FindPeersConnectedToPeer(ctx, id)
 }
 
-func (kad *KademliaImpl) RefreshTable(wait bool) {
-	refResult := kad.dhtData.RefreshRoutingTable()
-
+func (kad *KademliaImpl) RefreshTable() error {
 	// Result is safe to ignore but interesting to log.
-	waitForResult := func() {
-		err := <-refResult
-		if err != nil {
-			kad.log.Errorf("failed to refresh kad dht table: %v", err)
-		} else {
-			kad.log.Info("successfully refreshed kad dht table")
-		}
-	}
-	if wait {
-		waitForResult()
-	} else {
-		go waitForResult()
-	}
+	err := <-kad.dhtData.RefreshRoutingTable()
+	return err
 }

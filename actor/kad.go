@@ -44,7 +44,7 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 			}
 			ctx, cancel := context.WithCancel(r.Ctx)
 			var err error
-			state.KadNode, err = kad.NewKademlia(ctx, log, r, protocol.ID(args[0]))
+			state.KadNode, err = kad.NewKademlia(ctx, r, protocol.ID(args[0]))
 			if err != nil {
 				log.Error(err)
 				return
@@ -67,18 +67,20 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 		},
 	})
 
-	var waitForRefreshResult bool
 	refreshCmd := &cobra.Command{
-		Use:   "refresh [--wait]",
+		Use:   "refresh",
 		Short: "Refresh the Kademlia table. Optionally wait for it to complete.",
 		Run: func(cmd *cobra.Command, args []string) {
 			if noKad(cmd) {
 				return
 			}
-			state.KadNode.RefreshTable(waitForRefreshResult)
+			if err := state.KadNode.RefreshTable();  err != nil {
+				log.Errorf("failed to refresh kad dht table: %v", err)
+			} else {
+				log.Info("successfully refreshed kad dht table")
+			}
 		},
 	}
-	refreshCmd.Flags().BoolVar(&waitForRefreshResult, "wait", false, "Wait for the table refresh to complete")
 	cmd.AddCommand(refreshCmd)
 
 	cmd.AddCommand(&cobra.Command{
