@@ -11,12 +11,12 @@ import (
 )
 
 type GossipSub interface {
-	JoinTopic(topic string) (*pubsub.Topic, error)
+	Join(topic string, opts ...pubsub.TopicOpt) (*pubsub.Topic, error)
 	BlacklistPeer(id peer.ID)
 }
 
-type GossipSubImpl struct {
-	ps *pubsub.PubSub
+type gossipImpl struct {
+	*pubsub.PubSub
 }
 
 func NewGossipSub(ctx context.Context, n node.Node) (GossipSub, error) {
@@ -29,7 +29,7 @@ func NewGossipSub(ctx context.Context, n node.Node) (GossipSub, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &GossipSubImpl{ps:  ps}, nil
+	return &gossipImpl{PubSub: ps}, nil
 }
 
 func msgIDFunction(pmsg *pubsub_pb.Message) string {
@@ -38,12 +38,4 @@ func msgIDFunction(pmsg *pubsub_pb.Message) string {
 	_, _ = h.Write(pmsg.Data)
 	id := h.Sum(nil)
 	return base64.URLEncoding.EncodeToString(id)
-}
-
-func (gs *GossipSubImpl) JoinTopic(topic string) (*pubsub.Topic, error) {
-	return gs.ps.Join(topic)
-}
-
-func (gs *GossipSubImpl) BlacklistPeer(id peer.ID) {
-	gs.ps.BlacklistPeer(id)
 }
