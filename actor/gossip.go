@@ -8,11 +8,8 @@ import (
 	"github.com/protolambda/rumor/gossip"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"os"
-	"path"
 	"strings"
 	"sync"
-	"time"
 )
 
 type GossipState struct {
@@ -50,7 +47,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			var err error
-			state.GsNode, err = gossip.NewGossipSub(r.ActorCtx, log, r)
+			state.GsNode, err = gossip.NewGossipSub(r.ActorCtx, r)
 			if err != nil {
 				log.Error(err)
 				return
@@ -191,63 +188,45 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 		},
 	})
 
-	logToFile := func(ctx context.Context, loggerName string, top *pubsub.Topic, outPath string) error {
-		topicLog := log.WithField("ps_logger", loggerName)
-		out, err := os.OpenFile(path.Join(outPath), os.O_WRONLY|os.O_CREATE|os.O_APPEND, os.ModePerm)
-		if err != nil {
-			return err
-		}
-		go func() {
-			ticker := time.NewTicker(time.Second * 60)
-			for {
-				select {
-				case <-ticker.C:
-					if err := out.Sync(); err != nil {
-						topicLog.Errorf("Synced %s log with error: %v", outPath, err)
-					}
-				case <-ctx.Done():
-					if err := out.Close(); err != nil {
-						topicLog.Errorf("Closed %s log with error: %v", outPath, err)
-					}
-					return
-				}
-			}
-		}()
-		errLogger := gossip.NewErrLoggerChannel(ctx, topicLog, outPath)
-		msgLogger := gossip.NewMessageLogger(ctx, out, errLogger)
-		return state.GsNode.LogTopic(ctx, loggerName, top, msgLogger, errLogger)
-	}
-
-	logCmd := &cobra.Command{
-		Use:   "log",
-		Short: "Log GossipSub topic messages",
-	}
-
-	logCmd.AddCommand(&cobra.Command{
-		Use:   "file <name> <topic> <output-file-path>",
-		Short: "Log the messages of a gossip topic to a file. 1 hex-encoded message per line. Join a topic first.",
-		Args:  cobra.ExactArgs(3),
+	cmd.AddCommand(&cobra.Command{
+		Use:   "log <topic>",
+		Short: "Log the messages of a gossip topic. Messages are hex-encoded. Join a topic first.",
+		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			if noGS(cmd) {
 				return
 			}
-			loggerName := args[0]
-			topicName := args[1]
-			outPath := args[2]
+			topicName := args[0]
 			if top, ok := state.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
-				if err := logToFile(ctx, loggerName, top.(*pubsub.Topic), outPath); err != nil {
-					log.Error(err)
+				sub, err := top.(*pubsub.Topic).Subscribe()
+				if err != nil {
+					log.Errorf("Cannot open subscription on topic %s: %v", topicName, err)
 					return
 				}
-				<-ctx.Done()
+				for {
+					msg, err := sub.Next(ctx)
+					if err != nil {
+						if err == ctx.Err() {  // expected quit, context stopped.
+							break
+						}
+						log.Errorf("Gossip subscription on %s encountered error: %v", topicName, err)
+						break
+					} else {
+						log.WithFields(logrus.Fields{
+							"from": msg.GetFrom().String(),
+							"data": hex.EncodeToString(msg.Data),
+							"signature": hex.EncodeToString(msg.Signature),
+							"seq_no": hex.EncodeToString(msg.Seqno),
+						}).Infof("new message on %s", topicName)
+					}
+				}
+				sub.Cancel()
 			}
 		},
 	})
-	// TODO; log to rumor log cmd
-	cmd.AddCommand(logCmd)
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "publish <topic> <message>",
