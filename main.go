@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 	"io"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
+	"sync"
+	"time"
 )
 
 const LogKeyActor = "actor"
@@ -131,13 +131,8 @@ func main() {
 					return
 				}
 				defer l.Close()
-				stop := make(chan os.Signal, 1)
-				signal.Notify(stop, syscall.SIGINT)
 
-				go runCommands(log, l.Readline,true)
-
-				<-stop
-				log.Info("Exiting...")
+				runCommands(log, l.Readline, true)
 			} else {
 				r := io.Reader(os.Stdin)
 				if fromFilepath != "" {
@@ -195,7 +190,7 @@ func (c *Call) Close() {
 	c.cancel()
 }
 
-func runCommands(log logrus.FieldLogger, nextLine func() (string, error), interactive bool) {
+func runCommands(log logrus.FieldLogger, readNextLine func() (string, error), interactive bool) {
 	actors := make(map[string]*actor.Actor)
 
 	getActor := func(name string) *actor.Actor {
@@ -245,52 +240,23 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 		return call
 	}
 
-	loopCtx, loopCancel := context.WithCancel(context.Background())
-	lines := make(chan string, 1)
-	go func() {
-		for {
-			line, err := nextLine()
-			if err == readline.ErrInterrupt {
-				if len(line) == 0 {
-					break
-				} else {
-					continue
-				}
-			} else if err == io.EOF {
-				break
-			}
-			lines <- line
-		}
-		loopCancel()
-	}()
-
 	var lastCall *Call = nil
 
 	jobs := make(map[CallID]*Call)
 
 	// count calls, for unique ID (if user does not specify their own ID for the call)
 	callCounter := 0
-	mainLoop: for {
+	for {
 		// remove done jobs
 		for k, v := range jobs {
 			if v.isDone {
 				delete(jobs, k)
 			}
 		}
-		var lastDone <-chan struct{} = nil
-		if lastCall != nil {
-			lastDone = lastCall.ctx.Done()
-		}
-		line := ""
-		select {
-		case <- loopCtx.Done():
-			break mainLoop
-		case v := <-lines:
-			line = v
-		//noinspection GoNilness
-		case <- lastDone: // waits forever if nil, other select gets hit
-			lastCall = nil
-			continue
+
+		line, err := readNextLine()
+		if err != nil {
+			break
 		}
 
 		line = strings.TrimSpace(line)
@@ -303,22 +269,20 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 		}
 		// exits
 		if line == "exit" {
-			loopCancel()
 			break
 		}
 
-		if lastCall != nil {
+		if lastCall != nil && !lastCall.isDone {
 			if line == "cancel" {
 				lastCall.logger.Info("Canceled call")
 				lastCall.Close()
-				continue
 			} else if line == "bg" {
 				lastCall.logger.Info("Moved call to background")
 				lastCall = nil
-				continue
 			} else {
 				lastCall.logger.Errorf("Unrecognized command for modifying last call: '%s'", line)
 			}
+			continue
 		}
 
 		cmdArgs, err := shlex.Split(line)
@@ -332,10 +296,10 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 
 		var callID CallID
 		if firstArg := cmdArgs[0]; strings.HasSuffix(firstArg, ">") {
-			callID = CallID("@" + firstArg[:len(firstArg)-1])
+			callID = CallID(firstArg[:len(firstArg)-1])
 			cmdArgs = cmdArgs[1:]
 		} else {
-			callID = CallID(fmt.Sprintf("#%d", callCounter))
+			callID = CallID(fmt.Sprintf("%d", callCounter))
 			callCounter++
 		}
 
@@ -387,7 +351,24 @@ func runCommands(log logrus.FieldLogger, nextLine func() (string, error), intera
 		}
 	}
 
-	close(lines)
+	var wg sync.WaitGroup
+	// close remaining jobs
+	for k, v := range jobs {
+		log.WithField("call_id", k).Info("Closing job with 5 second timeout...")
+		v.Close()
+		wg.Add(1)
+		go func(k CallID, ctx context.Context) {
+			ctx, _ = context.WithTimeout(ctx, time.Second * 5)
+			<-ctx.Done()
+			if err := ctx.Err(); err != nil {
+				if err != context.Canceled {
+					log.WithField("call_id", k).Error(err)
+				}
+			}
+			wg.Done()
+		}(k, v.ctx)
+	}
+	wg.Wait()
 
 	// close all libp2p hosts
 	for _, actorRep := range actors {

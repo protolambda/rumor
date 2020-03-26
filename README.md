@@ -80,12 +80,10 @@ gossip list
 kad refresh
 # Check your peers on the topic
 gossip list-peers /eth2/beacon_block/ssz
-# Start logging
-gossip log start beacon_block /eth2/beacon_block/ssz blocks.txt
-# Show gossip loggers
-gossip log list
-# Stop block logger
-gossip log stop beacon_block
+# Subscribe to the topic
+gossip log /eth2/beacon_block/ssz
+# Exit task
+cancel
 # Leave channel
 gossip leave /eth2/beacon_block/ssz
 
@@ -115,13 +113,15 @@ bob: peer connect <ENR from alice>
 
 ### Call IDs
 
-By prefixing a command with `{my-call-id}>`, you can see which logs are a result of the given call `{my-call-id}`, even if interleaved with other logs (because of async or concurrent results).
+By prefixing a command with `{my-call-id}>`, you can see which logs are a result of the given call `{my-call-id}`,
+ even if interleaved with other logs (because of async or concurrent results).
 The call-ID should be placed before the actor name.
-A `@` is prefixed to the call-ID in the resulting logs. If no call-ID is specified, an incremental counter is used for each new call, and the id is prefixed with `#`. 
+If no call-ID is specified, the call uses an incrementing counter for each new call. I.e. an auto-generated call ID, with just a number, the command is prefixed with e.g. `123> `.
+Using bare numbers as custom call-IDs is unsafe, as these call-IDs will overlap with the auto-generated IDs.
 
 ```
 my_call> alice: host start
-.... log output with call_id="@my_call"
+.... log output with call_id="my_call"
 ```
 
 The call-ID is useful to correlate results, and for tooling that interacts with Rumor to get results. 
@@ -140,6 +140,23 @@ Calls can be made in, and moved to, foreground and background.
 - To put the current foreground call in the background, enter `bg`.
 - To put a specific call back in the foreground, enter `my_call_id> fg`.
 
+### Cancel calls
+
+To close a long-running call (which may run in the background), you can:
+- Move it to foreground if it is not already, then cancel it:
+```
+123> fg
+cancel
+```
+- Cancel it directly:
+```
+123> cancel
+```
+
+### Exit
+
+Enter `exit`, or send an interrupt signal.
+All remaining open jobs will be canceled.
 
 ## License
 

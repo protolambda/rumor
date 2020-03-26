@@ -24,9 +24,14 @@ func (r *Actor) IniDebugCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				log.Error(err)
 				return
 			}
-			log.Println("started sleeping!")
-			time.Sleep(time.Duration(count) * time.Millisecond)
-			log.Println("done sleeping!")
+			log.Infoln("started sleeping!")
+			sleepCtx, _ := context.WithTimeout(ctx, time.Duration(count) * time.Millisecond)
+			<-sleepCtx.Done()
+			if ctx.Err() == nil {
+				log.Infoln("done sleeping!")
+			} else {
+				log.Infof("stopped sleep, exit early: %v", ctx.Err())
+			}
 		},
 	})
 	return cmd

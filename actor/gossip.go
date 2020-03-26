@@ -85,7 +85,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				log.Errorf("already on gossip topic %s", topicName)
 				return
 			}
-			top, err := state.GsNode.JoinTopic(topicName)
+			top, err := state.GsNode.Join(topicName)
 			if err != nil {
 				log.Error(err)
 				return
