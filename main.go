@@ -102,7 +102,7 @@ func main() {
 					return string(out), err
 				}}
 				logFmt = logFmt.WithKeyFormat(LogKeyCallID, simpleLogFmt("\033[33m[%s]\033[0m")) // yellow
-				logFmt = logFmt.WithKeyFormat(LogKeyActor, simpleLogFmt("\033[36m[%s]\033[0m")) // cyan
+				logFmt = logFmt.WithKeyFormat(LogKeyActor, simpleLogFmt("\033[36m[%s]\033[0m"))  // cyan
 
 				log.SetFormatter(logFmt)
 			} else {
@@ -178,11 +178,11 @@ func (fn WriteableFn) Write(p []byte) (n int, err error) {
 type CallID string
 
 type Call struct {
-	ctx context.Context
+	ctx       context.Context
 	actorName string
-	cancel context.CancelFunc
-	logger *actor.Logger
-	isDone bool
+	cancel    context.CancelFunc
+	logger    *actor.Logger
+	isDone    bool
 }
 
 func (c *Call) Close() {
@@ -358,7 +358,7 @@ func runCommands(log logrus.FieldLogger, readNextLine func() (string, error), in
 		v.Close()
 		wg.Add(1)
 		go func(k CallID, ctx context.Context) {
-			ctx, _ = context.WithTimeout(ctx, time.Second * 5)
+			ctx, _ = context.WithTimeout(ctx, time.Second*5)
 			<-ctx.Done()
 			if err := ctx.Err(); err != nil {
 				if err != context.Canceled {

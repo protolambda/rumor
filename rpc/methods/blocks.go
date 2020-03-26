@@ -15,23 +15,22 @@ func (b *BeaconBlockBodyRaw) Limit() uint64 {
 }
 
 type BeaconBlock struct {
-	Slot Slot
+	Slot       Slot
 	ParentRoot Root
-	StateRoot Root
-	Body BeaconBlockBodyRaw
+	StateRoot  Root
+	Body       BeaconBlockBodyRaw
 }
 
 type SignedBeaconBlock struct {
-	Message BeaconBlock
+	Message   BeaconBlock
 	Signature BLSSignature
 }
 
-
 type BlocksByRangeReqV1 struct {
 	HeadBlockRoot Root // TO be removed in BlocksByRange v2
-	StartSlot Slot
-	Count uint64
-	Step uint64
+	StartSlot     Slot
+	Count         uint64
+	Step          uint64
 }
 
 func (r *BlocksByRangeReqV1) String() string {
@@ -39,16 +38,16 @@ func (r *BlocksByRangeReqV1) String() string {
 }
 
 var BlocksByRangeRPCv1 = reqresp.RPCMethod{
-	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
-	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV1)(nil)),
-	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
+	Protocol:                  "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
+	RequestCodec:              reqresp.NewSSZCodec((*BlocksByRangeReqV1)(nil)),
+	ResponseChunkCodec:        reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 	DefaultResponseChunkCount: 20,
 }
 
 type BlocksByRangeReqV2 struct {
 	StartSlot Slot
-	Count uint64
-	Step uint64
+	Count     uint64
+	Step      uint64
 }
 
 func (r *BlocksByRangeReqV2) String() string {
@@ -56,9 +55,9 @@ func (r *BlocksByRangeReqV2) String() string {
 }
 
 var BlocksByRangeRPCv2 = reqresp.RPCMethod{
-	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_range/2/ssz",
-	RequestCodec: reqresp.NewSSZCodec((*BlocksByRangeReqV2)(nil)),
-	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
+	Protocol:                  "/eth2/beacon_chain/req/beacon_blocks_by_range/2/ssz",
+	RequestCodec:              reqresp.NewSSZCodec((*BlocksByRangeReqV2)(nil)),
+	ResponseChunkCodec:        reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 	DefaultResponseChunkCount: 20,
 }
 
@@ -72,18 +71,18 @@ func (r BlocksByRootReq) String() string {
 	if len(r) == 0 {
 		return "empty blocks-by-root request"
 	}
-	out := make([]byte, 0, len(r) * 66)
+	out := make([]byte, 0, len(r)*66)
 	for i, root := range r {
 		hex.Encode(out[i*66:], root[:])
 		out[(i+1)*66-2] = ','
 		out[(i+1)*66-1] = ' '
 	}
-	return "blocks-by-root requested: " + string(out[:len(out) - 1])
+	return "blocks-by-root requested: " + string(out[:len(out)-1])
 }
 
 var BlocksByRootRPCv1 = reqresp.RPCMethod{
-	Protocol:      "/eth2/beacon_chain/req/beacon_blocks_by_root/1/ssz",
-	RequestCodec: reqresp.NewSSZCodec((*BlocksByRootReq)(nil)),
-	ResponseChunkCodec: reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
+	Protocol:                  "/eth2/beacon_chain/req/beacon_blocks_by_root/1/ssz",
+	RequestCodec:              reqresp.NewSSZCodec((*BlocksByRootReq)(nil)),
+	ResponseChunkCodec:        reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 	DefaultResponseChunkCount: 20,
 }

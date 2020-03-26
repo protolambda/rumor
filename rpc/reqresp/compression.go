@@ -28,7 +28,7 @@ func (c SnappyCompression) Compress(w io.WriteCloser) io.WriteCloser {
 }
 
 func (c SnappyCompression) MaxEncodedLen(msgLen uint64) (uint64, error) {
-	if msgLen & (1 << 63) != 0 {
+	if msgLen&(1<<63) != 0 {
 		return 0, fmt.Errorf("message length %d is too large to compress with snappy", msgLen)
 	}
 	m := snappy.MaxEncodedLen(int(msgLen))

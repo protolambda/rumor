@@ -24,14 +24,14 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 		defer cancel()
 
 		go func() {
-			<- ctx.Done()
+			<-ctx.Done()
 			_ = stream.Close() // Close stream after ctx closes.
 		}()
 
 		var invalidInputErr error
 
 		blr := NewBufLimitReader(stream, 1024, 0)
-		blr.N = 10  // var ints should be small
+		blr.N = 10 // var ints should be small
 		reqLen, err := binary.ReadUvarint(blr)
 		if err != nil {
 			invalidInputErr = err

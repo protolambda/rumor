@@ -27,8 +27,8 @@ type Actor struct {
 	GossipState GossipState
 	RPCState    RPCState
 
-	ActorCtx context.Context
-	actorCancel   context.CancelFunc
+	ActorCtx    context.Context
+	actorCancel context.CancelFunc
 }
 
 // check interface
@@ -37,7 +37,7 @@ var _ = (node.Node)((*Actor)(nil))
 func NewActor() *Actor {
 	ctxAll, cancelAll := context.WithCancel(context.Background())
 	return &Actor{
-		ActorCtx: ctxAll,
+		ActorCtx:    ctxAll,
 		actorCancel: cancelAll,
 	}
 }

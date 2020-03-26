@@ -25,7 +25,7 @@ type Codec interface {
 }
 
 type SSZCodec struct {
-	def ztypes.SSZ
+	def   ztypes.SSZ
 	alloc func() interface{}
 }
 
@@ -59,9 +59,9 @@ func (c *SSZCodec) Alloc() interface{} {
 }
 
 type RPCMethod struct {
-	Protocol           protocol.ID
-	RequestCodec       Codec
-	ResponseChunkCodec Codec
+	Protocol                  protocol.ID
+	RequestCodec              Codec
+	ResponseChunkCodec        Codec
 	DefaultResponseChunkCount uint64
 }
 
@@ -110,10 +110,10 @@ type ChunkedResponseHandler interface {
 }
 
 type chRespHandler struct {
-	m *RPCMethod
-	r io.Reader
-	result ResponseCode
-	chunkSize uint64
+	m          *RPCMethod
+	r          io.Reader
+	result     ResponseCode
+	chunkSize  uint64
 	chunkIndex uint64
 }
 
@@ -183,7 +183,7 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 	return newStreamFn.Request(ctx, peerId, protocolId, reqR, comp, respHandler)
 }
 
-type ReadRequestFn func (dest interface{}) error
+type ReadRequestFn func(dest interface{}) error
 type WriteSuccessChunkFn func(data interface{}) error
 type WriteMsgFn func(msg string) error
 
@@ -205,12 +205,12 @@ type ChunkedRequestHandler interface {
 }
 
 type chReqHandler struct {
-	m *RPCMethod
-	comp Compression
-	respBuf bytes.Buffer
-	reqLen uint64
-	r io.Reader
-	w io.Writer
+	m               *RPCMethod
+	comp            Compression
+	respBuf         bytes.Buffer
+	reqLen          uint64
+	r               io.Reader
+	w               io.Writer
 	invalidInputErr error
 }
 
@@ -237,7 +237,7 @@ func (h *chReqHandler) RawRequest() ([]byte, error) {
 }
 
 func (h *chReqHandler) WriteResponseChunk(data interface{}) error {
-	h.respBuf.Reset()  // re-use buffer for each response chunk
+	h.respBuf.Reset() // re-use buffer for each response chunk
 	if err := h.m.ResponseChunkCodec.Encode(&h.respBuf, data); err != nil {
 		return err
 	}

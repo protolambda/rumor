@@ -147,7 +147,7 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 			log.Error(err)
 			return
 		}
-		log.WithField("enr", enrStr).Info("ENR")  // TODO put all data in fields
+		log.WithField("enr", enrStr).Info("ENR") // TODO put all data in fields
 	}
 
 	cmd.AddCommand(startCmd)

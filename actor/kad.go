@@ -74,7 +74,7 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 			if noKad(cmd) {
 				return
 			}
-			if err := state.KadNode.RefreshTable();  err != nil {
+			if err := state.KadNode.RefreshTable(); err != nil {
 				log.Errorf("failed to refresh kad dht table: %v", err)
 			} else {
 				log.Info("successfully refreshed kad dht table")

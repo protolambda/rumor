@@ -21,7 +21,7 @@ type Kademlia interface {
 
 type KademliaImpl struct {
 	protocolID protocol.ID
-	dhtData *kad_dht.IpfsDHT
+	dhtData    *kad_dht.IpfsDHT
 }
 
 func NewKademlia(ctx context.Context, n node.Node, id protocol.ID) (Kademlia, error) {
@@ -36,7 +36,7 @@ func NewKademlia(ctx context.Context, n node.Node, id protocol.ID) (Kademlia, er
 	}
 	return &KademliaImpl{
 		protocolID: id,
-		dhtData: kd,
+		dhtData:    kd,
 	}, nil
 }
 

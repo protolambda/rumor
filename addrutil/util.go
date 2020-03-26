@@ -27,7 +27,7 @@ func (eee Eth2ENREntry) String() string {
 	return hex.EncodeToString(eee) // TODO: eth2 ENR, parse based on future spec
 }
 
-var EnrEntries = map[string]func() (enr.Entry, func() string) {
+var EnrEntries = map[string]func() (enr.Entry, func() string){
 	"secp256k1": func() (enr.Entry, func() string) {
 		res := new(enode.Secp256k1)
 		return res, func() string {

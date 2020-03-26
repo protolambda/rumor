@@ -7,4 +7,3 @@ import (
 type Node interface {
 	Host() host.Host
 }
-

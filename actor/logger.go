@@ -17,7 +17,7 @@ func NewLogger(inner logrus.FieldLogger) *Logger {
 	}
 }
 
-func (l *Logger) Modify(modFn func(old logrus.FieldLogger) (new logrus.FieldLogger))  {
+func (l *Logger) Modify(modFn func(old logrus.FieldLogger) (new logrus.FieldLogger)) {
 	l.m.Lock()
 	defer l.m.Unlock()
 	l.FieldLogger = modFn(l.FieldLogger)

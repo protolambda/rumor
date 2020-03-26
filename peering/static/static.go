@@ -2,9 +2,9 @@ package static
 
 import (
 	"context"
-	"github.com/protolambda/rumor/node"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/protolambda/rumor/node"
 	"github.com/sirupsen/logrus"
 )
 
@@ -46,7 +46,7 @@ func ConnectBootNodes(ctx context.Context, log logrus.FieldLogger, n node.Node, 
 	})
 }
 
-func ParseMultiAddrs(addrs... string) ([]ma.Multiaddr, error) {
+func ParseMultiAddrs(addrs ...string) ([]ma.Multiaddr, error) {
 	multiAddrs := make([]ma.Multiaddr, 0, len(addrs))
 	for _, addr := range addrs {
 		muAddr, err := ma.NewMultiaddr(addr)

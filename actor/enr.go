@@ -71,13 +71,13 @@ func (r *Actor) InitEnrCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 				return
 			}
 			log.WithFields(logrus.Fields{
-				"seq": enodeRes.Seq(),
-				"xy": fmt.Sprintf("%d %d", pubkey.X, pubkey.Y),
+				"seq":     enodeRes.Seq(),
+				"xy":      fmt.Sprintf("%d %d", pubkey.X, pubkey.Y),
 				"node_id": nodeID.String(),
 				"peer_id": peerID.String(),
-				"enode": enodeRes.URLv4(),
-				"multi": muAddr.String(),
-				"enr": enodeRes.String(),  // formats as url-base64 ENR
+				"enode":   enodeRes.URLv4(),
+				"multi":   muAddr.String(),
+				"enr":     enodeRes.String(), // formats as url-base64 ENR
 			}).Info("ENR parsed successfully")
 		},
 	}

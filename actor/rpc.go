@@ -16,22 +16,22 @@ import (
 )
 
 type RPCState struct {
-	Goodbye Responder
-	Status Responder
+	Goodbye       Responder
+	Status        Responder
 	BlocksByRange Responder
-	BlocksByRoot Responder
+	BlocksByRoot  Responder
 }
 
 type RequestKey uint64
 
 type RequestEntry struct {
-	From peer.ID
+	From    peer.ID
 	handler reqresp.RequestResponder
-	cancel func()
+	cancel  func()
 }
 
 type Responder struct {
-	keyCounter RequestKey
+	keyCounter      RequestKey
 	keyCounterMutex sync.Mutex
 	// RequestKey -> RequestEntry
 	Requests sync.Map
@@ -70,7 +70,7 @@ TODO:
 - generic "listen"/"req"/"resp" command; take protocol-id and ssz-bytes as argument
 - implement "resp" command, take ssz-bytes or type-specific input
 
- */
+*/
 
 func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *RPCState) *cobra.Command {
 	cmd := &cobra.Command{
@@ -124,10 +124,10 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				func(chunk reqresp.ChunkedResponseHandler) error {
 					resultCode := chunk.ResultCode()
 					f := map[string]interface{}{
-						"protocol": m.Protocol,
-						"from": peerID.String(),
+						"protocol":    m.Protocol,
+						"from":        peerID.String(),
 						"chunk_index": chunk.ChunkIndex(),
-						"chunk_size": chunk.ChunkSize(),
+						"chunk_size":  chunk.ChunkSize(),
 						"result_code": resultCode,
 					}
 					if rawChunks {
@@ -188,7 +188,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				if timeout == 0 {
 					return ctx
 				}
-				reqCtx, _ := context.WithTimeout(ctx, time.Millisecond * time.Duration(timeout))
+				reqCtx, _ := context.WithTimeout(ctx, time.Millisecond*time.Duration(timeout))
 				return reqCtx
 			}
 			comp, err := readOptionalComp(cmd)
@@ -198,8 +198,8 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 			}
 			listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
 				req := map[string]interface{}{
-					"from":      peerId.String(),
-					"protocol":  m.Protocol,
+					"from":     peerId.String(),
+					"protocol": m.Protocol,
 				}
 				if readContents {
 					if raw {
@@ -225,9 +225,9 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				} else {
 					ctx, cancel := context.WithCancel(ctx)
 					reqId := responder.AddRequest(&RequestEntry{
-						From:                    peerId,
-						handler:                 handler,
-						cancel:                  cancel,
+						From:    peerId,
+						handler: handler,
+						cancel:  cancel,
 					})
 					req["req_id"] = reqId
 
@@ -360,47 +360,47 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 	}
 
 	/*
-	<rpc type name>   # for 'goodbye', 'status', 'blocks-by-range', 'blocks-by-root'
-	      req
-				with --compression=none --max-chunks=20 <peerID> [args to parse into request]
-				raw  --compression=none --max-chunks=20 <peerID> <hex encoded bytes>
-	      listen --compression=none --always-close=false --raw=false                 # queues requests, logs request-id. Closes listener when command is canceled.
-	      resp
-				chunk
-					with --done=false <req-ID> [args to parse into response chunk]
-					raw  --done=false --result-code=0 <req-ID> <hex encoded bytes>
-				invalid-input --done=true <req-ID> [msg string]
-				server-error --done=true <req-ID> [msg string]
-		  close <req-ID>                                                   # Cancel an open request, closes the response stream, removes it from memory
+		<rpc type name>   # for 'goodbye', 'status', 'blocks-by-range', 'blocks-by-root'
+		      req
+					with --compression=none --max-chunks=20 <peerID> [args to parse into request]
+					raw  --compression=none --max-chunks=20 <peerID> <hex encoded bytes>
+		      listen --compression=none --always-close=false --raw=false                 # queues requests, logs request-id. Closes listener when command is canceled.
+		      resp
+					chunk
+						with --done=false <req-ID> [args to parse into response chunk]
+						raw  --done=false --result-code=0 <req-ID> <hex encoded bytes>
+					invalid-input --done=true <req-ID> [msg string]
+					server-error --done=true <req-ID> [msg string]
+			  close <req-ID>                                                   # Cancel an open request, closes the response stream, removes it from memory
 
-	    --result-code can be used to write custom chunk data (Test behavior of unspecced chunk types)
-		--drop stops listening for responses immediately after sending the request.
-	    --done closes the response immediately after sending the chunk
-	    --always-close=true prevents requests from being queued, and requests are immediately dropped
+		    --result-code can be used to write custom chunk data (Test behavior of unspecced chunk types)
+			--drop stops listening for responses immediately after sending the request.
+		    --done closes the response immediately after sending the chunk
+		    --always-close=true prevents requests from being queued, and requests are immediately dropped
 
-		For 'blocks-by-{range, root} req with';
-			--max-chunks, if left unchanged, should change to the request span
-		For 'goodbye req {with, raw}';
-			--max-chunks=0 as default, do not wait for response
-		For 'status req {with, raw}';
-			--max-chunks=1 as default, only single response
-		For 'status resp chunk {with, raw}';
-			--done=true as default, do not write more than one chunk
+			For 'blocks-by-{range, root} req with';
+				--max-chunks, if left unchanged, should change to the request span
+			For 'goodbye req {with, raw}';
+				--max-chunks=0 as default, do not wait for response
+			For 'status req {with, raw}';
+				--max-chunks=1 as default, only single response
+			For 'status resp chunk {with, raw}';
+				--done=true as default, do not write more than one chunk
 
-		Incoming Request logs:
-			{
-				"req_id":    The ID to respond to it, if queued
-				"from":      Peer-ID of request sender
-				"protocol":  Protocol string of request
-				"input_err": if the request was invalid, this is the error message. The responder can decide to respond with `<name> resp invalid-input <red-ID> "some message here to be nice to the client"`
-				"data":      if the request was valid, this is either a hex-encoded string (if listened with --raw) or the parsed request.
-			}
+			Incoming Request logs:
+				{
+					"req_id":    The ID to respond to it, if queued
+					"from":      Peer-ID of request sender
+					"protocol":  Protocol string of request
+					"input_err": if the request was invalid, this is the error message. The responder can decide to respond with `<name> resp invalid-input <red-ID> "some message here to be nice to the client"`
+					"data":      if the request was valid, this is either a hex-encoded string (if listened with --raw) or the parsed request.
+				}
 
-		Incoming Response logs:
-			{
-				W.I.P.
-			}
-	 */
+			Incoming Response logs:
+				{
+					W.I.P.
+				}
+	*/
 
 	makeMethodCmd := func(name string, responder *Responder, m *reqresp.RPCMethod) *cobra.Command {
 		methodCmd := &cobra.Command{
@@ -433,7 +433,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 		reqRawCmd := &cobra.Command{
 			Use:   "raw <peer-ID> <hex-data>",
 			Short: "Make raw requests.",
-			Args: cobra.ExactArgs(2),
+			Args:  cobra.ExactArgs(2),
 		}
 		{
 			reqFn := prepareReqFn(reqRawCmd, m)
@@ -500,7 +500,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 		closeCmd := &cobra.Command{
 			Use:   "close <request-id>",
 			Short: "Close open requests",
-			Args: cobra.ExactArgs(1),
+			Args:  cobra.ExactArgs(1),
 			Run: func(cmd *cobra.Command, args []string) {
 				key, req, ok := checkAndGetReq(args[0], responder)
 				if !ok {
@@ -508,8 +508,8 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				}
 				responder.CloseRequest(key)
 				log.WithFields(logrus.Fields{
-					"req_id": key,
-					"peer": req.From.String(),
+					"req_id":   key,
+					"peer":     req.From.String(),
 					"protocol": m.Protocol,
 				}).Infof("Closed request.")
 			},
@@ -566,7 +566,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				Step:          step,
 			}, nil
 		}
-	 */
+	*/
 
 	//
 	//
@@ -634,4 +634,3 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 	cmd.AddCommand(makeMethodCmd("blocks-by-root", &state.BlocksByRoot, &methods.BlocksByRootRPCv1))
 	return cmd
 }
-

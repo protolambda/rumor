@@ -25,8 +25,8 @@ type Discv5 interface {
 
 type Discv5Impl struct {
 	*discover.UDPv5
-	addr  *net.UDPAddr
-	log   logrus.FieldLogger
+	addr *net.UDPAddr
+	log  logrus.FieldLogger
 	gLog *GethLogger
 }
 
@@ -103,4 +103,3 @@ func NewDiscV5(log logrus.FieldLogger, n node.Node, ip net.IP, port uint16, priv
 		gLog:  &gethLogWrap,
 	}, nil
 }
-

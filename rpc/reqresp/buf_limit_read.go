@@ -31,7 +31,6 @@ func NewBufLimitReader(rd io.Reader, size int, limit int) *BufLimitReader {
 
 var errNegativeRead = errors.New("reader returned negative count from Read")
 
-
 // Read reads data into p.
 // It returns the number of bytes read into p.
 // The bytes are taken from at most one Read on the underlying Reader,

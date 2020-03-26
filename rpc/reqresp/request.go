@@ -9,7 +9,7 @@ import (
 	"io"
 )
 
-type NewStreamFn func(ctx context.Context, peerId peer.ID, protocolId... protocol.ID) (network.Stream, error)
+type NewStreamFn func(ctx context.Context, peerId peer.ID, protocolId ...protocol.ID) (network.Stream, error)
 
 func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, r io.Reader, comp Compression, handle ResponseHandler) error {
 	stream, err := newStreamFn(ctx, peerId, protocolId)

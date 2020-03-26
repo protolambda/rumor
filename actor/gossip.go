@@ -13,10 +13,10 @@ import (
 )
 
 type GossipState struct {
-	GsNode       gossip.GossipSub
-	CloseGS      context.CancelFunc
+	GsNode  gossip.GossipSub
+	CloseGS context.CancelFunc
 	// string -> *pubsub.Topic
-	Topics       sync.Map
+	Topics sync.Map
 }
 
 func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state *GossipState) *cobra.Command {
@@ -209,17 +209,17 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				for {
 					msg, err := sub.Next(ctx)
 					if err != nil {
-						if err == ctx.Err() {  // expected quit, context stopped.
+						if err == ctx.Err() { // expected quit, context stopped.
 							break
 						}
 						log.Errorf("Gossip subscription on %s encountered error: %v", topicName, err)
 						break
 					} else {
 						log.WithFields(logrus.Fields{
-							"from": msg.GetFrom().String(),
-							"data": hex.EncodeToString(msg.Data),
+							"from":      msg.GetFrom().String(),
+							"data":      hex.EncodeToString(msg.Data),
 							"signature": hex.EncodeToString(msg.Signature),
-							"seq_no": hex.EncodeToString(msg.Seqno),
+							"seq_no":    hex.EncodeToString(msg.Seqno),
 						}).Infof("new message on %s", topicName)
 					}
 				}

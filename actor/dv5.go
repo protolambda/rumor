@@ -11,7 +11,7 @@ import (
 )
 
 type Dv5State struct {
-	Dv5Node  dv5.Discv5
+	Dv5Node dv5.Discv5
 }
 
 func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *Dv5State) *cobra.Command {
@@ -207,4 +207,3 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 	})
 	return cmd
 }
-
