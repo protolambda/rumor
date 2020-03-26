@@ -243,7 +243,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				return
 			}
 			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler) // TODO add compression to protocol info
-			log.WithField("protocol", m.Protocol).Infof("Opened listener")
+			log.WithField("started", true).Infof("Opened listener")
 			<-ctx.Done()
 		}
 	}
