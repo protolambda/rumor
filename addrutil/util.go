@@ -144,7 +144,11 @@ func ParsePrivateKey(v string) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse private key, invalid private key (Secp256k1): %v", err)
 	}
-	return (*ecdsa.PrivateKey)((priv).(*crypto.Secp256k1PrivateKey)), nil
+	key := (*ecdsa.PrivateKey)((priv).(*crypto.Secp256k1PrivateKey))
+	if !key.Curve.IsOnCurve(key.X, key.Y) {
+		return nil, fmt.Errorf("invalid private key, not on curve")
+	}
+	return key, nil
 }
 
 func ParsePubkey(v string) (*ecdsa.PublicKey, error) {
@@ -244,6 +248,8 @@ func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *ecdsa.PrivateKey) 
 	if udpPort != 0 {
 		rec.Set(enr.UDP(udpPort))
 	}
-	_ = enode.SignV4(&rec, priv)
+	if priv != nil {
+		_ = enode.SignV4(&rec, priv)
+	}
 	return &rec
 }

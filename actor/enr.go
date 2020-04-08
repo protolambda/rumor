@@ -2,15 +2,18 @@ package actor
 
 import (
 	"context"
+	"crypto/ecdsa"
+	crand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/protolambda/rumor/addrutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"net"
-	"strconv"
 )
 
 func (r *Actor) InitEnrCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
@@ -85,38 +88,64 @@ func (r *Actor) InitEnrCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 	cmd.AddCommand(enrViewCmd)
 
 	cmd.AddCommand(&cobra.Command{
-		Use:   "make <ip> <tcp-port> <udp-port> <priv>",
-		Short: "make an ENR. ENR is url-base64 (RFC 4648). Pubkey is raw hex encoded format",
-		Args:  cobra.ExactArgs(4),
+		Use:   "gen-key",
+		Short: "Make a private key for an ENR.",
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			ip := net.ParseIP(args[0])
-			if ip == nil {
-				log.Errorf("could not parse ip: %s", args[0])
-				return
-			}
-			tcpPort, err := strconv.ParseUint(args[1], 0, 16)
+			key, err := ecdsa.GenerateKey(btcec.S256(), crand.Reader)
 			if err != nil {
-				log.Errorf("could not parse tcp port: %v", err)
-				return
+				log.Errorf("failed to generate key: %v", err)
 			}
-			udpPort, err := strconv.ParseUint(args[2], 0, 16)
+			secpKey := (*crypto.Secp256k1PrivateKey)(key)
+			keyBytes, err := secpKey.Raw()
 			if err != nil {
-				log.Errorf("could not parse udp port: %v", err)
-				return
+				log.Errorf("failed to serialize key: %v", err)
 			}
-			priv, err := addrutil.ParsePrivateKey(args[3])
-			if err != nil {
-				log.Errorf("could not pubkey: %v", err)
-				return
-			}
-			rec := addrutil.MakeENR(ip, uint16(tcpPort), uint16(udpPort), priv)
-			enrStr, err := addrutil.EnrToString(rec)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.Infof("ENR address: %s", enrStr)
+			log.WithField("key", hex.EncodeToString(keyBytes)).Infoln("generated key")
 		},
 	})
+
+	{
+		var ipStr string
+		var tcpPort, udpPort uint16
+		var privStr string
+		buildCmd := &cobra.Command{
+			Use:   "make",
+			Short: "Make an ENR. ENR is url-base64 (RFC 4648).",
+			Args:  cobra.NoArgs,
+			Run: func(cmd *cobra.Command, args []string) {
+				var ip net.IP
+				if ipStr != "" {
+					ip = net.ParseIP(ipStr)
+					if ip == nil {
+						log.Errorf("could not parse ip: %s", ipStr)
+						return
+					}
+				}
+				var priv *ecdsa.PrivateKey
+				if privStr != "" {
+					var err error
+					priv, err = addrutil.ParsePrivateKey(privStr)
+					if err != nil {
+						log.Errorf("could not parse private key: %v", err)
+						return
+					}
+				}
+				rec := addrutil.MakeENR(ip, tcpPort, udpPort, priv)
+				enrStr, err := addrutil.EnrToString(rec)
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				log.WithField("enr", enrStr).Infof("Enr address")
+			},
+		}
+		// TODO: add an "eth2" key option
+		buildCmd.Flags().StringVar(&ipStr, "ip", "", "IP address (v4 or v6). None if empty.")
+		buildCmd.Flags().Uint16Var(&tcpPort, "tcp", 0, "TCP port. None if 0")
+		buildCmd.Flags().Uint16Var(&udpPort, "udp", 0, "UDP port. None if 0")
+		buildCmd.Flags().StringVar(&privStr, "priv", "", "Private key, in raw hex encoded format (32 bytes -> 64 hex chars with optional 0x prefix). None if empty, and also no signed ENR.")
+		cmd.AddCommand(buildCmd)
+	}
 	return cmd
 }
