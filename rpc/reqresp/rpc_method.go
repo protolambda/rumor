@@ -88,7 +88,7 @@ type RequestSSZInput struct {
 
 func (v RequestSSZInput) Reader(c Codec) (io.Reader, error) {
 	var buf bytes.Buffer
-	if err := c.Encode(&buf, v); err != nil {
+	if err := c.Encode(&buf, v.Obj); err != nil {
 		return nil, err
 	}
 	return &buf, nil
