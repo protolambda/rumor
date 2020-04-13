@@ -19,7 +19,6 @@ func (p *payloadBuffer) Write(b []byte) (n int, err error) {
 func (p *payloadBuffer) OutputSizeVarint(w io.Writer) error {
 	size := (*bytes.Buffer)(p).Len()
 	sizeBytes := [binary.MaxVarintLen64]byte{}
-	// TODO unsigned or signed var int?
 	sizeByteLen := binary.PutUvarint(sizeBytes[:], uint64(size))
 	_, err := w.Write(sizeBytes[:sizeByteLen])
 	return err
