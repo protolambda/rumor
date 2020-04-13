@@ -54,12 +54,12 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 						log.Error(err)
 						return
 					}
-					p, err := crypto.MarshalPrivateKey(r.PrivKey)
+					p, err := r.PrivKey.Raw()
 					if err != nil {
 						log.Error(err)
 						return
 					}
-					log.Infof("Generated random Secp256k1 private key: %s", hex.EncodeToString(p))
+					log.WithField("priv", hex.EncodeToString(p)).Info("Generated random Secp256k1 private key")
 				} else {
 					priv, err := addrutil.ParsePrivateKey(privKeyStr)
 					if err != nil {
