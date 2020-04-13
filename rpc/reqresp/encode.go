@@ -29,25 +29,38 @@ func (p *payloadBuffer) WriteTo(w io.Writer) (n int64, err error) {
 	return (*bytes.Buffer)(p).WriteTo(w)
 }
 
+type noCloseWriter struct {
+	w io.Writer
+}
+
+func (nw noCloseWriter) Write(p []byte) (n int, err error) {
+	return nw.w.Write(p)
+}
+
+func (nw noCloseWriter) Close() error {
+	return nil
+}
+
 // EncodePayload reads a payload, buffers (and optionally compresses) the payload,
 // then computes the header-data (varint of byte size). And then writes header and payload.
 func EncodePayload(r io.Reader, w io.Writer, comp Compression) error {
-	var out io.Writer
 	var buf payloadBuffer
-	out = &buf
-	if comp != nil {
-		compressedWriter := comp.Compress(&buf)
-		defer compressedWriter.Close()
-		out = compressedWriter
-	}
-	if _, err := io.Copy(out, r); err != nil {
+	if _, err := io.Copy(&buf, r); err != nil {
 		return err
 	}
 	if err := buf.OutputSizeVarint(w); err != nil {
 		return err
 	}
-	if _, err := buf.WriteTo(w); err != nil {
-		return err
+	if comp != nil {
+		compressedWriter := comp.Compress(noCloseWriter{w: w})
+		defer compressedWriter.Close()
+		if _, err := buf.WriteTo(compressedWriter); err != nil {
+			return err
+		}
+	} else {
+		if _, err := buf.WriteTo(w); err != nil {
+			return err
+		}
 	}
 	return nil
 }
