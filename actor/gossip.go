@@ -3,6 +3,7 @@ package actor
 import (
 	"context"
 	"encoding/hex"
+	"github.com/golang/snappy"
 	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/protolambda/rumor/gossip"
@@ -215,9 +216,19 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 						log.Errorf("Gossip subscription on %s encountered error: %v", topicName, err)
 						break
 					} else {
+						var msgData []byte
+						if strings.HasSuffix(topicName, "_snappy") {
+							msgData, err = snappy.Decode(nil, msg.Data)
+							if err != nil {
+								log.Errorf("Cannot decode message on %s with snappy: %v", topicName, err)
+								return
+							}
+						} else {
+							msgData = msg.Data
+						}
 						log.WithFields(logrus.Fields{
 							"from":      msg.GetFrom().String(),
-							"data":      hex.EncodeToString(msg.Data),
+							"data":      hex.EncodeToString(msgData),
 							"signature": hex.EncodeToString(msg.Signature),
 							"seq_no":    hex.EncodeToString(msg.Seqno),
 						}).Infof("new message on %s", topicName)
@@ -249,6 +260,9 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				if err != nil {
 					log.Errorf("cannot decode message from hex, err: %v, msg: %s", err, hexData)
 					return
+				}
+				if strings.HasSuffix(topicName, "_snappy") {
+					data = snappy.Encode(nil, data)
 				}
 				if err := top.(*pubsub.Topic).Publish(ctx, data); err != nil {
 					log.Errorf("failed to publish message, err: %v", err)
