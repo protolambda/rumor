@@ -3,6 +3,7 @@ package reqresp
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -42,19 +43,37 @@ func NewSSZCodec(typ interface{}) *SSZCodec {
 }
 
 func (c *SSZCodec) MaxByteLen() uint64 {
+	if c == nil {
+		return 0
+	}
 	return c.def.MaxLen()
 }
 
 func (c *SSZCodec) Encode(w io.Writer, input interface{}) error {
+	if c == nil {
+		if input != nil {
+			return errors.New("expected empty data, nil input. This codec is no-op")
+		}
+		return nil
+	}
 	_, err := zssz.Encode(w, input, c.def)
 	return err
 }
 
 func (c *SSZCodec) Decode(r io.Reader, bytesLen uint64, dest interface{}) error {
+	if c == nil {
+		if bytesLen != 0 {
+			return errors.New("expected 0 bytes, no definition")
+		}
+		return nil
+	}
 	return zssz.Decode(r, bytesLen, dest, c.def)
 }
 
 func (c *SSZCodec) Alloc() interface{} {
+	if c == nil {
+		return nil
+	}
 	return c.alloc()
 }
 

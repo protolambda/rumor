@@ -19,6 +19,8 @@ import (
 type RPCState struct {
 	Goodbye       Responder
 	Status        Responder
+	Ping          Responder
+	Metadata      Responder
 	BlocksByRange Responder
 	BlocksByRoot  Responder
 }
@@ -483,6 +485,8 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 
 	cmd.AddCommand(makeMethodCmd("goodbye", &state.Goodbye, &methods.GoodbyeRPCv1))
 	cmd.AddCommand(makeMethodCmd("status", &state.Status, &methods.StatusRPCv1))
+	cmd.AddCommand(makeMethodCmd("ping", &state.Ping, &methods.PingRPCv1))
+	cmd.AddCommand(makeMethodCmd("metadata", &state.Metadata, &methods.MetaDataRPCv1))
 	cmd.AddCommand(makeMethodCmd("blocks-by-range", &state.BlocksByRange, &methods.BlocksByRangeRPCv1))
 	cmd.AddCommand(makeMethodCmd("blocks-by-root", &state.BlocksByRoot, &methods.BlocksByRootRPCv1))
 	return cmd
