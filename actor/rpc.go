@@ -630,7 +630,6 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 	cmd.AddCommand(makeMethodCmd("goodbye", &state.Goodbye, &methods.GoodbyeRPCv1))
 	cmd.AddCommand(makeMethodCmd("status", &state.Status, &methods.StatusRPCv1))
 	cmd.AddCommand(makeMethodCmd("blocks-by-range", &state.BlocksByRange, &methods.BlocksByRangeRPCv1))
-	cmd.AddCommand(makeMethodCmd("blocks-by-range-v2", &state.BlocksByRange, &methods.BlocksByRangeRPCv2))
 	cmd.AddCommand(makeMethodCmd("blocks-by-root", &state.BlocksByRoot, &methods.BlocksByRootRPCv1))
 	return cmd
 }

@@ -27,7 +27,6 @@ type SignedBeaconBlock struct {
 }
 
 type BlocksByRangeReqV1 struct {
-	HeadBlockRoot Root // TO be removed in BlocksByRange v2
 	StartSlot     Slot
 	Count         uint64
 	Step          uint64
@@ -40,23 +39,6 @@ func (r *BlocksByRangeReqV1) String() string {
 var BlocksByRangeRPCv1 = reqresp.RPCMethod{
 	Protocol:                  "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
 	RequestCodec:              reqresp.NewSSZCodec((*BlocksByRangeReqV1)(nil)),
-	ResponseChunkCodec:        reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
-	DefaultResponseChunkCount: 20,
-}
-
-type BlocksByRangeReqV2 struct {
-	StartSlot Slot
-	Count     uint64
-	Step      uint64
-}
-
-func (r *BlocksByRangeReqV2) String() string {
-	return fmt.Sprintf("%v", *r)
-}
-
-var BlocksByRangeRPCv2 = reqresp.RPCMethod{
-	Protocol:                  "/eth2/beacon_chain/req/beacon_blocks_by_range/2/ssz",
-	RequestCodec:              reqresp.NewSSZCodec((*BlocksByRangeReqV2)(nil)),
 	ResponseChunkCodec:        reqresp.NewSSZCodec((*SignedBeaconBlock)(nil)),
 	DefaultResponseChunkCount: 20,
 }
