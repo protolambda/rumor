@@ -15,10 +15,11 @@ func (b *BeaconBlockBodyRaw) Limit() uint64 {
 }
 
 type BeaconBlock struct {
-	Slot       Slot
-	ParentRoot Root
-	StateRoot  Root
-	Body       BeaconBlockBodyRaw
+	Slot          Slot
+	ProposerIndex ValidatorIndex
+	ParentRoot    Root
+	StateRoot     Root
+	Body          BeaconBlockBodyRaw
 }
 
 type SignedBeaconBlock struct {
@@ -27,9 +28,9 @@ type SignedBeaconBlock struct {
 }
 
 type BlocksByRangeReqV1 struct {
-	StartSlot     Slot
-	Count         uint64
-	Step          uint64
+	StartSlot Slot
+	Count     uint64
+	Step      uint64
 }
 
 func (r *BlocksByRangeReqV1) String() string {
