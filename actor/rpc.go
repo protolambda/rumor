@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/rumor/rpc/methods"
 	"github.com/protolambda/rumor/rpc/reqresp"
 	"github.com/sirupsen/logrus"
@@ -242,7 +243,11 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 				log.Error(err)
 				return
 			}
-			r.P2PHost.SetStreamHandler(m.Protocol, streamHandler) // TODO add compression to protocol info
+			prot := m.Protocol
+			if comp != nil {
+				prot += protocol.ID("_" + comp.Name())
+			}
+			r.P2PHost.SetStreamHandler(prot, streamHandler)
 			log.WithField("started", true).Infof("Opened listener")
 			<-ctx.Done()
 		}
