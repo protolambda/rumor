@@ -240,11 +240,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 					<-ctx.Done()
 				}
 			}
-			streamHandler, err := m.MakeStreamHandler(sCtxFn, comp, listenReq)
-			if err != nil {
-				log.Error(err)
-				return
-			}
+			streamHandler := m.MakeStreamHandler(sCtxFn, comp, listenReq)
 			prot := m.Protocol
 			if comp != nil {
 				prot += protocol.ID("_" + comp.Name())

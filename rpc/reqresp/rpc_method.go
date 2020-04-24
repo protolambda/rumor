@@ -277,10 +277,10 @@ func (h *chReqHandler) WriteServerErrorChunk(msg string) error {
 
 type OnRequestListener func(ctx context.Context, peerId peer.ID, handler ChunkedRequestHandler)
 
-func (m *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, listener OnRequestListener) (network.StreamHandler, error) {
+func (m *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, listener OnRequestListener) network.StreamHandler {
 	return RequestPayloadHandler(func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer, invalidInputErr error) {
 		listener(ctx, peerId, &chReqHandler{
 			m: m, comp: comp, reqLen: requestLen, r: r, w: w, invalidInputErr: invalidInputErr,
 		})
-	}).MakeStreamHandler(newCtx, comp, m.RequestCodec.MaxByteLen()), nil
+	}).MakeStreamHandler(newCtx, comp, m.RequestCodec.MaxByteLen())
 }

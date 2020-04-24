@@ -14,7 +14,7 @@ type NewStreamFn func(ctx context.Context, peerId peer.ID, protocolId ...protoco
 func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, protocolId protocol.ID, r io.Reader, comp Compression, handle ResponseHandler) error {
 	stream, err := newStreamFn(ctx, peerId, protocolId)
 	if err != nil {
-		return nil
+		return err
 	}
 	var buf bytes.Buffer
 	if err := EncodePayload(r, &buf, comp); err != nil {
