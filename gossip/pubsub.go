@@ -23,7 +23,7 @@ func NewGossipSub(ctx context.Context, n node.Node) (GossipSub, error) {
 	psOptions := []pubsub.Option{
 		pubsub.WithMessageSigning(false),
 		pubsub.WithStrictSignatureVerification(false),
-		pubsub.WithMessageIdFn(msgIDFunction),
+		pubsub.WithMessageIdFn(MsgIDFunction),
 	}
 	ps, err := pubsub.NewGossipSub(ctx, n.Host(), psOptions...)
 	if err != nil {
@@ -32,7 +32,7 @@ func NewGossipSub(ctx context.Context, n node.Node) (GossipSub, error) {
 	return &gossipImpl{PubSub: ps}, nil
 }
 
-func msgIDFunction(pmsg *pubsub_pb.Message) string {
+func MsgIDFunction(pmsg *pubsub_pb.Message) string {
 	h := sha256.New()
 	// never errors, see crypto/sha256 Go doc
 	_, _ = h.Write(pmsg.Data)
