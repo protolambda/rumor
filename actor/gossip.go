@@ -183,6 +183,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				err := top.(*pubsub.Topic).Close()
 				if err != nil {
 					log.Error(err)
+					return
 				}
 				state.Topics.Delete(topicName)
 			}
