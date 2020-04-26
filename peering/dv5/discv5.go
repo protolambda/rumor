@@ -16,7 +16,7 @@ import (
 type Discv5 interface {
 	Self() *enode.Node
 	Lookup(target enode.ID) []*enode.Node
-	LookupRandom() []*enode.Node
+	RandomNodes() enode.Iterator
 	Close()
 	Ping(n *enode.Node) error
 	Resolve(n *enode.Node) *enode.Node

@@ -10,7 +10,7 @@ require (
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1 // indirect
 	github.com/elastic/gosigar v0.10.5 // indirect
-	github.com/ethereum/go-ethereum v1.9.12-0.20200307222428-7a3c8878c4d6
+	github.com/ethereum/go-ethereum v1.9.13
 	github.com/golang/snappy v0.0.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/ipfs/go-datastore v0.3.1

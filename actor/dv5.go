@@ -183,13 +183,27 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 
 	randomCommand := &cobra.Command{
 		Use:   "lookup-random",
-		Short: "Get list of random multi addrs.",
+		Short: "Get random multi addrs, keep going until stopped",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			if noDv5(cmd) {
 				return
 			}
-			printLookupResult(state.Dv5Node.LookupRandom())
+			randomNodes := state.Dv5Node.RandomNodes()
+			log.Info("Started looking for random nodes")
+
+			go func() {
+				<-ctx.Done()
+				randomNodes.Close()
+			}()
+			for {
+				if !randomNodes.Next() {
+					break
+				}
+				res := randomNodes.Node()
+				log.WithField("node", res.String()).Infof("Got random node")
+			}
+			log.Info("Stopped looking for random nodes")
 		},
 	}
 	cmd.AddCommand(randomCommand)
