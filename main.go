@@ -76,7 +76,7 @@ func main() {
 
 	log := logrus.New()
 	log.SetOutput(os.Stdout)
-	log.SetLevel(logrus.InfoLevel)
+	log.SetLevel(logrus.TraceLevel)
 
 	mainCmd := cobra.Command{
 		Use:   "rumor",
@@ -160,7 +160,7 @@ func main() {
 		},
 	}
 	mainCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Interactive mode: run as REPL.")
-	mainCmd.Flags().StringVar(&level, "level", "info", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
+	mainCmd.Flags().StringVar(&level, "level", "trace", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
 
 	if err := mainCmd.Execute(); err != nil {
 		log.Error(err)

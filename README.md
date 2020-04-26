@@ -37,6 +37,9 @@ help
 # Start the libp2p host
 host start
 
+# You probably want to know everything that is happening, run this in the background:
+bg host notify all
+
 # Start listening (optionally specify ip or tcp/udp ports to listen at)
 # Note that the peer-manager is active by default.
 host listen

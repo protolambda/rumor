@@ -8,6 +8,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/network"
 	mplex "github.com/libp2p/go-libp2p-mplex"
 	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
 	secio "github.com/libp2p/go-libp2p-secio"
@@ -246,5 +247,123 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 			printEnr(cmd)
 		},
 	})
+	{
+		listenF      := func(net network.Network, addr ma.Multiaddr) {
+			log.WithFields(logrus.Fields{"event": "listen_open", "addr": addr.String()}).Debug("opened network listener")
+		}
+		listenCloseF := func(net network.Network, addr ma.Multiaddr) {
+			log.WithFields(logrus.Fields{"event": "listen_close", "addr": addr.String()}).Debug("closed network listener")
+		}
+
+		connectedF    := func(net network.Network, conn network.Conn) {
+			log.WithFields(logrus.Fields{
+				"event": "connection_open", "peer": conn.RemotePeer().String(),
+				"direction": fmtDirection(conn.Stat().Direction), "extra": conn.Stat().Extra,
+			}).Debug("new peer connection")
+		}
+		disconnectedF := func(net network.Network, conn network.Conn) {
+			log.WithFields(logrus.Fields{
+				"event": "connection_close", "peer": conn.RemotePeer().String(),
+				"direction": fmtDirection(conn.Stat().Direction), "extra": conn.Stat().Extra,
+			}).Debug("peer disconnected")
+		}
+
+		openedStreamF := func(net network.Network, str network.Stream) {
+			log.WithFields(logrus.Fields{
+				"event": "stream_open", "peer": str.Conn().RemotePeer().String(),
+				"direction": fmtDirection(str.Stat().Direction), "extra": str.Stat().Extra,
+				"protocol": str.Protocol(),
+			}).Debug("opened stream")
+		}
+		closedStreamF := func(net network.Network, str network.Stream) {
+			log.WithFields(logrus.Fields{
+				"event": "stream_close", "peer": str.Conn().RemotePeer().String(),
+				"direction": fmtDirection(str.Stat().Direction), "extra": str.Stat().Extra,
+				"protocol": str.Protocol(),
+			}).Debug("closed stream")
+		}
+
+		cmd.AddCommand(&cobra.Command{
+			Use:   "notify <event-types>...",
+			Short: "Get notified of specific events, as long as the command runs.",
+			Long: `
+Network event notifications. 
+Valid event types: 
+ - listen (listen_open listen_close)
+ - connection (connection_open connection_close) 
+ - stream (stream_open stream_close)
+ - all
+
+Notification logs will have keys: "event" - one of the above detailed event types, e.g. listen_close.
+- "peer": peer ID
+- "direction": "inbound"/"outbound"/"unknown", for connections and streams
+- "extra": stream/connection extra data
+- "protocol": protocol ID for streams.
+`,
+			Args:  cobra.MinimumNArgs(1),
+			Run: func(cmd *cobra.Command, args []string) {
+				if r.NoHost(log) {
+					return
+				}
+				h := r.Host()
+				bundle := &network.NotifyBundle{}
+				for _, notifyType := range args {
+					notifyType = strings.TrimSpace(notifyType)
+					if notifyType == "" {
+						continue
+					}
+					switch notifyType {
+					case "listen_open":
+						bundle.ListenF = listenF
+					case "listen_close":
+						bundle.ListenCloseF = listenCloseF
+					case "connection_open":
+						bundle.ConnectedF = connectedF
+					case "connection_close":
+						bundle.DisconnectedF = disconnectedF
+					case "stream_open":
+						bundle.OpenedStreamF = openedStreamF
+					case "stream_close":
+						bundle.ClosedStreamF = closedStreamF
+					case "listen":
+						bundle.ListenF = listenF
+						bundle.ListenCloseF = listenCloseF
+					case "connection":
+						bundle.ConnectedF = connectedF
+						bundle.DisconnectedF = disconnectedF
+					case "stream":
+						bundle.OpenedStreamF = openedStreamF
+						bundle.ClosedStreamF = closedStreamF
+					case "all":
+						bundle.ListenF = listenF
+						bundle.ListenCloseF = listenCloseF
+						bundle.ConnectedF = connectedF
+						bundle.DisconnectedF = disconnectedF
+						bundle.OpenedStreamF = openedStreamF
+						bundle.ClosedStreamF = closedStreamF
+					default:
+						log.Errorf("unrecognized notification type: %s", notifyType)
+						return
+					}
+				}
+				h.Network().Notify(bundle)
+				<-ctx.Done()
+				h.Network().StopNotify(bundle)
+			},
+		})
+	}
 	return cmd
+}
+
+func fmtDirection(d network.Direction) string {
+	switch d {
+	case network.DirInbound:
+		return "inbound"
+	case network.DirOutbound:
+		return "outbound"
+	case network.DirUnknown:
+		return "unknown"
+	default:
+		return "unknown"
+	}
 }
