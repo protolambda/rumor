@@ -21,11 +21,31 @@ func (fn LogSplitFn) Format(entry *logrus.Entry) ([]byte, error) {
 type SessionID string
 
 type Session struct {
-	sessionID    SessionID
-	interests    map[CallID]logrus.Level
-	log          logrus.FieldLogger
-	readNextLine func() (string, error)
-	ctx          context.Context
+	sessionID     SessionID
+	interestsLock sync.RWMutex
+	interests     map[CallID]logrus.Level
+	log           logrus.FieldLogger
+	readNextLine  func() (string, error)
+	ctx           context.Context
+}
+
+func (s *Session) SetInterest(id CallID, lvl logrus.Level) {
+	s.interestsLock.Lock()
+	defer s.interestsLock.Unlock()
+	s.interests[id] = lvl
+}
+
+func (s *Session) UnsetInterest(id CallID) {
+	s.interestsLock.Lock()
+	defer s.interestsLock.Unlock()
+	delete(s.interests, id)
+}
+
+func (s *Session) HasInterest(id CallID) (lvl logrus.Level, ok bool) {
+	s.interestsLock.RLock()
+	defer s.interestsLock.RUnlock()
+	lvl, ok = s.interests[id]
+	return
 }
 
 func (s *Session) Done() <-chan struct{} {
@@ -33,14 +53,18 @@ func (s *Session) Done() <-chan struct{} {
 }
 
 type SessionProcessor struct {
-	adminLog         logrus.FieldLogger
+	adminLog logrus.FieldLogger
+
+	// locks sessionIdCounter and sessions
+	sessionsLock     sync.RWMutex
 	sessions         map[*Session]struct{}
 	sessionIdCounter uint64
 
+	// a map like map[string]*actor.Actor
+	actors sync.Map
 
-	// TODO change to concurrency safe maps
-	actors    map[string]*actor.Actor
-	jobs      map[CallID]*Call
+	// a map like map[CallID]*Call
+	jobs      sync.Map
 	log       logrus.FieldLogger
 	closeLock sync.Mutex
 	closing   bool
@@ -60,9 +84,7 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 	sp := &SessionProcessor{
 		adminLog: adminLog,
 		sessions: make(map[*Session]struct{}),
-		actors: make(map[string]*actor.Actor),
-		jobs:   make(map[CallID]*Call),
-		log:    log,
+		log:      log,
 	}
 
 	log.SetFormatter(LogSplitFn(func(entry *logrus.Entry) error {
@@ -81,7 +103,8 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 			callID = CallID(callIDStr)
 		}
 		for s := range sp.sessions {
-			if lvl, ok := s.interests[callID]; ok {
+			if lvl, ok := s.HasInterest(callID); ok {
+				// TODO: if this has lots of slow connection sessions open, we should parallelize and buffer this.
 				if lvl >= entry.Level {
 					s.log.WithFields(entry.Data).Log(entry.Level, entry.Message)
 				}
@@ -96,7 +119,7 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 type NextLineFn func() (string, error)
 
 func (sp *SessionProcessor) NewSession(log logrus.FieldLogger, readNextLine NextLineFn) *Session {
-	// TODO make this concurrency safe
+	sp.sessionsLock.Lock()
 	sp.sessionIdCounter += 1
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
@@ -107,13 +130,16 @@ func (sp *SessionProcessor) NewSession(log logrus.FieldLogger, readNextLine Next
 		ctx:          ctx,
 	}
 	sp.sessions[s] = struct{}{}
+	sp.sessionsLock.Unlock()
 
-	go func(sh *SessionProcessor, cancel context.CancelFunc, s *Session) {
-		sh.runSession(s)
+	go func() {
+		sp.runSession(s)
 		// Declare the the session closed as soon as it exits
 		cancel()
+		sp.sessionsLock.Lock()
 		delete(sp.sessions, s)
-	}(sp, cancel, s)
+		sp.sessionsLock.Unlock()
+	}()
 
 	return s
 }
@@ -134,13 +160,8 @@ type Call struct {
 }
 
 func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
-	if a, ok := sp.actors[name]; ok {
-		return a
-	} else {
-		rep := actor.NewActor()
-		sp.actors[name] = rep
-		return rep
-	}
+	a, _ := sp.actors.LoadOrStore(name, actor.NewActor())
+	return a.(*actor.Actor)
 }
 
 func (sp *SessionProcessor) processCmd(actorName string, callID CallID, cmdArgs []string) {
@@ -164,7 +185,7 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, cmdArgs 
 		logger: cmdLogger,
 	}
 
-	sp.jobs[callID] = call
+	sp.jobs.Store(callID, call)
 
 	go func() {
 		if err := callCmd.Execute(); err != nil {
@@ -178,17 +199,22 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, cmdArgs 
 }
 
 func (sp *SessionProcessor) CloseCall(id CallID) {
-	c, ok := sp.jobs[id]
+	ci, ok := sp.jobs.Load(id)
 	if !ok {
 		return
 	}
+	c := ci.(*Call)
+	// safe to cancel multiple times, safe to unset interest multiple times.
+	// No global locking at the cost of a little overhead sometimes.
+	// TODO: once we have Go 1.15 we can use LoadAndDelete, see golang #33762
 	c.cancel()
-	delete(sp.jobs, id)
-	// TODO concurrency fix
+	sp.jobs.Delete(id)
+	sp.sessionsLock.RLock()
 	for s := range sp.sessions {
-		delete(s.interests, id)
+		s.UnsetInterest(id)
 	}
-	c.logger.Info("Closed call")
+	sp.sessionsLock.RUnlock()
+	sp.log.Infof("Closed call: '%s'", id)
 }
 
 func (sp *SessionProcessor) Close() {
@@ -198,7 +224,9 @@ func (sp *SessionProcessor) Close() {
 
 	var wg sync.WaitGroup
 	// close remaining jobs
-	for k, v := range sp.jobs {
+	sp.jobs.Range(func(ki, vi interface{}) bool {
+		k := ki.(CallID)
+		v := vi.(*Call)
 		v.logger.Info("Closing job with 5 second timeout...")
 		v.cancel()
 		wg.Add(1)
@@ -212,13 +240,15 @@ func (sp *SessionProcessor) Close() {
 			}
 			wg.Done()
 		}(k, v.ctx, v.logger)
-	}
+		return true
+	})
 	wg.Wait()
 
 	// close all libp2p hosts
-	for _, actorRep := range sp.actors {
-		actorRep.Close()
-	}
+	sp.actors.Range(func(key, value interface{}) bool {
+		value.(*actor.Actor).Close()
+		return true
+	})
 }
 
 func (sp *SessionProcessor) runSession(session *Session) {
@@ -251,7 +281,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		if lastCall != "" {
-			_, ok := sp.jobs[lastCall]
+			_, ok := sp.jobs.Load(lastCall)
 			if ok {
 				if line == "cancel" {
 					sp.CloseCall(lastCall)
@@ -290,7 +320,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		// try historical call if there is no current call
-		if _, ok := sp.jobs[callID]; ok {
+		if _, ok := sp.jobs.Load(callID); ok {
 			if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
 				session.log.Infof("Moved call '%s' to foreground", callID)
 				lastCall = callID
@@ -324,7 +354,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		// TODO: option to change log level per command
-		session.interests[callID] = logrus.TraceLevel
+		session.SetInterest(callID, logrus.TraceLevel)
 
 		sp.processCmd(actorName, callID, cmdArgs)
 

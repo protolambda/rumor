@@ -15,7 +15,13 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
+
+// Stop listening to users that don't give us commands for an hour
+const UserReadTimeout = time.Hour * 1
+// Stop writing to users that can't receive a command within 10 seconds.
+const UserWriteTimeout = time.Second * 10
 
 const LogKeyActor = "actor"
 const LogKeyCallID = "call_id"
@@ -70,6 +76,18 @@ func simpleLogFmt(fmtStr string) func(v interface{}, inner string) (s string, er
 	}
 }
 
+type TimedNetOut struct {
+	c net.Conn
+	timeout time.Duration
+}
+
+func (t *TimedNetOut) Write(b []byte) (n int, err error) {
+	if err := t.c.SetWriteDeadline(time.Now().Add(t.timeout)); err != nil {
+		return 0, err
+	}
+	return t.c.Write(b)
+}
+
 func main() {
 	fromFilepath := ""
 
@@ -120,11 +138,13 @@ func main() {
 		run(log, l.Readline)
 	}
 
-	feedLog := func(log logrus.FieldLogger, nextLogLine mngmt.NextLineFn) {
+	feedLog := func(log logrus.FieldLogger, nextLogLine mngmt.NextLineFn, stopped *bool) {
 		for {
 			line, err := nextLogLine()
 			if err != nil {
-				if err != io.EOF {
+				// If we reach the end, or if we needed to stop,
+				// then we expect no line can be read, and the error can be ignored.
+				if err != io.EOF && !*stopped {
 					log.Error(err)
 				}
 				return
@@ -194,8 +214,9 @@ func main() {
 					defer netInput.Close()
 					nextLogLine := asLineReader(netInput)
 
+					stopped := false
 					// Take the log of the net input, and feed it into our shell log
-					go feedLog(log, nextLogLine)
+					go feedLog(log, nextLogLine, &stopped)
 
 					// Take the input of our shell log, and feed it to the net connection
 					for {
@@ -204,14 +225,17 @@ func main() {
 							if err != io.EOF {
 								log.Error(err)
 							}
-							return
+							break
 						}
 						if _, err := netInput.Write([]byte(line+"\n")); err != nil {
 							log.Errorf("failed to send command: %v", err)
-							return
+							break
 						}
-						log.Info("written line")
+						if strings.TrimSpace(line) == "exit" {
+							break
+						}
 					}
+					stopped = true
 				})
 			},
 		}
@@ -263,14 +287,25 @@ func main() {
 				adminLog := log
 				newSession := func(c net.Conn) {
 					log := logrus.New()
-					log.SetOutput(c)
+					log.SetOutput(&TimedNetOut{c: c, timeout: UserWriteTimeout})
 					log.SetLevel(logrus.TraceLevel)
 					log.SetFormatter(&logrus.JSONFormatter{})
 
 					addr := c.RemoteAddr().String() + "/" + c.RemoteAddr().Network()
 					adminLog.WithField("addr", addr).Info("new user session")
 
-					<-sp.NewSession(log, asLineReader(c)).Done()
+					userInputLines := asLineReader(c)
+
+					timedUserInputLines := func() (s string, err error) {
+						// Reset read-deadline.
+						err = c.SetReadDeadline(time.Now().Add(UserReadTimeout))
+						if err != nil {
+							return "", err
+						}
+						return userInputLines()
+					}
+
+					<-sp.NewSession(log, timedUserInputLines).Done()
 
 					adminLog.WithField("addr", addr).Info("user session stopped")
 
@@ -279,12 +314,15 @@ func main() {
 					}
 				}
 
+				stopped := false
 				ctx, cancel := context.WithCancel(context.Background())
 				sig := make(chan os.Signal, 1)
 				signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 				go func() {
 					sig := <-sig
 					log.Printf("Caught signal %s: shutting down.", sig)
+					stopped = true
+
 					if ipcInput != nil {
 						_ = ipcInput.Close()
 					}
@@ -301,8 +339,11 @@ func main() {
 						// accept new connections and open a session for them
 						c, err := input.Accept()
 						if err != nil {
-							log.Error("Accept error: ", err)
-							continue
+							// Don't error when we are shutting down, it is expected we cannot accept more connections
+							if stopped {
+								break
+							}
+							log.Error("Network connection accept error: ", err)
 						}
 						go newSession(c)
 					}
