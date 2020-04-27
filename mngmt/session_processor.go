@@ -93,7 +93,9 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 	return sp
 }
 
-func (sp *SessionProcessor) NewSession(log logrus.FieldLogger, readNextLine func() (string, error)) *Session {
+type NextLineFn func() (string, error)
+
+func (sp *SessionProcessor) NewSession(log logrus.FieldLogger, readNextLine NextLineFn) *Session {
 	// TODO make this concurrency safe
 	sp.sessionIdCounter += 1
 	ctx, cancel := context.WithCancel(context.Background())

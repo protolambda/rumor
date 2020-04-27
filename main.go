@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/chzyer/readline"
 	"github.com/protolambda/rumor/mngmt"
@@ -76,6 +78,82 @@ func main() {
 		Short: "Start Rumor",
 	}
 
+	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine mngmt.NextLineFn)) {
+		log := logrus.New()
+		log.SetOutput(os.Stdout)
+		log.SetLevel(logrus.TraceLevel)
+
+		coreLogFmt := logrus.TextFormatter{ForceColors: true, DisableTimestamp: true}
+		logFmt := LogFormatter{EntryFmtFn: func(entry *logrus.Entry) (string, error) {
+			out, err := coreLogFmt.Format(entry)
+			if out == nil {
+				out = []byte{}
+			}
+			return string(out), err
+		}}
+		logFmt = logFmt.WithKeyFormat(LogKeyCallID, simpleLogFmt("\033[33m[%s]\033[0m")) // yellow
+		logFmt = logFmt.WithKeyFormat(LogKeyActor, simpleLogFmt("\033[36m[%s]\033[0m"))  // cyan
+
+		log.SetFormatter(logFmt)
+
+		if levelFlag != "" {
+			logLevel, err := logrus.ParseLevel(levelFlag)
+			if err != nil {
+				log.Error(err)
+			}
+			log.SetLevel(logLevel)
+		}
+
+		l, err := readline.NewEx(&readline.Config{
+			Prompt:              "\033[31m»\033[0m ",
+			HistoryFile:         "/tmp/rumor-history.tmp",
+			InterruptPrompt:     "^C",
+			EOFPrompt:           "exit",
+			HistorySearchFold:   true,
+			FuncFilterInputRune: filterInput,
+		})
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		defer l.Close()
+		run(log, l.Readline)
+	}
+
+	feedLog := func(log logrus.FieldLogger, nextLogLine mngmt.NextLineFn) {
+		for {
+			line, err := nextLogLine()
+			if err != nil {
+				if err != io.EOF {
+					log.Error(err)
+				}
+				return
+			}
+			var entry logrus.Fields
+			if err := json.Unmarshal([]byte(line), &entry); err != nil {
+				log.Error(err)
+				continue
+			}
+			leveli, ok := entry["level"]
+			if !ok {
+				leveli = "info"
+			}
+			levelStr, ok := leveli.(string)
+			delete(entry, "level")
+			lvl, err := logrus.ParseLevel(levelStr)
+			if err != nil {
+				log.Error(err)
+				continue
+			}
+			msg, ok := entry["msg"]
+			if !ok {
+				msg = nil
+			}
+			delete(entry, "msg")
+			log.WithFields(entry).Log(lvl, msg)
+		}
+	}
+
 	asLineReader := func(r io.Reader) func() (s string, err error) {
 		sc := bufio.NewScanner(r)
 		return func() (s string, err error) {
@@ -90,20 +168,63 @@ func main() {
 	}
 
 	{
+		var ipcPath string
+		var tcpAddr string
+
+		var level string
 		attachCmd := &cobra.Command{
 			Use:   "attach",
 			Short: "Attach to a running rumor server",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				// TODO
+				shellMode(level, func(log logrus.FieldLogger, nextLine mngmt.NextLineFn) {
+					var netInput net.Conn
+					var err error
+					if ipcPath != "" {
+						netInput, err = net.Dial("unix", ipcPath)
+						if err != nil {
+							log.Fatal("IPC listen error: ", err)
+						}
+					} else if tcpAddr != "" {
+						netInput, err = net.Dial("tcp", tcpAddr)
+						if err != nil {
+							log.Fatal("TCP listen error: ", err)
+						}
+					}
+					defer netInput.Close()
+					nextLogLine := asLineReader(netInput)
+
+					// Take the log of the net input, and feed it into our shell log
+					go feedLog(log, nextLogLine)
+
+					// Take the input of our shell log, and feed it to the net connection
+					for {
+						line, err := nextLine()
+						if err != nil {
+							if err != io.EOF {
+								log.Error(err)
+							}
+							return
+						}
+						if _, err := netInput.Write([]byte(line+"\n")); err != nil {
+							log.Errorf("failed to send command: %v", err)
+							return
+						}
+						log.Info("written line")
+					}
+				})
 			},
 		}
+
+		attachCmd.Flags().StringVar(&ipcPath, "ipc", "", "Path of unix domain socket to attach to, e.g. `my_socket_file.sock`. Priority over `--tcp` flag.")
+		attachCmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to attach to, e.g. `localhost:3030`.")
+
 		mainCmd.AddCommand(attachCmd)
 	}
 	{
 		var ipcPath string
 		var tcpAddr string
-		// TODO: websockets
+		// TODO: maybe support websockets as well?
 
 		serveCmd := &cobra.Command{
 			Use:   "serve",
@@ -139,15 +260,26 @@ func main() {
 
 				sp := mngmt.NewSessionProcessor(log)
 
+				adminLog := log
 				newSession := func(c net.Conn) {
 					log := logrus.New()
 					log.SetOutput(c)
 					log.SetLevel(logrus.TraceLevel)
 					log.SetFormatter(&logrus.JSONFormatter{})
 
+					addr := c.RemoteAddr().String() + "/" + c.RemoteAddr().Network()
+					adminLog.WithField("addr", addr).Info("new user session")
+
 					<-sp.NewSession(log, asLineReader(c)).Done()
+
+					adminLog.WithField("addr", addr).Info("user session stopped")
+
+					if err := c.Close(); err != nil {
+						log.Error(err)
+					}
 				}
 
+				ctx, cancel := context.WithCancel(context.Background())
 				sig := make(chan os.Signal, 1)
 				signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 				go func() {
@@ -160,27 +292,28 @@ func main() {
 						_ = tcpInput.Close()
 					}
 					sp.Close()
+					cancel()
 					os.Exit(0)
 				}()
 
 				acceptInputs := func(input net.Listener) {
 					for {
 						// accept new connections and open a session for them
-						fd, err := input.Accept()
+						c, err := input.Accept()
 						if err != nil {
 							log.Error("Accept error: ", err)
 							continue
 						}
-
-						go newSession(fd)
+						go newSession(c)
 					}
 				}
 				if ipcInput != nil {
-					acceptInputs(ipcInput)
+					go acceptInputs(ipcInput)
 				}
 				if tcpInput != nil {
-					acceptInputs(tcpInput)
+					go acceptInputs(tcpInput)
 				}
+				<- ctx.Done()
 			},
 		}
 
@@ -239,48 +372,11 @@ func main() {
 				return nil
 			},
 			Run: func(cmd *cobra.Command, args []string) {
-				log := logrus.New()
-				log.SetOutput(os.Stdout)
-				log.SetLevel(logrus.TraceLevel)
-
-				coreLogFmt := logrus.TextFormatter{ForceColors: true, DisableTimestamp: true}
-				logFmt := LogFormatter{EntryFmtFn: func(entry *logrus.Entry) (string, error) {
-					out, err := coreLogFmt.Format(entry)
-					if out == nil {
-						out = []byte{}
-					}
-					return string(out), err
-				}}
-				logFmt = logFmt.WithKeyFormat(LogKeyCallID, simpleLogFmt("\033[33m[%s]\033[0m")) // yellow
-				logFmt = logFmt.WithKeyFormat(LogKeyActor, simpleLogFmt("\033[36m[%s]\033[0m"))  // cyan
-
-				log.SetFormatter(logFmt)
-
-				if level != "" {
-					logLevel, err := logrus.ParseLevel(level)
-					if err != nil {
-						log.Error(err)
-					}
-					log.SetLevel(logLevel)
-				}
-
-				l, err := readline.NewEx(&readline.Config{
-					Prompt:              "\033[31m»\033[0m ",
-					HistoryFile:         "/tmp/rumor-history.tmp",
-					InterruptPrompt:     "^C",
-					EOFPrompt:           "exit",
-					HistorySearchFold:   true,
-					FuncFilterInputRune: filterInput,
+				shellMode(level, func(log logrus.FieldLogger, nextLine mngmt.NextLineFn) {
+					sp := mngmt.NewSessionProcessor(log)
+					<-sp.NewSession(log, nextLine).Done()
+					sp.Close()
 				})
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				defer l.Close()
-
-				sp := mngmt.NewSessionProcessor(log)
-				<-sp.NewSession(log, l.Readline).Done()
-				sp.Close()
 			},
 		}
 		shellCmd.Flags().StringVar(&level, "level", "trace", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
