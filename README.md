@@ -20,13 +20,15 @@ go get ./...
 
 ## Usage
 
-To run it in interactive mode, a.k.a. REPL functionality:
+There are a few subcommands to choose the mode of operation:
 
-```shell script
-go run . -i
 ```
-
-Alternatively, provide the commands by piping into std-in, or use a single argument to give a file-path to read from. 
+  shell       Rumor as a human-readable shell
+  bare        Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess. Optionally read input from a file instead of stdin.
+ 
+  serve       Rumor as a server to attach to
+  attach      Attach to a running rumor server
+```
 
 ## General
 

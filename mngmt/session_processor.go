@@ -153,10 +153,13 @@ func (fn WriteableFn) Write(p []byte) (n int, err error) {
 
 type CallID string
 
+type CallOwner string
+
 type Call struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	logger *actor.Logger
+	owner  CallOwner
 }
 
 func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
@@ -164,7 +167,7 @@ func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
 	return a.(*actor.Actor)
 }
 
-func (sp *SessionProcessor) processCmd(actorName string, callID CallID, cmdArgs []string) {
+func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner CallOwner, cmdArgs []string) {
 	rep := sp.GetActor(actorName)
 	cmdCtx, cmdCancel := context.WithCancel(rep.ActorCtx)
 
@@ -183,6 +186,7 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, cmdArgs 
 		ctx:    cmdCtx,
 		cancel: cmdCancel,
 		logger: cmdLogger,
+		owner: owner,
 	}
 
 	sp.jobs.Store(callID, call)
@@ -280,23 +284,6 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			return
 		}
 
-		if lastCall != "" {
-			_, ok := sp.jobs.Load(lastCall)
-			if ok {
-				if line == "cancel" {
-					sp.CloseCall(lastCall)
-				} else if line == "bg" {
-					session.log.Infof("Moved call '%s' to background", lastCall)
-					lastCall = ""
-				} else {
-					session.log.Errorf("Unrecognized command for modifying last call: '%s'", line)
-				}
-				continue
-			} else {
-				lastCall = ""
-			}
-		}
-
 		cmdArgs, err := shlex.Split(line)
 		if err != nil {
 			session.log.Errorf("Failed to parse command: %v\n", err)
@@ -306,21 +293,89 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			continue
 		}
 
+		var actorName string
 		var callID CallID
-		if firstArg := cmdArgs[0]; strings.HasSuffix(firstArg, ">") {
-			callID = CallID(firstArg[:len(firstArg)-1])
-			cmdArgs = cmdArgs[1:]
-		} else {
-			callID = CallID(fmt.Sprintf("%s_%d", session.sessionID, callCounter))
-			callCounter++
+		var owner CallOwner
+		{
+			var actorStr, callIDStr, ownerStr string
+			skip := 0
+			for _, arg := range cmdArgs {
+				if len(arg) <= 1 {
+					break
+				}
+				if strings.HasSuffix(arg, ":") && actorStr == "" {
+					actorStr = arg[:len(arg)-1]
+					skip++
+				} else if strings.HasSuffix(arg, ">") && callIDStr == "" {
+					callIDStr = arg[:len(arg)-1]
+					skip++
+				} else if strings.HasSuffix(arg, "$") && ownerStr == "" {
+					ownerStr = arg[:len(arg)-1]
+					skip++
+				} else {
+					break
+				}
+			}
+			cmdArgs = cmdArgs[skip:]
+			if actorStr == "" {
+				actorStr = "DEFAULT_ACTOR"
+			}
+			if callIDStr == "" {
+				if lastCall != "" {
+					_, ok := sp.jobs.Load(lastCall)
+					if ok {
+						callIDStr = string(lastCall)
+					} else {
+						callIDStr = fmt.Sprintf("%s_%d", session.sessionID, callCounter)
+						callCounter++
+					}
+				} else {
+					callIDStr = fmt.Sprintf("%s_%d", session.sessionID, callCounter)
+					callCounter++
+				}
+			}
+			if ownerStr == "" {
+				ownerStr = "DEFAULT_OWNER"
+			}
+
+			actorName = actorStr
+			callID = CallID(callIDStr)
+			owner = CallOwner(ownerStr)
 		}
 
 		if len(cmdArgs) == 0 {
 			continue
 		}
 
+		if lastCall != "" {
+			c, ok := sp.jobs.Load(lastCall)
+			if ok {
+				if existingOwner := c.(*Call).owner; existingOwner != owner {
+					sp.log.Errorf("No access to call of %s", existingOwner)
+					continue
+				} else {
+					if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
+						sp.CloseCall(lastCall)
+					} else if len(cmdArgs) == 1 && cmdArgs[0] == "bg" {
+						session.log.Infof("Moved call '%s' to background", lastCall)
+						lastCall = ""
+					} else {
+						session.log.Errorf("Unrecognized command for modifying last call: '%s'", strings.Join(cmdArgs, " "))
+					}
+					continue
+				}
+			} else {
+				// call does not exist anymore, it ended. Safe to do another call with new id.
+				lastCall = ""
+			}
+		}
+
 		// try historical call if there is no current call
-		if _, ok := sp.jobs.Load(callID); ok {
+		if c, ok := sp.jobs.Load(callID); ok {
+			if existingOwner := c.(*Call).owner; existingOwner != owner {
+				sp.log.Errorf("No access to call of %s", existingOwner)
+				continue
+			}
 			if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
 				session.log.Infof("Moved call '%s' to foreground", callID)
 				lastCall = callID
@@ -330,16 +385,6 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			} else {
 				session.log.Errorf("Unrecognized command for modifying call: '%s'", line)
 			}
-			continue
-		}
-
-		actorName := "DEFAULT_ACTOR"
-		if firstArg := cmdArgs[0]; strings.HasSuffix(firstArg, ":") {
-			actorName = firstArg[:len(firstArg)-1]
-			cmdArgs = cmdArgs[1:]
-		}
-
-		if len(cmdArgs) == 0 {
 			continue
 		}
 
@@ -356,7 +401,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		// TODO: option to change log level per command
 		session.SetInterest(callID, logrus.TraceLevel)
 
-		sp.processCmd(actorName, callID, cmdArgs)
+		sp.processCmd(actorName, callID, owner, cmdArgs)
 
 		if background {
 			lastCall = ""
