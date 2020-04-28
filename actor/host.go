@@ -258,27 +258,27 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		connectedF    := func(net network.Network, conn network.Conn) {
 			log.WithFields(logrus.Fields{
 				"event": "connection_open", "peer": conn.RemotePeer().String(),
-				"direction": fmtDirection(conn.Stat().Direction), "extra": conn.Stat().Extra,
+				"direction": fmtDirection(conn.Stat().Direction),
 			}).Debug("new peer connection")
 		}
 		disconnectedF := func(net network.Network, conn network.Conn) {
 			log.WithFields(logrus.Fields{
 				"event": "connection_close", "peer": conn.RemotePeer().String(),
-				"direction": fmtDirection(conn.Stat().Direction), "extra": conn.Stat().Extra,
+				"direction": fmtDirection(conn.Stat().Direction),
 			}).Debug("peer disconnected")
 		}
 
 		openedStreamF := func(net network.Network, str network.Stream) {
 			log.WithFields(logrus.Fields{
 				"event": "stream_open", "peer": str.Conn().RemotePeer().String(),
-				"direction": fmtDirection(str.Stat().Direction), "extra": str.Stat().Extra,
+				"direction": fmtDirection(str.Stat().Direction),
 				"protocol": str.Protocol(),
 			}).Debug("opened stream")
 		}
 		closedStreamF := func(net network.Network, str network.Stream) {
 			log.WithFields(logrus.Fields{
 				"event": "stream_close", "peer": str.Conn().RemotePeer().String(),
-				"direction": fmtDirection(str.Stat().Direction), "extra": str.Stat().Extra,
+				"direction": fmtDirection(str.Stat().Direction),
 				"protocol": str.Protocol(),
 			}).Debug("closed stream")
 		}

@@ -350,7 +350,8 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		if lastCall != "" {
 			c, ok := sp.jobs.Load(lastCall)
 			if ok {
-				if existingOwner := c.(*Call).owner; existingOwner != owner {
+				lastCallObj := c.(*Call)
+				if existingOwner := lastCallObj.owner; existingOwner != owner {
 					sp.log.Errorf("No access to call of %s", existingOwner)
 					continue
 				} else {
@@ -360,9 +361,13 @@ func (sp *SessionProcessor) runSession(session *Session) {
 						session.log.Infof("Moved call '%s' to background", lastCall)
 						lastCall = ""
 					} else {
-						session.log.Errorf("Unrecognized command for modifying last call: '%s'", strings.Join(cmdArgs, " "))
+						// if a next command, wait for current call to stop
+						session.log.Infof("Waiting for call '%s'", callID)
+						<-lastCallObj.ctx.Done()
+
+						callID = CallID(fmt.Sprintf("%s_%d", session.sessionID, callCounter))
+						callCounter++
 					}
-					continue
 				}
 			} else {
 				// call does not exist anymore, it ended. Safe to do another call with new id.
