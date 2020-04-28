@@ -20,6 +20,7 @@ import (
 
 // Stop listening to users that don't give us commands for an hour
 const UserReadTimeout = time.Hour * 1
+
 // Stop writing to users that can't receive a command within 10 seconds.
 const UserWriteTimeout = time.Second * 10
 
@@ -77,7 +78,7 @@ func simpleLogFmt(fmtStr string) func(v interface{}, inner string) (s string, er
 }
 
 type TimedNetOut struct {
-	c net.Conn
+	c       net.Conn
 	timeout time.Duration
 }
 
@@ -227,7 +228,7 @@ func main() {
 							}
 							break
 						}
-						if _, err := netInput.Write([]byte(line+"\n")); err != nil {
+						if _, err := netInput.Write([]byte(line + "\n")); err != nil {
 							log.Errorf("failed to send command: %v", err)
 							break
 						}
@@ -253,7 +254,7 @@ func main() {
 		serveCmd := &cobra.Command{
 			Use:   "serve",
 			Short: "Rumor as a server to attach to",
-			Args: cobra.NoArgs,
+			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
 				log := logrus.New()
 				log.SetOutput(os.Stdout)
@@ -354,7 +355,7 @@ func main() {
 				if tcpInput != nil {
 					go acceptInputs(tcpInput)
 				}
-				<- ctx.Done()
+				<-ctx.Done()
 			},
 		}
 

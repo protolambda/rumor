@@ -274,14 +274,14 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		},
 	})
 	{
-		listenF      := func(net network.Network, addr ma.Multiaddr) {
+		listenF := func(net network.Network, addr ma.Multiaddr) {
 			log.WithFields(logrus.Fields{"event": "listen_open", "addr": addr.String()}).Debug("opened network listener")
 		}
 		listenCloseF := func(net network.Network, addr ma.Multiaddr) {
 			log.WithFields(logrus.Fields{"event": "listen_close", "addr": addr.String()}).Debug("closed network listener")
 		}
 
-		connectedF    := func(net network.Network, conn network.Conn) {
+		connectedF := func(net network.Network, conn network.Conn) {
 			log.WithFields(logrus.Fields{
 				"event": "connection_open", "peer": conn.RemotePeer().String(),
 				"direction": fmtDirection(conn.Stat().Direction),
@@ -298,14 +298,14 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 			log.WithFields(logrus.Fields{
 				"event": "stream_open", "peer": str.Conn().RemotePeer().String(),
 				"direction": fmtDirection(str.Stat().Direction),
-				"protocol": str.Protocol(),
+				"protocol":  str.Protocol(),
 			}).Debug("opened stream")
 		}
 		closedStreamF := func(net network.Network, str network.Stream) {
 			log.WithFields(logrus.Fields{
 				"event": "stream_close", "peer": str.Conn().RemotePeer().String(),
 				"direction": fmtDirection(str.Stat().Direction),
-				"protocol": str.Protocol(),
+				"protocol":  str.Protocol(),
 			}).Debug("closed stream")
 		}
 
@@ -326,7 +326,7 @@ Notification logs will have keys: "event" - one of the above detailed event type
 - "extra": stream/connection extra data
 - "protocol": protocol ID for streams.
 `,
-			Args:  cobra.MinimumNArgs(1),
+			Args: cobra.MinimumNArgs(1),
 			Run: func(cmd *cobra.Command, args []string) {
 				h, hasHost := r.Host(log)
 				if !hasHost {

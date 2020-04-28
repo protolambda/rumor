@@ -164,8 +164,8 @@ type CallID string
 
 type CallSummary struct {
 	Owner     CallOwner `json:"owner"`
-	ActorName string `json:"actor"`
-	Cmd       string `json:"cmd"`
+	ActorName string    `json:"actor"`
+	Cmd       string    `json:"cmd"`
 }
 
 type CallOwner string
@@ -200,12 +200,12 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 	callCmd.SetArgs(cmdArgs)
 
 	call := &Call{
-		ctx:    cmdCtx,
-		cancel: cmdCancel,
-		logger: cmdLogger,
-		owner:  owner,
+		ctx:       cmdCtx,
+		cancel:    cmdCancel,
+		logger:    cmdLogger,
+		owner:     owner,
 		actorName: actorName,
-		cmd:    strings.Join(cmdArgs, " "),
+		cmd:       strings.Join(cmdArgs, " "),
 	}
 
 	sp.jobs.Store(callID, call)
@@ -421,9 +421,9 @@ func (sp *SessionProcessor) runSession(session *Session) {
 				c := value.(*Call)
 				if c.owner == owner {
 					openJobs[key.(CallID)] = CallSummary{
-						Owner: c.owner,
+						Owner:     c.owner,
 						ActorName: c.actorName,
-						Cmd: c.cmd,
+						Cmd:       c.cmd,
 					}
 				}
 				return true

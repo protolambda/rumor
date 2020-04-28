@@ -15,7 +15,7 @@ import (
 
 type Actor struct {
 	// only one routine can modify the host at a time
-	hLock sync.Mutex
+	hLock   sync.Mutex
 	P2PHost host.Host
 
 	PrivKey crypto.PrivKey
@@ -75,7 +75,7 @@ func (r *Actor) Host(log logrus.FieldLogger) (h host.Host, ok bool) {
 		log.Error("REPL must have initialized Libp2p host. Try 'host start'")
 		return nil, false
 	}
-	return h,true
+	return h, true
 }
 
 func (r *Actor) GetEnr() *enr.Record {
