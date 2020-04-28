@@ -7,13 +7,15 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/protolambda/rumor/addrutil"
-	"github.com/protolambda/rumor/node"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"net"
+	"sync"
 )
 
 type Actor struct {
+	// only one routine can modify the host at a time
+	hLock   sync.Mutex
 	P2PHost host.Host
 
 	PrivKey crypto.PrivKey
@@ -30,9 +32,6 @@ type Actor struct {
 	ActorCtx    context.Context
 	actorCancel context.CancelFunc
 }
-
-// check interface
-var _ = (node.Node)((*Actor)(nil))
 
 func NewActor() *Actor {
 	ctxAll, cancelAll := context.WithCancel(context.Background())
@@ -69,17 +68,14 @@ func (r *Actor) Cmd(ctx context.Context, log *Logger) *cobra.Command {
 	return cmd
 }
 
-func (r *Actor) Host() host.Host {
-	return r.P2PHost
-}
-
 // shortcut to check if there is a libp2p host available, and error-log if not available.
-func (r *Actor) NoHost(log logrus.FieldLogger) bool {
-	if r.P2PHost == nil {
+func (r *Actor) Host(log logrus.FieldLogger) (h host.Host, ok bool) {
+	h = r.P2PHost
+	if h == nil {
 		log.Error("REPL must have initialized Libp2p host. Try 'host start'")
-		return true
+		return nil, false
 	}
-	return false
+	return h, true
 }
 
 func (r *Actor) GetEnr() *enr.Record {

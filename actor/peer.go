@@ -20,7 +20,8 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "List peers in peerstore. Defaults to connected only.",
 		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			if len(args) == 0 {
@@ -29,15 +30,15 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 			var peers []peer.ID
 			switch args[0] {
 			case "all":
-				peers = r.P2PHost.Peerstore().Peers()
+				peers = h.Peerstore().Peers()
 			case "connected":
-				peers = r.P2PHost.Network().Peers()
+				peers = h.Network().Peers()
 			default:
 				log.Errorf("invalid peer type: %s", args[0])
 			}
 			log.Infof("%d peers", len(peers))
 			for i, p := range peers {
-				log.Infof("%4d: %s", i, r.P2PHost.Peerstore().PeerInfo(p).String())
+				log.Infof("%4d: %s", i, h.Peerstore().PeerInfo(p).String())
 			}
 		},
 	})
@@ -46,11 +47,12 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "Trim peers (2 second time allowance)",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
-			r.P2PHost.ConnManager().TrimOpenConns(ctx)
+			h.ConnManager().TrimOpenConns(ctx)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -58,7 +60,8 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "Connect to peer. Addr can be a multi-addr, enode or ENR",
 		Args:  cobra.RangeArgs(1, 2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			addrStr := args[0]
@@ -83,13 +86,13 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				return
 			}
 			ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-			if err := r.P2PHost.Connect(ctx, *addrInfo); err != nil {
+			if err := h.Connect(ctx, *addrInfo); err != nil {
 				log.Error(err)
 				return
 			}
 			log.WithField("peer_id", addrInfo.ID.Pretty()).Infof("connected to peer")
 			if len(args) > 1 {
-				r.P2PHost.ConnManager().Protect(addrInfo.ID, args[1])
+				h.ConnManager().Protect(addrInfo.ID, args[1])
 				log.Infof("protected peer %s as tag %s", addrInfo.ID.Pretty(), args[1])
 			}
 		},
@@ -99,7 +102,8 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "Disconnect peer",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			peerID, err := peer.Decode(args[0])
@@ -107,7 +111,7 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				log.Error(err)
 				return
 			}
-			conns := r.P2PHost.Network().ConnsToPeer(peerID)
+			conns := h.Network().ConnsToPeer(peerID)
 			for _, c := range conns {
 				if err := c.Close(); err != nil {
 					log.Infof("error during disconnect of peer %s (%s)", peerID.Pretty(), c.RemoteMultiaddr().String())
@@ -121,7 +125,8 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "Protect peer, tagging them as <tag>",
 		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			peerID, err := peer.Decode(args[0])
@@ -130,7 +135,7 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				return
 			}
 			tag := args[1]
-			r.P2PHost.ConnManager().Protect(peerID, tag)
+			h.ConnManager().Protect(peerID, tag)
 			log.Infof("protected peer %s as %s", peerID.Pretty(), tag)
 		},
 	})
@@ -139,7 +144,8 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "Unprotect peer, un-tagging them as <tag>",
 		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			peerID, err := peer.Decode(args[0])
@@ -148,7 +154,7 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				return
 			}
 			tag := args[1]
-			r.P2PHost.ConnManager().Unprotect(peerID, tag)
+			h.ConnManager().Unprotect(peerID, tag)
 			log.Infof("un-protected peer %s as %s", peerID.Pretty(), tag)
 		},
 	})
@@ -157,7 +163,8 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "View known addresses of [peerID]. Defaults to local addresses if no peer id is specified.",
 		Args:  cobra.RangeArgs(0, 1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			if len(args) > 0 {
@@ -166,10 +173,10 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 					log.Error(err)
 					return
 				}
-				addrs := r.P2PHost.Peerstore().Addrs(peerID)
+				addrs := h.Peerstore().Addrs(peerID)
 				log.WithField("addrs", addrs).Infof("addrs for peer %s", peerID.Pretty())
 			} else {
-				addrs := r.P2PHost.Addrs()
+				addrs := h.Addrs()
 				log.WithField("addrs", addrs).Infof("host addrs")
 			}
 		},

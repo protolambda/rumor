@@ -22,7 +22,8 @@ type GossipState struct {
 
 func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state *GossipState) *cobra.Command {
 	noGS := func(cmd *cobra.Command) bool {
-		if r.NoHost(log) {
+		_, hasHost := r.Host(log)
+		if !hasHost {
 			return true
 		}
 		if state.GsNode == nil {
@@ -40,7 +41,8 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 		Short: "Start GossipSub",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			if state.GsNode != nil {
@@ -48,7 +50,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			var err error
-			state.GsNode, err = gossip.NewGossipSub(r.ActorCtx, r)
+			state.GsNode, err = gossip.NewGossipSub(r.ActorCtx, h)
 			if err != nil {
 				log.Error(err)
 				return

@@ -108,10 +108,11 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 		cmd.Flags().BoolVar(&rawChunks, "raw", false, "If chunks should be logged as raw hex-encoded byte strings")
 
 		return func(peerID peer.ID, reqInput reqresp.RequestInput) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
-			sFn := reqresp.NewStreamFn(r.P2PHost.NewStream)
+			sFn := reqresp.NewStreamFn(h.NewStream)
 
 			reqCtx := ctx
 			if timeout != 0 {
@@ -184,7 +185,8 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 		var timeout uint64
 		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout.")
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			sCtxFn := func() context.Context {
@@ -245,14 +247,15 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 			if comp != nil {
 				prot += protocol.ID("_" + comp.Name())
 			}
-			r.P2PHost.SetStreamHandler(prot, streamHandler)
+			h.SetStreamHandler(prot, streamHandler)
 			log.WithField("started", true).Infof("Opened listener")
 			<-ctx.Done()
 		}
 	}
 
 	checkAndGetReq := func(reqKeyStr string, responder *Responder) (key RequestKey, req *RequestEntry, ok bool) {
-		if r.NoHost(log) {
+		_, hasHost := r.Host(log)
+		if !hasHost {
 			return 0, nil, false
 		}
 		reqId, err := strconv.ParseUint(reqKeyStr, 0, 64)

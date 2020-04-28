@@ -17,9 +17,6 @@ type KadState struct {
 
 func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *KadState) *cobra.Command {
 	noKad := func(cmd *cobra.Command) bool {
-		if r.NoHost(log) {
-			return true
-		}
 		if state.KadNode == nil {
 			log.Error("REPL must have initialized Kademlia DHT. Try 'kad start'")
 			return true
@@ -35,7 +32,8 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 		Short: "Go onto the given Kademlia DHT. (connect to bootnode and refresh table)",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			if state.KadNode != nil {
@@ -44,7 +42,7 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 			}
 			ctx, cancel := context.WithCancel(r.ActorCtx)
 			var err error
-			state.KadNode, err = kad.NewKademlia(ctx, r, protocol.ID(args[0]))
+			state.KadNode, err = kad.NewKademlia(ctx, h, protocol.ID(args[0]))
 			if err != nil {
 				log.Error(err)
 				return

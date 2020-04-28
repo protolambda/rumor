@@ -21,9 +21,6 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 	}
 
 	noDv5 := func(cmd *cobra.Command) bool {
-		if r.NoHost(log) {
-			return true
-		}
 		if state.Dv5Node == nil {
 			log.Error("REPL must have initialized discv5. Try 'dv5 start'")
 			return true
@@ -37,7 +34,8 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 		Long:  "Start discv5.",
 		Args:  cobra.ArbitraryArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			_, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
 			if r.IP == nil {
@@ -58,7 +56,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 				bootNodes = append(bootNodes, dv5Addr)
 			}
 			var err error
-			state.Dv5Node, err = dv5.NewDiscV5(log, r, r.IP, r.UdpPort, r.PrivKey, bootNodes)
+			state.Dv5Node, err = dv5.NewDiscV5(log, r.IP, r.UdpPort, r.PrivKey, bootNodes)
 			if err != nil {
 				log.Error(err)
 				return
