@@ -48,6 +48,15 @@ func (s *Session) HasInterest(id CallID) (lvl logrus.Level, ok bool) {
 	return
 }
 
+func (s *Session) ListInterests() (out []CallID) {
+	s.interestsLock.RLock()
+	defer s.interestsLock.RUnlock()
+	for interest, _ := range s.interests {
+		out = append(out, interest)
+	}
+	return out
+}
+
 func (s *Session) Done() <-chan struct{} {
 	return s.ctx.Done()
 }
@@ -186,7 +195,7 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 		ctx:    cmdCtx,
 		cancel: cmdCancel,
 		logger: cmdLogger,
-		owner: owner,
+		owner:  owner,
 	}
 
 	sp.jobs.Store(callID, call)
@@ -268,7 +277,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 
 		if sp.closing {
 			session.log.Info("system is closing, cannot process more commands")
-			return
+			break
 		}
 
 		line = strings.TrimSpace(line)
@@ -294,10 +303,10 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		var actorName string
-		var callID CallID
+		var customCallID CallID
 		var owner CallOwner
 		{
-			var actorStr, callIDStr, ownerStr string
+			var actorStr, customCallIDStr, ownerStr string
 			skip := 0
 			for _, arg := range cmdArgs {
 				if len(arg) <= 1 {
@@ -306,8 +315,8 @@ func (sp *SessionProcessor) runSession(session *Session) {
 				if strings.HasSuffix(arg, ":") && actorStr == "" {
 					actorStr = arg[:len(arg)-1]
 					skip++
-				} else if strings.HasSuffix(arg, ">") && callIDStr == "" {
-					callIDStr = arg[:len(arg)-1]
+				} else if strings.HasSuffix(arg, ">") && customCallIDStr == "" {
+					customCallIDStr = arg[:len(arg)-1]
 					skip++
 				} else if strings.HasSuffix(arg, "$") && ownerStr == "" {
 					ownerStr = arg[:len(arg)-1]
@@ -320,26 +329,12 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			if actorStr == "" {
 				actorStr = "DEFAULT_ACTOR"
 			}
-			if callIDStr == "" {
-				if lastCall != "" {
-					_, ok := sp.jobs.Load(lastCall)
-					if ok {
-						callIDStr = string(lastCall)
-					} else {
-						callIDStr = fmt.Sprintf("%s_%d", session.sessionID, callCounter)
-						callCounter++
-					}
-				} else {
-					callIDStr = fmt.Sprintf("%s_%d", session.sessionID, callCounter)
-					callCounter++
-				}
-			}
 			if ownerStr == "" {
 				ownerStr = "DEFAULT_OWNER"
 			}
 
 			actorName = actorStr
-			callID = CallID(callIDStr)
+			customCallID = CallID(customCallIDStr)
 			owner = CallOwner(ownerStr)
 		}
 
@@ -347,7 +342,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			continue
 		}
 
-		if lastCall != "" {
+		if lastCall != "" && (customCallID == "" || customCallID == lastCall) {
 			c, ok := sp.jobs.Load(lastCall)
 			if ok {
 				lastCallObj := c.(*Call)
@@ -357,16 +352,16 @@ func (sp *SessionProcessor) runSession(session *Session) {
 				} else {
 					if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
 						sp.CloseCall(lastCall)
+						continue
 					} else if len(cmdArgs) == 1 && cmdArgs[0] == "bg" {
 						session.log.Infof("Moved call '%s' to background", lastCall)
 						lastCall = ""
-					} else {
-						// if a next command, wait for current call to stop
+						continue
+					} else if customCallID == "" {
+						// if a next command and we are here by accident, wait for current call to stop
 						session.log.Infof("Waiting for call '%s'", lastCall)
 						<-lastCallObj.ctx.Done()
-
-						callID = CallID(fmt.Sprintf("%s_%d", session.sessionID, callCounter))
-						callCounter++
+						lastCall = ""
 					}
 				}
 			} else {
@@ -375,22 +370,24 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			}
 		}
 
-		// try historical call if there is no current call
-		if c, ok := sp.jobs.Load(callID); ok {
-			if existingOwner := c.(*Call).owner; existingOwner != owner {
-				sp.log.Errorf("No access to call of %s", existingOwner)
+		if customCallID != "" {
+			// try historical call
+			if c, ok := sp.jobs.Load(customCallID); ok {
+				if existingOwner := c.(*Call).owner; existingOwner != owner {
+					sp.log.Errorf("No access to call of %s", existingOwner)
+					continue
+				}
+				if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
+					session.log.Infof("Moved call '%s' to foreground", customCallID)
+					lastCall = customCallID
+				} else if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
+					session.log.Infof("Closing call '%s'", customCallID)
+					sp.CloseCall(customCallID)
+				} else {
+					session.log.Errorf("Unrecognized command for modifying call: '%s'", line)
+				}
 				continue
 			}
-			if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
-				session.log.Infof("Moved call '%s' to foreground", callID)
-				lastCall = callID
-			} else if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
-				session.log.Infof("Closing call '%s'", callID)
-				sp.CloseCall(callID)
-			} else {
-				session.log.Errorf("Unrecognized command for modifying call: '%s'", line)
-			}
-			continue
 		}
 
 		background := false
@@ -403,6 +400,13 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			continue
 		}
 
+		callID := customCallID
+		// auto-generate a call ID if we need to
+		if callID == "" {
+			callID = CallID(fmt.Sprintf("%s_%d", session.sessionID, callCounter))
+			callCounter++
+		}
+
 		// TODO: option to change log level per command
 		session.SetInterest(callID, logrus.TraceLevel)
 
@@ -412,6 +416,14 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			lastCall = ""
 		} else {
 			lastCall = callID
+		}
+	}
+	remaining := session.ListInterests()
+	session.log.WithField("calls", remaining).Info("Done, waiting for calls to complete")
+	for _, interstCallId := range remaining {
+		c, ok := sp.jobs.Load(interstCallId)
+		if ok {
+			<-c.(*Call).ctx.Done()
 		}
 	}
 }
