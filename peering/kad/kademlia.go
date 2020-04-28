@@ -4,11 +4,11 @@ import (
 	"context"
 	ds "github.com/ipfs/go-datastore"
 	ds_sync "github.com/ipfs/go-datastore/sync"
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	kad_dht "github.com/libp2p/go-libp2p-kad-dht"
 	dhtopts "github.com/libp2p/go-libp2p-kad-dht/opts"
-	"github.com/protolambda/rumor/node"
 )
 
 type Kademlia interface {
@@ -24,13 +24,13 @@ type KademliaImpl struct {
 	dhtData    *kad_dht.IpfsDHT
 }
 
-func NewKademlia(ctx context.Context, n node.Node, id protocol.ID) (Kademlia, error) {
+func NewKademlia(ctx context.Context, h host.Host, id protocol.ID) (Kademlia, error) {
 	// example protocol id: "/prysm/0.0.0/dht"
 	dhtOpts := []dhtopts.Option{
 		dhtopts.Datastore(ds_sync.MutexWrap(ds.NewMapDatastore())), // instead of the default map datastore.
 		dhtopts.Protocols(id), // don't creep onto the default IPFS network, join the configured DHT
 	}
-	kd, err := kad_dht.New(ctx, n.Host(), dhtOpts...)
+	kd, err := kad_dht.New(ctx, h, dhtOpts...)
 	if err != nil {
 		return nil, err
 	}

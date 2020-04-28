@@ -43,6 +43,8 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "Start the host node. See flags for security, transport, mux etc. options",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			r.hLock.Lock()
+			defer r.hLock.Unlock()
 			if r.P2PHost != nil {
 				log.Error("Already have a host open.")
 				return
@@ -142,6 +144,30 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 	startCmd.Flags().IntVar(&hiPeers, "hi-peers", 20, "high-water for connection manager to trim peer count from")
 	startCmd.Flags().IntVar(&gracePeriodMs, "peer-grace-period", 20_000, "Time in milliseconds to grace a peer from being trimmed")
 
+	cmd.AddCommand(startCmd)
+
+	stopCmd := &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the host node.",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			r.hLock.Lock()
+			defer r.hLock.Unlock()
+			if r.P2PHost == nil {
+				log.Error("No host was open.")
+				return
+			}
+			err := r.P2PHost.Close()
+			if err != nil {
+				log.Error(err)
+			} else {
+				log.Info("Successfully closed host")
+			}
+			r.P2PHost = nil
+		},
+	}
+	cmd.AddCommand(stopCmd)
+
 	printEnr := func(cmd *cobra.Command) {
 		enrStr, err := addrutil.EnrToString(r.GetEnr())
 		if err != nil {
@@ -151,7 +177,6 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		log.WithField("enr", enrStr).Info("ENR") // TODO put all data in fields
 	}
 
-	cmd.AddCommand(startCmd)
 	{
 		var ipStr string
 		var tcpPort, udpPort uint16
@@ -160,7 +185,8 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 			Short: "Start listening on given address (see option flags).",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				if r.NoHost(log) {
+				h, hasHost := r.Host(log)
+				if !hasHost {
 					return
 				}
 				ip := net.ParseIP(ipStr)
@@ -210,7 +236,7 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 					log.Errorf("could not construct multi addr: %v", err)
 					return
 				}
-				if err := r.Host().Network().Listen(mAddr); err != nil {
+				if err := h.Network().Listen(mAddr); err != nil {
 					log.Error(err)
 					return
 				}
@@ -230,10 +256,10 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Short: "View local peer ID, listening addresses, etc.",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			if r.NoHost(log) {
+			h, hasHost := r.Host(log)
+			if !hasHost {
 				return
 			}
-			h := r.Host()
 			log.WithField("peer_id", h.ID()).Info("Peer ID")
 			for _, a := range h.Addrs() {
 				log.Infof("Listening on: %s", a.String())
@@ -302,10 +328,10 @@ Notification logs will have keys: "event" - one of the above detailed event type
 `,
 			Args:  cobra.MinimumNArgs(1),
 			Run: func(cmd *cobra.Command, args []string) {
-				if r.NoHost(log) {
+				h, hasHost := r.Host(log)
+				if !hasHost {
 					return
 				}
-				h := r.Host()
 				bundle := &network.NotifyBundle{}
 				for _, notifyType := range args {
 					notifyType = strings.TrimSpace(notifyType)

@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/protolambda/rumor/node"
 	"github.com/sirupsen/logrus"
 	"net"
 )
@@ -58,7 +57,7 @@ func (gl *GethLogger) Log(r *geth_log.Record) error {
 	return nil
 }
 
-func NewDiscV5(log logrus.FieldLogger, n node.Node, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
+func NewDiscV5(log logrus.FieldLogger, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
 	k, ok := privKey.(*crypto.Secp256k1PrivateKey)
 	if !ok {
 		return nil, errors.New("libp2p-crypto private key is not a Secp256k1 key")

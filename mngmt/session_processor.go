@@ -347,7 +347,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			if ok {
 				lastCallObj := c.(*Call)
 				if existingOwner := lastCallObj.owner; existingOwner != owner {
-					sp.log.Errorf("No access to call of %s", existingOwner)
+					session.log.Errorf("No access to call of %s", existingOwner)
 					continue
 				} else {
 					if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
@@ -374,7 +374,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			// try historical call
 			if c, ok := sp.jobs.Load(customCallID); ok {
 				if existingOwner := c.(*Call).owner; existingOwner != owner {
-					sp.log.Errorf("No access to call of %s", existingOwner)
+					session.log.Errorf("No access to call of %s", existingOwner)
 					continue
 				}
 				if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
@@ -405,6 +405,19 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		if callID == "" {
 			callID = CallID(fmt.Sprintf("%s_%d", session.sessionID, callCounter))
 			callCounter++
+		}
+
+		if len(cmdArgs) == 1 && cmdArgs[0] == "jobs" {
+			openJobs := make([]CallID, 0)
+			sp.jobs.Range(func(key, value interface{}) bool {
+				c := value.(*Call)
+				if c.owner == owner {
+					openJobs = append(openJobs, key.(CallID))
+				}
+				return true
+			})
+			session.log.WithField("jobs", openJobs).Infof("jobs started by %s", owner)
+			continue
 		}
 
 		// TODO: option to change log level per command

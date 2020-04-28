@@ -2,22 +2,21 @@ package static
 
 import (
 	"context"
+	core "github.com/libp2p/go-libp2p-core"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
-	"github.com/protolambda/rumor/node"
 	"github.com/sirupsen/logrus"
 )
 
 type ConnectionCallback func(info peer.AddrInfo, alreadyConnected bool) error
 
 // onConnect may be nil, if no further action is required after starting the connection.
-func ConnectStaticPeers(ctx context.Context, log logrus.FieldLogger, n node.Node, multiAddrs []ma.Multiaddr, onConnect ConnectionCallback) error {
+func ConnectStaticPeers(ctx context.Context, log logrus.FieldLogger, host core.Host, multiAddrs []ma.Multiaddr, onConnect ConnectionCallback) error {
 	infos, err := peer.AddrInfosFromP2pAddrs(multiAddrs...)
 	if err != nil {
 		log.Errorf("failed to read multi addrs: %v", multiAddrs)
 		return err
 	}
-	host := n.Host()
 	for _, info := range infos {
 		alreadyConnected := len(host.Network().ConnsToPeer(info.ID)) > 0
 		if !alreadyConnected {
@@ -35,15 +34,6 @@ func ConnectStaticPeers(ctx context.Context, log logrus.FieldLogger, n node.Node
 		log.Infof("connected to: %s", info.String())
 	}
 	return nil
-}
-
-func ConnectBootNodes(ctx context.Context, log logrus.FieldLogger, n node.Node, bootAddrs []ma.Multiaddr) error {
-	return ConnectStaticPeers(ctx, log, n, bootAddrs, func(peerInfo peer.AddrInfo, alreadyConnected bool) error {
-		// protect the peer, we don't want the peer-limit to mess with the bootnodes when pruning.
-		n.Host().ConnManager().Protect(peerInfo.ID, "bootnode")
-		log.Infof("added node with bootnode protection: %s", peerInfo.ID.Pretty())
-		return nil
-	})
 }
 
 func ParseMultiAddrs(addrs ...string) ([]ma.Multiaddr, error) {
