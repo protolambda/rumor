@@ -218,6 +218,9 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 			cmdLogger.WithField("@success", "").Trace("completed call")
 		}
 		sp.CloseCall(callID)
+		// Only remove interests when the call is done, not when the call is closed,
+		// at which point it is still running and the `@success` hasn't been posted yet.
+		sp.RemoveInterests(callID)
 	}()
 }
 
@@ -232,6 +235,9 @@ func (sp *SessionProcessor) CloseCall(id CallID) {
 	// TODO: once we have Go 1.15 we can use LoadAndDelete, see golang #33762
 	c.cancel()
 	sp.jobs.Delete(id)
+}
+
+func (sp *SessionProcessor) RemoveInterests(id CallID) {
 	sp.sessionsLock.RLock()
 	for s := range sp.sessions {
 		s.UnsetInterest(id)
@@ -360,6 +366,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 					continue
 				} else {
 					if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
+						session.log.Infof("Closing call '%s'", lastCall)
 						sp.CloseCall(lastCall)
 						continue
 					} else if len(cmdArgs) == 1 && cmdArgs[0] == "bg" {

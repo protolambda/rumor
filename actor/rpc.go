@@ -250,6 +250,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 			h.SetStreamHandler(prot, streamHandler)
 			log.WithField("started", true).Infof("Opened listener")
 			<-ctx.Done()
+			// TODO unset stream handler?
 		}
 	}
 
