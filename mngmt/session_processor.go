@@ -362,7 +362,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 						lastCall = ""
 					} else {
 						// if a next command, wait for current call to stop
-						session.log.Infof("Waiting for call '%s'", callID)
+						session.log.Infof("Waiting for call '%s'", lastCall)
 						<-lastCallObj.ctx.Done()
 
 						callID = CallID(fmt.Sprintf("%s_%d", session.sessionID, callCounter))
