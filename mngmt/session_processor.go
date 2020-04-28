@@ -162,13 +162,21 @@ func (fn WriteableFn) Write(p []byte) (n int, err error) {
 
 type CallID string
 
+type CallSummary struct {
+	Owner     CallOwner `json:"owner"`
+	ActorName string `json:"actor"`
+	Cmd       string `json:"cmd"`
+}
+
 type CallOwner string
 
 type Call struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	logger *actor.Logger
-	owner  CallOwner
+	ctx       context.Context
+	cancel    context.CancelFunc
+	logger    *actor.Logger
+	owner     CallOwner
+	actorName string
+	cmd       string
 }
 
 func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
@@ -196,6 +204,8 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 		cancel: cmdCancel,
 		logger: cmdLogger,
 		owner:  owner,
+		actorName: actorName,
+		cmd:    strings.Join(cmdArgs, " "),
 	}
 
 	sp.jobs.Store(callID, call)
@@ -227,7 +237,6 @@ func (sp *SessionProcessor) CloseCall(id CallID) {
 		s.UnsetInterest(id)
 	}
 	sp.sessionsLock.RUnlock()
-	sp.log.Infof("Closed call: '%s'", id)
 }
 
 func (sp *SessionProcessor) Close() {
@@ -359,7 +368,6 @@ func (sp *SessionProcessor) runSession(session *Session) {
 						continue
 					} else if customCallID == "" {
 						// if a next command and we are here by accident, wait for current call to stop
-						session.log.Infof("Waiting for call '%s'", lastCall)
 						<-lastCallObj.ctx.Done()
 						lastCall = ""
 					}
@@ -408,11 +416,15 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		if len(cmdArgs) == 1 && cmdArgs[0] == "jobs" {
-			openJobs := make([]CallID, 0)
+			openJobs := make(map[CallID]CallSummary, 0)
 			sp.jobs.Range(func(key, value interface{}) bool {
 				c := value.(*Call)
 				if c.owner == owner {
-					openJobs = append(openJobs, key.(CallID))
+					openJobs[key.(CallID)] = CallSummary{
+						Owner: c.owner,
+						ActorName: c.actorName,
+						Cmd: c.cmd,
+					}
 				}
 				return true
 			})
