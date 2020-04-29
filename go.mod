@@ -13,6 +13,7 @@ require (
 	github.com/ethereum/go-ethereum v1.9.13
 	github.com/golang/snappy v0.0.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
+	github.com/gorilla/websocket v1.4.1
 	github.com/ipfs/go-datastore v0.3.1
 	github.com/libp2p/go-libp2p v0.5.1
 	github.com/libp2p/go-libp2p-connmgr v0.2.1

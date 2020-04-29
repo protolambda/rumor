@@ -4,13 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/chzyer/readline"
+	"github.com/gorilla/websocket"
 	"github.com/protolambda/rumor/mngmt"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -87,6 +91,18 @@ func (t *TimedNetOut) Write(b []byte) (n int, err error) {
 		return 0, err
 	}
 	return t.c.Write(b)
+}
+
+type TimedWsOut struct {
+	c       *websocket.Conn
+	timeout time.Duration
+}
+
+func (t *TimedWsOut) Write(b []byte) (n int, err error) {
+	if err := t.c.SetWriteDeadline(time.Now().Add(t.timeout)); err != nil {
+		return 0, err
+	}
+	return len(b), t.c.WriteMessage(websocket.TextMessage, b)
 }
 
 func main() {
@@ -175,7 +191,7 @@ func main() {
 		}
 	}
 
-	asLineReader := func(r io.Reader) func() (s string, err error) {
+	asLineReader := func(r io.Reader) mngmt.NextLineFn {
 		sc := bufio.NewScanner(r)
 		return func() (s string, err error) {
 			hasMore := sc.Scan()
@@ -189,8 +205,10 @@ func main() {
 	}
 
 	{
+		var wsAddr string
 		var ipcPath string
 		var tcpAddr string
+		var wsApiKey string
 
 		var level string
 		attachCmd := &cobra.Command{
@@ -199,21 +217,59 @@ func main() {
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
 				shellMode(level, func(log logrus.FieldLogger, nextLine mngmt.NextLineFn) {
-					var netInput net.Conn
-					var err error
-					if ipcPath != "" {
-						netInput, err = net.Dial("unix", ipcPath)
+					var nextLogLine mngmt.NextLineFn
+					var writeLine func(v string) error
+					if wsAddr != "" {
+						u, err := url.Parse(wsAddr)
 						if err != nil {
-							log.Fatal("IPC listen error: ", err)
+							log.Fatalf("failed to parse websocket url: '%s', err: %v", wsAddr, err)
+							return
 						}
-					} else if tcpAddr != "" {
-						netInput, err = net.Dial("tcp", tcpAddr)
+						h := http.Header{}
+						if wsApiKey != "" {
+							h["X-Api-Key"] = []string{wsApiKey}
+						}
+						conn, _, err := websocket.DefaultDialer.Dial(u.String(), h)
 						if err != nil {
-							log.Fatal("TCP listen error: ", err)
+							log.Fatalf("WS dial error: %v", err)
 						}
+						nextLogLine = func() (string, error) {
+							mType, mContent, err := conn.ReadMessage()
+							if err != nil {
+								return "", err
+							}
+							if mType != websocket.TextMessage {
+								return "", errors.New("expected text-type websocket messages")
+							}
+							return string(mContent), nil
+						}
+						writeLine = func(v string) error {
+							return conn.WriteMessage(websocket.TextMessage, []byte(v+"\n"))
+						}
+						defer conn.Close()
+					} else if ipcPath != "" || tcpAddr != "" {
+						var netInput net.Conn
+						var err error
+						if ipcPath != "" {
+							netInput, err = net.Dial("unix", ipcPath)
+							if err != nil {
+								log.Fatal("IPC dial error: ", err)
+							}
+						} else if tcpAddr != "" {
+							netInput, err = net.Dial("tcp", tcpAddr)
+							if err != nil {
+								log.Fatal("TCP dial error: ", err)
+							}
+						}
+						nextLogLine = asLineReader(netInput)
+						writeLine = func(v string) error {
+							_, err := netInput.Write([]byte(v + "\n"))
+							return err
+						}
+						defer netInput.Close()
+					} else {
+						log.Fatal("Cannot attach to Rumor, no endpoint was specified. Try --ipc, --tcp or --ws")
 					}
-					defer netInput.Close()
-					nextLogLine := asLineReader(netInput)
 
 					stopped := false
 					// Take the log of the net input, and feed it into our shell log
@@ -228,7 +284,7 @@ func main() {
 							}
 							break
 						}
-						if _, err := netInput.Write([]byte(line + "\n")); err != nil {
+						if err := writeLine(line); err != nil {
 							log.Errorf("failed to send command: %v", err)
 							break
 						}
@@ -243,12 +299,17 @@ func main() {
 
 		attachCmd.Flags().StringVar(&ipcPath, "ipc", "", "Path of unix domain socket to attach to, e.g. `my_socket_file.sock`. Priority over `--tcp` flag.")
 		attachCmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to attach to, e.g. `localhost:3030`.")
+		attachCmd.Flags().StringVar(&wsAddr, "ws", "", "Http address (full URL) to attach to through websocket upgrade, e.g. `ws://localhost:8000/ws`. Disabled if empty.")
+		attachCmd.Flags().StringVar(&wsApiKey, "ws-key", "", "Websocket API key ('X-Api-Key' header) to use for HTTP websocket upgrade requests. Not used if empty.")
 
 		mainCmd.AddCommand(attachCmd)
 	}
 	{
+		var wsAddr string
 		var ipcPath string
 		var tcpAddr string
+		var wsApiKey string
+		var wsPath string
 		// TODO: maybe support websockets as well?
 
 		serveCmd := &cobra.Command{
@@ -315,6 +376,40 @@ func main() {
 					}
 				}
 
+				newWsSession := func(c *websocket.Conn) {
+					log := logrus.New()
+					log.SetOutput(&TimedWsOut{c: c, timeout: UserWriteTimeout})
+					log.SetLevel(logrus.TraceLevel)
+					log.SetFormatter(&logrus.JSONFormatter{})
+
+					addr := c.RemoteAddr().String() + "/" + c.RemoteAddr().Network()
+					adminLog.WithField("addr", addr).Info("new user session")
+
+					timedUserInputLines := func() (s string, err error) {
+						// Reset read-deadline.
+						err = c.SetReadDeadline(time.Now().Add(UserReadTimeout))
+						if err != nil {
+							return "", err
+						}
+						mType, mContent, err := c.ReadMessage()
+						if err != nil {
+							return "", err
+						}
+						if mType != websocket.TextMessage {
+							return "", errors.New("expected text-type websocket messages")
+						}
+						return string(mContent), nil
+					}
+
+					<-sp.NewSession(log, timedUserInputLines).Done()
+
+					adminLog.WithField("addr", addr).Info("user session stopped")
+
+					if err := c.Close(); err != nil {
+						log.Error(err)
+					}
+				}
+
 				stopped := false
 				ctx, cancel := context.WithCancel(context.Background())
 				sig := make(chan os.Signal, 1)
@@ -355,12 +450,27 @@ func main() {
 				if tcpInput != nil {
 					go acceptInputs(tcpInput)
 				}
+
+				if wsAddr != "" {
+					http.Handle(wsPath, Middleware(
+						http.HandlerFunc(makeWsHandler(log.WithField("ws-handler", wsAddr), newWsSession)),
+						APIKeyCheck(func(key string) bool {
+							return wsApiKey == "" || key == wsApiKey
+						}).authMiddleware,
+					))
+					log.WithField("api-key", wsApiKey).Printf("listening for websocket upgrade requests on ws://%s%s", wsAddr, wsPath)
+					log.Fatal(http.ListenAndServe(wsAddr, nil))
+				}
+
 				<-ctx.Done()
 			},
 		}
 
 		serveCmd.Flags().StringVar(&ipcPath, "ipc", "", "Path to unix domain socket for IPC, e.g. `my_socket_file.sock`, use `rumor attach <socket>` to connect.")
 		serveCmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to listen on, e.g. `localhost:3030`. Disabled if empty.")
+		serveCmd.Flags().StringVar(&wsAddr, "ws", "", "Websocket address to listen on, e.g. `localhost:8000`. Disabled if empty.")
+		serveCmd.Flags().StringVar(&wsPath, "ws-path", "/ws", "Path after websocket address to use for request upgrader.")
+		serveCmd.Flags().StringVar(&wsApiKey, "ws-key", "", "Websocket API key ('X-Api-Key' header) to require from HTTP websocket upgrade requests. Not required if empty.")
 
 		mainCmd.AddCommand(serveCmd)
 	}
@@ -432,4 +542,42 @@ func main() {
 	} else {
 		os.Exit(0)
 	}
+}
+
+func Middleware(h http.Handler, middleware ...func(http.Handler) http.Handler) http.Handler {
+	for _, mw := range middleware {
+		h = mw(h)
+	}
+	return h
+}
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
+func makeWsHandler(log logrus.FieldLogger, handleWs func(conn *websocket.Conn)) func(rw http.ResponseWriter, req *http.Request) {
+	return func(rw http.ResponseWriter, req *http.Request) {
+		wsConn, err := upgrader.Upgrade(rw, req, nil)
+		if err != nil {
+			log.Printf("upgrade err: %v", err)
+			return
+		}
+		defer wsConn.Close()
+
+		handleWs(wsConn)
+	}
+}
+
+type APIKeyCheck func(key string) bool
+
+func (kc APIKeyCheck) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		apiKey := req.Header.Get("X-Api-Key")
+		if !kc(apiKey) {
+			rw.WriteHeader(http.StatusForbidden)
+		} else {
+			next.ServeHTTP(rw, req)
+		}
+	})
 }

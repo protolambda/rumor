@@ -30,6 +30,8 @@ There are a few subcommands to choose the mode of operation:
   attach      Attach to a running rumor server
 ```
 
+Serve and attach supported types: `ws` (http upgraded to websocket, optional auth key), `tcp` (raw socket), `ipc` (Unix socket)
+
 ## General
 
 ```shell script
