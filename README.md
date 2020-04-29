@@ -186,6 +186,14 @@ Now other owners that try to cancel, can't. This will fail:
 other$ my_call> cancel
 ```
 
+### Stopping an actor
+
+An actor can be killed by running a `kill` command on them, after that a fresh libp2p host can be started.
+
+```
+alice: kill
+```
+
 ### Exit
 
 Enter `exit`, or send an interrupt signal.

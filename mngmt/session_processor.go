@@ -184,6 +184,16 @@ func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
 	return a.(*actor.Actor)
 }
 
+func (sp *SessionProcessor) KillActor(name string) {
+	// get actor
+	a, ok := sp.actors.Load(name)
+	if ok {
+		// if there was an old one, close it
+		a.(*actor.Actor).Close()
+		sp.actors.Delete(name)
+	}
+}
+
 func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner CallOwner, cmdArgs []string) {
 	rep := sp.GetActor(actorName)
 	cmdCtx, cmdCancel := context.WithCancel(rep.ActorCtx)
@@ -354,6 +364,12 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		if len(cmdArgs) == 0 {
+			continue
+		}
+
+		if len(cmdArgs) == 1 && cmdArgs[0] == "kill" {
+			session.log.Infof("Killing rumor p2p actor %s", cmdArgs[0])
+			sp.KillActor(actorName)
 			continue
 		}
 
