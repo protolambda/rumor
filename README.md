@@ -164,6 +164,28 @@ cancel
 123> cancel
 ```
 
+## Mute/watch calls
+
+```
+# 
+123> mute
+# To unmute the messages of a call, also works to read results of other sessions (if access to them)
+123> watch
+```
+
+### Owning calls
+
+To separate the call domains, you can specify an owner for a call with:
+```
+foobar$ my_call> some command here
+```
+`foobar` here is the owner of the call
+
+Now other owners that try to cancel, can't. This will fail:
+```
+other$ my_call> cancel
+```
+
 ### Exit
 
 Enter `exit`, or send an interrupt signal.

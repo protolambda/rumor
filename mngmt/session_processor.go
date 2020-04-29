@@ -392,12 +392,22 @@ func (sp *SessionProcessor) runSession(session *Session) {
 					session.log.Errorf("No access to call of %s", existingOwner)
 					continue
 				}
-				if len(cmdArgs) == 1 && cmdArgs[0] == "fg" {
-					session.log.Infof("Moved call '%s' to foreground", customCallID)
-					lastCall = customCallID
-				} else if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
-					session.log.Infof("Closing call '%s'", customCallID)
-					sp.CloseCall(customCallID)
+				if len(cmdArgs) == 1 {
+					switch cmdArgs[0] {
+					case "watch":
+						session.log.Infof("Un-muting call '%s'", customCallID)
+						session.SetInterest(customCallID, logrus.TraceLevel)
+					case "mute":
+						session.log.Infof("Muting call '%s'", customCallID)
+						session.UnsetInterest(customCallID)
+					case "fg":
+						session.log.Infof("Moved call '%s' to foreground", customCallID)
+						lastCall = customCallID
+						session.SetInterest(customCallID, logrus.TraceLevel)
+					case "cancel":
+						session.log.Infof("Closing call '%s'", customCallID)
+						sp.CloseCall(customCallID)
+					}
 				} else {
 					session.log.Errorf("Unrecognized command for modifying call: '%s'", line)
 				}
