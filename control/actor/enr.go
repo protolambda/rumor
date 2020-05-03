@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/protolambda/rumor/addrutil"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"net"

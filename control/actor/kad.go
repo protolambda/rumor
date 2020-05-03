@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
-	"github.com/protolambda/rumor/peering/kad"
+	"github.com/protolambda/rumor/p2p/peering/kad"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"time"
@@ -15,9 +15,9 @@ type KadState struct {
 	CloseKad context.CancelFunc
 }
 
-func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *KadState) *cobra.Command {
+func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	noKad := func(cmd *cobra.Command) bool {
-		if state.KadNode == nil {
+		if r.KadState.KadNode == nil {
 			log.Error("REPL must have initialized Kademlia DHT. Try 'kad start'")
 			return true
 		}
@@ -36,18 +36,18 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 			if !hasHost {
 				return
 			}
-			if state.KadNode != nil {
+			if r.KadState.KadNode != nil {
 				log.Error("Already have a Kademlia DHT open")
 				return
 			}
 			ctx, cancel := context.WithCancel(r.ActorCtx)
 			var err error
-			state.KadNode, err = kad.NewKademlia(ctx, h, protocol.ID(args[0]))
+			r.KadState.KadNode, err = kad.NewKademlia(ctx, h, protocol.ID(args[0]))
 			if err != nil {
 				log.Error(err)
 				return
 			}
-			state.CloseKad = cancel
+			r.KadState.CloseKad = cancel
 		},
 	})
 
@@ -59,8 +59,8 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 			if noKad(cmd) {
 				return
 			}
-			state.CloseKad()
-			state.KadNode = nil
+			r.KadState.CloseKad()
+			r.KadState.KadNode = nil
 			log.Info("Stopped kademlia DHT")
 		},
 	})
@@ -72,7 +72,7 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 			if noKad(cmd) {
 				return
 			}
-			if err := state.KadNode.RefreshTable(); err != nil {
+			if err := r.KadState.KadNode.RefreshTable(); err != nil {
 				log.Errorf("failed to refresh kad dht table: %v", err)
 			} else {
 				log.Info("successfully refreshed kad dht table")
@@ -100,7 +100,7 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 				if timeout != 0 {
 					findConnPeerCtx, _ = context.WithTimeout(findConnPeerCtx, time.Millisecond*time.Duration(timeout))
 				}
-				addrInfos, err := state.KadNode.FindPeersConnectedToPeer(findConnPeerCtx, peerID)
+				addrInfos, err := r.KadState.KadNode.FindPeersConnectedToPeer(findConnPeerCtx, peerID)
 				if err != nil {
 					log.Error(err)
 					return
@@ -143,7 +143,7 @@ func (r *Actor) InitKadCmd(ctx context.Context, log logrus.FieldLogger, state *K
 				if timeout != 0 {
 					findPeerCtx, _ = context.WithTimeout(findPeerCtx, time.Millisecond*time.Duration(timeout))
 				}
-				addrInfo, err := state.KadNode.FindPeer(findPeerCtx, peerID)
+				addrInfo, err := r.KadState.KadNode.FindPeer(findPeerCtx, peerID)
 				if err != nil {
 					log.Error(err)
 					return

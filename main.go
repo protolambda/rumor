@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"github.com/chzyer/readline"
 	"github.com/gorilla/websocket"
-	"github.com/protolambda/rumor/mngmt"
+	"github.com/protolambda/rumor/control"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"io"
@@ -113,7 +113,7 @@ func main() {
 		Short: "Start Rumor",
 	}
 
-	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine mngmt.NextLineFn)) {
+	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine control.NextLineFn)) {
 		log := logrus.New()
 		log.SetOutput(os.Stdout)
 		log.SetLevel(logrus.TraceLevel)
@@ -155,7 +155,7 @@ func main() {
 		run(log, l.Readline)
 	}
 
-	feedLog := func(log logrus.FieldLogger, nextLogLine mngmt.NextLineFn, stopped *bool) {
+	feedLog := func(log logrus.FieldLogger, nextLogLine control.NextLineFn, stopped *bool) {
 		for {
 			line, err := nextLogLine()
 			if err != nil {
@@ -191,7 +191,7 @@ func main() {
 		}
 	}
 
-	asLineReader := func(r io.Reader) mngmt.NextLineFn {
+	asLineReader := func(r io.Reader) control.NextLineFn {
 		sc := bufio.NewScanner(r)
 		return func() (s string, err error) {
 			hasMore := sc.Scan()
@@ -216,8 +216,8 @@ func main() {
 			Short: "Attach to a running rumor server",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine mngmt.NextLineFn) {
-					var nextLogLine mngmt.NextLineFn
+				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextLineFn) {
+					var nextLogLine control.NextLineFn
 					var writeLine func(v string) error
 					if wsAddr != "" {
 						u, err := url.Parse(wsAddr)
@@ -344,7 +344,7 @@ func main() {
 					}
 				}
 
-				sp := mngmt.NewSessionProcessor(log)
+				sp := control.NewSessionProcessor(log)
 
 				adminLog := log
 				newSession := func(c net.Conn) {
@@ -505,7 +505,7 @@ func main() {
 					defer inputFile.Close()
 				}
 				nextLine := asLineReader(r)
-				sp := mngmt.NewSessionProcessor(log)
+				sp := control.NewSessionProcessor(log)
 				<-sp.NewSession(log, nextLine).Done()
 				sp.Close()
 			},
@@ -524,8 +524,8 @@ func main() {
 				return nil
 			},
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine mngmt.NextLineFn) {
-					sp := mngmt.NewSessionProcessor(log)
+				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextLineFn) {
+					sp := control.NewSessionProcessor(log)
 					<-sp.NewSession(log, nextLine).Done()
 					sp.Close()
 				})

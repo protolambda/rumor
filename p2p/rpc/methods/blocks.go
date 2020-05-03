@@ -3,7 +3,7 @@ package methods
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/protolambda/rumor/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 )
 
 // instead of parsing the whole body, we can just leave it as bytes.

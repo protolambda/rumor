@@ -6,7 +6,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/protolambda/rumor/gossip"
+	"github.com/protolambda/rumor/p2p/gossip"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"strings"
@@ -20,13 +20,13 @@ type GossipState struct {
 	Topics sync.Map
 }
 
-func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state *GossipState) *cobra.Command {
+func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	noGS := func(cmd *cobra.Command) bool {
 		_, hasHost := r.Host(log)
 		if !hasHost {
 			return true
 		}
-		if state.GsNode == nil {
+		if r.GossipState.GsNode == nil {
 			log.Error("REPL must have initialized GossipSub. Try 'gossip start'")
 			return true
 		}
@@ -45,12 +45,12 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 			if !hasHost {
 				return
 			}
-			if state.GsNode != nil {
+			if r.GossipState.GsNode != nil {
 				log.Error("Already started GossipSub")
 				return
 			}
 			var err error
-			state.GsNode, err = gossip.NewGossipSub(r.ActorCtx, h)
+			r.GossipState.GsNode, err = gossip.NewGossipSub(r.ActorCtx, h)
 			if err != nil {
 				log.Error(err)
 				return
@@ -67,7 +67,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topics := make([]string, 0)
-			state.Topics.Range(func(key, value interface{}) bool {
+			r.GossipState.Topics.Range(func(key, value interface{}) bool {
 				topics = append(topics, key.(string))
 				return false
 			})
@@ -83,17 +83,17 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			_, ok := state.Topics.Load(topicName)
+			_, ok := r.GossipState.Topics.Load(topicName)
 			if ok {
 				log.Errorf("already on gossip topic %s", topicName)
 				return
 			}
-			top, err := state.GsNode.Join(topicName)
+			top, err := r.GossipState.GsNode.Join(topicName)
 			if err != nil {
 				log.Error(err)
 				return
 			}
-			state.Topics.Store(topicName, top)
+			r.GossipState.Topics.Store(topicName, top)
 			log.Infof("joined topic %s", topicName)
 		},
 	})
@@ -107,7 +107,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics.Load(topicName); !ok {
+			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
@@ -143,7 +143,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics.Load(topicName); !ok {
+			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
@@ -165,7 +165,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				log.Error(err)
 				return
 			}
-			state.GsNode.BlacklistPeer(peerID)
+			r.GossipState.GsNode.BlacklistPeer(peerID)
 			log.Infof("Blacklisted peer %s", peerID.Pretty())
 		},
 	})
@@ -178,7 +178,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics.Load(topicName); !ok {
+			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
@@ -187,7 +187,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 					log.Error(err)
 					return
 				}
-				state.Topics.Delete(topicName)
+				r.GossipState.Topics.Delete(topicName)
 			}
 		},
 	})
@@ -201,7 +201,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics.Load(topicName); !ok {
+			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {
@@ -251,7 +251,7 @@ func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger, state
 				return
 			}
 			topicName := args[0]
-			if top, ok := state.Topics.Load(topicName); !ok {
+			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
 				log.Errorf("not on gossip topic %s", topicName)
 				return
 			} else {

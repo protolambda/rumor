@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/hex"
 	"github.com/ethereum/go-ethereum/p2p/enode"
-	"github.com/protolambda/rumor/addrutil"
-	"github.com/protolambda/rumor/peering/dv5"
+	"github.com/protolambda/rumor/p2p/addrutil"
+	"github.com/protolambda/rumor/p2p/peering/dv5"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -14,14 +14,14 @@ type Dv5State struct {
 	Dv5Node dv5.Discv5
 }
 
-func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *Dv5State) *cobra.Command {
+func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dv5",
 		Short: "Manage Ethereum Discv5",
 	}
 
 	noDv5 := func(cmd *cobra.Command) bool {
-		if state.Dv5Node == nil {
+		if r.Dv5State.Dv5Node == nil {
 			log.Error("REPL must have initialized discv5. Try 'dv5 start'")
 			return true
 		}
@@ -42,8 +42,8 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 				log.Error("Host has no IP yet. Get with 'host listen'")
 				return
 			}
-			if state.Dv5Node != nil {
-				log.Errorf("Already have dv5 open at %s", state.Dv5Node.Self().String())
+			if r.Dv5State.Dv5Node != nil {
+				log.Errorf("Already have dv5 open at %s", r.Dv5State.Dv5Node.Self().String())
 				return
 			}
 			bootNodes := make([]*enode.Node, 0, len(args))
@@ -56,7 +56,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 				bootNodes = append(bootNodes, dv5Addr)
 			}
 			var err error
-			state.Dv5Node, err = dv5.NewDiscV5(log, r.IP, r.UdpPort, r.PrivKey, bootNodes)
+			r.Dv5State.Dv5Node, err = dv5.NewDiscV5(log, r.IP, r.UdpPort, r.PrivKey, bootNodes)
 			if err != nil {
 				log.Error(err)
 				return
@@ -72,8 +72,8 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if noDv5(cmd) {
 				return
 			}
-			state.Dv5Node.Close()
-			state.Dv5Node = nil
+			r.Dv5State.Dv5Node.Close()
+			r.Dv5State.Dv5Node = nil
 			log.Info("Stopped discv5")
 		},
 	})
@@ -98,7 +98,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if err != nil {
 				log.Error(err)
 			}
-			if err := state.Dv5Node.Ping(target); err != nil {
+			if err := r.Dv5State.Dv5Node.Ping(target); err != nil {
 				log.Errorf("Failed to ping: %v", err)
 				return
 			}
@@ -118,7 +118,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if err != nil {
 				log.Error(err)
 			}
-			resolved := state.Dv5Node.Resolve(target)
+			resolved := r.Dv5State.Dv5Node.Resolve(target)
 			if resolved != nil {
 				log.Errorf("Failed to resolve %s, nil result", target.String())
 				return
@@ -139,7 +139,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if err != nil {
 				log.Error(err)
 			}
-			enrRes, err := state.Dv5Node.RequestENR(target)
+			enrRes, err := r.Dv5State.Dv5Node.RequestENR(target)
 			if err != nil {
 				log.Error(err)
 				return
@@ -156,7 +156,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if noDv5(cmd) {
 				return
 			}
-			target := state.Dv5Node.Self().ID()
+			target := r.Dv5State.Dv5Node.Self().ID()
 			if len(args) > 0 {
 				if n, err := addrutil.ParseEnrOrEnode(args[0]); err != nil {
 					if h, err := hex.DecodeString(args[0]); err != nil {
@@ -174,7 +174,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 					target = n.ID()
 				}
 			}
-			printLookupResult(state.Dv5Node.Lookup(target))
+			printLookupResult(r.Dv5State.Dv5Node.Lookup(target))
 		},
 	}
 	cmd.AddCommand(lookupCmd)
@@ -187,7 +187,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if noDv5(cmd) {
 				return
 			}
-			randomNodes := state.Dv5Node.RandomNodes()
+			randomNodes := r.Dv5State.Dv5Node.RandomNodes()
 			log.Info("Started looking for random nodes")
 
 			go func() {
@@ -214,7 +214,7 @@ func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger, state *D
 			if noDv5(cmd) {
 				return
 			}
-			log.WithField("enr", state.Dv5Node.Self()).Infof("local dv5 node")
+			log.WithField("enr", r.Dv5State.Dv5Node.Self()).Infof("local dv5 node")
 		},
 	})
 	return cmd

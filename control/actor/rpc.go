@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
-	"github.com/protolambda/rumor/rpc/methods"
-	"github.com/protolambda/rumor/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/rpc/methods"
+	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"strconv"
@@ -67,15 +67,7 @@ func (r *Responder) AddRequest(req *RequestEntry) RequestKey {
 	return key
 }
 
-/*
-TODO:
-- refactor "req" command
-- generic "listen"/"req"/"resp" command; take protocol-id and ssz-bytes as argument
-- implement "resp" command, take ssz-bytes or type-specific input
-
-*/
-
-func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *RPCState) *cobra.Command {
+func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rpc",
 		Short: "Manage Eth2 RPC",
@@ -483,11 +475,11 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger, state *R
 		return methodCmd
 	}
 
-	cmd.AddCommand(makeMethodCmd("goodbye", &state.Goodbye, &methods.GoodbyeRPCv1))
-	cmd.AddCommand(makeMethodCmd("status", &state.Status, &methods.StatusRPCv1))
-	cmd.AddCommand(makeMethodCmd("ping", &state.Ping, &methods.PingRPCv1))
-	cmd.AddCommand(makeMethodCmd("metadata", &state.Metadata, &methods.MetaDataRPCv1))
-	cmd.AddCommand(makeMethodCmd("blocks-by-range", &state.BlocksByRange, &methods.BlocksByRangeRPCv1))
-	cmd.AddCommand(makeMethodCmd("blocks-by-root", &state.BlocksByRoot, &methods.BlocksByRootRPCv1))
+	cmd.AddCommand(makeMethodCmd("goodbye", &r.RPCState.Goodbye, &methods.GoodbyeRPCv1))
+	cmd.AddCommand(makeMethodCmd("status", &r.RPCState.Status, &methods.StatusRPCv1))
+	cmd.AddCommand(makeMethodCmd("ping", &r.RPCState.Ping, &methods.PingRPCv1))
+	cmd.AddCommand(makeMethodCmd("metadata", &r.RPCState.Metadata, &methods.MetaDataRPCv1))
+	cmd.AddCommand(makeMethodCmd("blocks-by-range", &r.RPCState.BlocksByRange, &methods.BlocksByRangeRPCv1))
+	cmd.AddCommand(makeMethodCmd("blocks-by-root", &r.RPCState.BlocksByRoot, &methods.BlocksByRootRPCv1))
 	return cmd
 }

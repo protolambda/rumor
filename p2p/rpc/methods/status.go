@@ -2,7 +2,7 @@ package methods
 
 import (
 	"fmt"
-	"github.com/protolambda/rumor/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 )
 
 type Status struct {

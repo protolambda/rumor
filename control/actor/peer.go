@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
-	"github.com/protolambda/rumor/addrutil"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"time"

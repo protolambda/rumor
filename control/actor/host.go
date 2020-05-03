@@ -16,7 +16,7 @@ import (
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
 	ma "github.com/multiformats/go-multiaddr"
-	"github.com/protolambda/rumor/addrutil"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"net"

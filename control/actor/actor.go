@@ -6,7 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/protolambda/rumor/addrutil"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"net"
@@ -45,7 +45,7 @@ func (r *Actor) Close() {
 	r.actorCancel()
 }
 
-func (r *Actor) Cmd(ctx context.Context, log *Logger) *cobra.Command {
+func (r *Actor) Cmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rumor",
 		Short: "A REPL for Eth2 networking.",
@@ -60,10 +60,10 @@ func (r *Actor) Cmd(ctx context.Context, log *Logger) *cobra.Command {
 		r.InitHostCmd(ctx, log),
 		r.InitEnrCmd(ctx, log),
 		r.InitPeerCmd(ctx, log),
-		r.InitDv5Cmd(ctx, log, &r.Dv5State),
-		r.InitKadCmd(ctx, log, &r.KadState),
-		r.InitGossipCmd(ctx, log, &r.GossipState),
-		r.InitRpcCmd(ctx, log, &r.RPCState),
+		r.InitDv5Cmd(ctx, log),
+		r.InitKadCmd(ctx, log),
+		r.InitGossipCmd(ctx, log),
+		r.InitRpcCmd(ctx, log),
 	)
 	return cmd
 }

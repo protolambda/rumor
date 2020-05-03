@@ -2,7 +2,7 @@ package methods
 
 import (
 	"fmt"
-	"github.com/protolambda/rumor/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 )
 
 // Switch ResponseChunkCodec codec out if you need non-standard attestation subnet count

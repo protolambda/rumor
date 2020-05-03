@@ -1,10 +1,10 @@
-package mngmt
+package control
 
 import (
 	"context"
 	"fmt"
 	"github.com/google/shlex"
-	"github.com/protolambda/rumor/actor"
+	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
 	"strings"
 	"sync"
@@ -173,7 +173,7 @@ type CallOwner string
 type Call struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
-	logger    *actor.Logger
+	logger    logrus.FieldLogger
 	owner     CallOwner
 	actorName string
 	cmd       string
@@ -198,7 +198,7 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 	rep := sp.GetActor(actorName)
 	cmdCtx, cmdCancel := context.WithCancel(rep.ActorCtx)
 
-	cmdLogger := actor.NewLogger(sp.log.WithField("actor", actorName).WithField("call_id", callID))
+	cmdLogger := sp.log.WithField("actor", actorName).WithField("call_id", callID)
 	callCmd := rep.Cmd(cmdCtx, cmdLogger)
 
 	callCmd.SetOut(WriteableFn(func(msg string) {
