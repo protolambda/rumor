@@ -2,12 +2,19 @@ package actor
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
+	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,11 +51,11 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				for _, p := range peers {
 					v := make(map[string]interface{})
 					if listAddrs {
-						 v["addrs"] = store.PeerInfo(p).Addrs
+						v["addrs"] = store.PeerInfo(p).Addrs
 					}
 					// TODO: add dv5 node ID
 					if listLatency {
-						v["latency"] = store.LatencyEWMA(p).Seconds()  // A float, ok for json
+						v["latency"] = store.LatencyEWMA(p).Seconds() // A float, ok for json
 					}
 					if listProtocols {
 						protocols, err := store.GetProtocols(p)
@@ -227,9 +234,36 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 	return cmd
 }
 
+func parseRoot(v string) ([32]byte, error) {
+	if v == "0" {
+		return [32]byte{}, nil
+	}
+	if strings.HasPrefix(v, "0x") {
+		v = v[2:]
+	}
+	if len(v) != 64 {
+		return [32]byte{}, fmt.Errorf("provided root has length %d, expected 64 hex characters (ignoring optional 0x prefix)", len(v))
+	}
+	var out [32]byte
+	_, err := hex.Decode(out[:], []byte(v))
+	return out, err
+}
+
+func parseForkVersion(v string) ([4]byte, error) {
+	if strings.HasPrefix(v, "0x") {
+		v = v[2:]
+	}
+	if len(v) != 8 {
+		return [4]byte{}, fmt.Errorf("provided fork version has length %d, expected 8 hex characters (ignoring optional 0x prefix)", len(v))
+	}
+	var out [4]byte
+	_, err := hex.Decode(out[:], []byte(v))
+	return out, err
+}
+
 type PeerStatusState struct {
 	Following bool
-	Local methods.Status
+	Local     methods.Status
 }
 
 func (r *Actor) InitPeerStatusCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
@@ -237,34 +271,266 @@ func (r *Actor) InitPeerStatusCmd(ctx context.Context, log logrus.FieldLogger) *
 		Use:   "status",
 		Short: "Manage and track peer status",
 	}
-	/* TODO
-				fetch <peer id>
+	{
+		var timeout uint64
+		reqStatus := func(peerID peer.ID) error {
+			h, hasHost := r.Host(log)
+			if !hasHost {
+				return nil
+			}
+			sFn := reqresp.NewStreamFn(h.NewStream)
+			comp, err := readOptionalComp(cmd)
+			if err != nil {
+				return err
+			}
+			reqCtx := ctx
+			if timeout != 0 {
+				reqCtx, _ = context.WithTimeout(reqCtx, time.Millisecond*time.Duration(timeout))
+			}
+			m := methods.StatusRPCv1
 
-				poll <interval>  # poll connected peers for status by sending them repeated status requests
+			var reqStatus methods.Status
+			if r.PeerStatusState.Following {
+				// TODO get status from chain
+			} else {
+				reqStatus = r.PeerStatusState.Local
+			}
+			return m.RunRequest(reqCtx, sFn, peerID, comp,
+				reqresp.RequestSSZInput{Obj: &reqStatus}, 1,
+				func(chunk reqresp.ChunkedResponseHandler) error {
+					resultCode := chunk.ResultCode()
+					f := map[string]interface{}{
+						"from":        peerID.String(),
+						"result_code": resultCode,
+					}
+					switch resultCode {
+					case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+						msg, err := chunk.ReadErrMsg()
+						if err != nil {
+							return err
+						}
+						f["msg"] = msg
+					case reqresp.SuccessCode:
+						var data methods.Status
+						if err := chunk.ReadObj(&data); err != nil {
+							return err
+						}
+						f["data"] = data
+						inf, _ := r.GlobalPeerInfos.Find(peerID)
+						inf.RegisterStatus(data)
+					}
+					log.WithFields(f).Debug("got status response")
+					return nil
+				})
+		}
+		{
+			fetchCmd := &cobra.Command{
+				Use:   "fetch <peerID>",
+				Short: "Fetch status of connected peer.",
+				Args:  cobra.ExactArgs(1),
+				Run: func(cmd *cobra.Command, args []string) {
+					peerID, err := peer.Decode(args[0])
+					if err != nil {
+						log.Error(err)
+						return
+					}
+					if err := reqStatus(peerID); err != nil {
+						log.Error(err)
+						return
+					}
+				},
+			}
+			fetchCmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
+			fetchCmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout.")
 
-				get
-				set
-				follow
+			cmd.AddCommand(fetchCmd)
+		}
+		{
+			pollCmd := &cobra.Command{
+				Use:   "poll <ms>",
+				Short: "Fetch status of all connected peers, on interval of given milliseconds.",
+				Args:  cobra.ExactArgs(1),
+				Run: func(cmd *cobra.Command, args []string) {
+					intervalMs, err := strconv.ParseUint(args[0], 0, 64)
+					if err != nil {
+						log.Errorf("could not parse interval: %v", err)
+					}
+					interval := time.Millisecond * time.Duration(intervalMs)
+					h, hasHost := r.Host(log)
+					if !hasHost {
+						return
+					}
+					for {
+						start := time.Now()
+						var wg sync.WaitGroup
+						for _, p := range h.Network().Peers() {
+							// TODO: maybe filter peers that cannot answer status requests?
+							wg.Add(1)
+							go func(peerID peer.ID) {
+								if err := reqStatus(peerID); err != nil {
+									log.Warn(err)
+								}
+								wg.Done()
+							}(p)
+						}
+						wg.Wait()
+						pollStepDuration := time.Since(start)
+						if pollStepDuration < interval {
+							time.Sleep(interval - pollStepDuration)
+						}
+						select {
+						case <-ctx.Done():
+							return
+						default:
+							// next interval
+						}
+					}
+				},
+			}
+			pollCmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
+			pollCmd.Flags().Uint64Var(&timeout, "timeout", 3_000, "Apply timeout of n milliseconds to each request. 0 to Disable timeout.")
 
-				serve   # handle status requests on RPC and respond based on chain
-	*/
+			cmd.AddCommand(pollCmd)
+		}
+	}
+
 	cmd.AddCommand(&cobra.Command{
-		Use:   "fetch <peerID>",
-		Short: "Fetch status of connected peer.",
-		Args:  cobra.ArbitraryArgs,
+		Use:   "get",
+		Short: "Get current status and if following the chain or not",
+		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			// TODO do status request, using current status (fetch from current chain if following)
-			// TODO register status in global peer infos
-			// TODO log resulting status
+			log.WithFields(logrus.Fields{
+				"following": r.PeerStatusState.Following,
+				"status":    r.PeerStatusState.Local,
+			}).Info("Status settings")
 		},
 	})
 
+	{
+		var forkVersion, headRoot, finalizedRoot string
+		var headSlot, finalizedEpoch uint64
+		var following bool
+		setCmd := &cobra.Command{
+			Use:   "set",
+			Short: "Set (a part of) the current status and if following the chain or not",
+			Args:  cobra.NoArgs,
+			Run: func(cmd *cobra.Command, args []string) {
+				if cmd.Flags().Changed("fork-version") {
+					v, err := parseForkVersion(forkVersion)
+					if err != nil {
+						log.Error(err)
+					}
+					r.PeerStatusState.Local.HeadForkVersion = v
+				}
+				if cmd.Flags().Changed("head-root") {
+					v, err := parseRoot(headRoot)
+					if err != nil {
+						log.Error(err)
+					}
+					r.PeerStatusState.Local.HeadRoot = v
+				}
+				if cmd.Flags().Changed("head-slot") {
+					r.PeerStatusState.Local.HeadSlot = methods.Slot(headSlot)
+				}
+				if cmd.Flags().Changed("finalized-epoch") {
+					r.PeerStatusState.Local.FinalizedEpoch = methods.Epoch(finalizedEpoch)
+				}
+				if cmd.Flags().Changed("finalized-root") {
+					v, err := parseRoot(finalizedRoot)
+					if err != nil {
+						log.Error(err)
+					}
+					r.PeerStatusState.Local.FinalizedRoot = v
+				}
+				if cmd.Flags().Changed("following") {
+					r.PeerStatusState.Following = following
+				}
+				log.WithFields(logrus.Fields{
+					"following": r.PeerStatusState.Following,
+					"status":    r.PeerStatusState.Local,
+				}).Info("Status settings")
+			},
+		}
+		setCmd.Flags().StringVar(&forkVersion, "fork-version", "", "Fork version, hex encoded")
+		setCmd.Flags().StringVar(&headRoot, "head-root", "", "Head root, hex encoded")
+		setCmd.Flags().Uint64Var(&headSlot, "head-slot", 0, "Head slot")
+		setCmd.Flags().StringVar(&finalizedRoot, "finalized-root", "", "Finalized root, hex encoded")
+		setCmd.Flags().Uint64Var(&finalizedEpoch, "finalized-epoch", 0, "Finalized epoch")
+		setCmd.Flags().BoolVar(&following, "following", false, "If the status should automatically follow the current chain (if any)")
+	}
+
+	{
+		var timeout uint64
+		serveCmd := &cobra.Command{
+			Use:   "serve",
+			Short: "Serve incoming status requests",
+			Args:  cobra.NoArgs,
+			Run: func(cmd *cobra.Command, args []string) {
+				h, hasHost := r.Host(log)
+				if !hasHost {
+					return
+				}
+				sCtxFn := func() context.Context {
+					if timeout == 0 {
+						return ctx
+					}
+					reqCtx, _ := context.WithTimeout(ctx, time.Millisecond*time.Duration(timeout))
+					return reqCtx
+				}
+				comp, err := readOptionalComp(cmd)
+				if err != nil {
+					log.Error(err)
+					return
+				}
+				listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
+					f := map[string]interface{}{
+						"from": peerId.String(),
+					}
+					var reqStatus methods.Status
+					err := handler.ReadRequest(&reqStatus)
+					if err != nil {
+						f["input_err"] = err.Error()
+						_ = handler.WriteInvalidRequestChunk("could not parse status request")
+						log.WithFields(f).Warnf("failed to read status request: %v", err)
+					} else {
+						f["data"] = reqStatus
+						inf, _ := r.GlobalPeerInfos.Find(peerId)
+						inf.RegisterStatus(reqStatus)
+
+						var resp methods.Status
+						if r.PeerStatusState.Following {
+							// TODO
+						} else {
+							resp = r.PeerStatusState.Local
+						}
+						if err := handler.WriteResponseChunk(&resp); err != nil {
+							log.WithFields(f).Warnf("failed to respond to status request: %v", err)
+						} else {
+							log.WithFields(f).Warnf("handled status request: %v", err)
+						}
+					}
+				}
+				m := methods.StatusRPCv1
+				streamHandler := m.MakeStreamHandler(sCtxFn, comp, listenReq)
+				prot := m.Protocol
+				if comp != nil {
+					prot += protocol.ID("_" + comp.Name())
+				}
+				h.SetStreamHandler(prot, streamHandler)
+				log.WithField("started", true).Infof("Opened listener")
+				<-ctx.Done()
+			},
+		}
+		serveCmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
+		serveCmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout.")
+		cmd.AddCommand(serveCmd)
+	}
 	return cmd
 }
 
 type PeerMetadataState struct {
 	Following bool
-	Local methods.MetaData
+	Local     methods.MetaData
 }
 
 func (r *Actor) InitPeerMetadataCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
@@ -277,13 +543,11 @@ func (r *Actor) InitPeerMetadataCmd(ctx context.Context, log logrus.FieldLogger)
 		  pong --update   # serve others with pongs, and if ping is new enough, request them for metadata if --update=true
 
 		  fetch <peer id>  # get metadata of peer
-		  list
 
 		  poll <interval>  # poll connected peers for metadata by pinging them on interval
 
 		  get
-		  set
-		  follow
+		  set --follow
 
 		  serve   # serve meta data
 	actors

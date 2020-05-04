@@ -153,12 +153,6 @@ func (r *Actor) InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra
 		cmd.AddCommand(chainCreateCmd)
 	}
 	// TODO chain copy <chain-name>  # fork the chain by creating a copy of it
-	/*
-	   hot
-	     view [anchor-root]
-	   cold
-	     view <start> <stop>
-	 */
 	{
 		chainHotCmd := &cobra.Command{
 			Use:   "hot",
@@ -199,5 +193,7 @@ func (r *Actor) InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra
 			},
 		})
 	}
+	// TODO chain cold view <start> <stop>
+
 	return cmd
 }

@@ -67,28 +67,27 @@ func (r *Responder) AddRequest(req *RequestEntry) RequestKey {
 	return key
 }
 
+func readOptionalComp(cmd *cobra.Command) (reqresp.Compression, error) {
+	if compStr, err := cmd.Flags().GetString("compression"); err != nil {
+		return nil, err
+	} else {
+		switch compStr {
+		case "none", "", "false":
+			// no compression
+			return nil, nil
+		case "snappy":
+			return reqresp.SnappyCompression{}, nil
+		default:
+			return nil, fmt.Errorf("cannot recognize compression '%s'", compStr)
+		}
+	}
+}
+
 func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rpc",
 		Short: "Manage Eth2 RPC",
 	}
-
-	readOptionalComp := func(cmd *cobra.Command) (reqresp.Compression, error) {
-		if compStr, err := cmd.Flags().GetString("compression"); err != nil {
-			return nil, err
-		} else {
-			switch compStr {
-			case "none", "", "false":
-				// no compression
-				return nil, nil
-			case "snappy":
-				return reqresp.SnappyCompression{}, nil
-			default:
-				return nil, fmt.Errorf("cannot recognize compression '%s'", compStr)
-			}
-		}
-	}
-	// TODO: stop responses command
 
 	prepareReqFn := func(cmd *cobra.Command, m *reqresp.RPCMethod) func(peerID peer.ID, reqInput reqresp.RequestInput) {
 		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
@@ -369,10 +368,10 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 			Use:   "req",
 			Short: "Make requests",
 		}
-		reqWithCmd := &cobra.Command{
-			Use:   "with <peer-ID>",
-			Short: "Build and make a request with the given arguments",
-		}
+		//reqWithCmd := &cobra.Command{
+		//	Use:   "with <peer-ID>",
+		//	Short: "Build and make a request with the given arguments",
+		//}
 		//{ TODO
 		//	reqFn := prepareReqFn(reqWithCmd, m)
 		//	reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
@@ -409,7 +408,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 				reqFn(peerID, reqInput)
 			}
 		}
-		reqCmd.AddCommand(reqWithCmd, reqRawCmd)
+		reqCmd.AddCommand(reqRawCmd)
 		methodCmd.AddCommand(reqCmd)
 
 		// Listen
