@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"github.com/protolambda/zrnt/eth2/beacon"
-	"github.com/protolambda/zrnt/eth2/forkchoice"
 	"sync"
 )
 
@@ -20,10 +19,11 @@ type ChainEntry interface {
 	// Slot of this entry
 	Slot() Slot
 	// BlockRoot returns the last block root, replicating the previous block root if the current slot has none.
-	// If replicated, `here` will be false.
-	BlockRoot() (root Root, here bool)
-	// The parent block root. If this is an empty slot, return ok=false.
-	ParentRoot() (root Root, ok bool)
+	BlockRoot() (root Root)
+	// The parent block root. If this is an empty slot, it will just be previous block root. Can also be zeroed if unknown.
+	ParentRoot() (root Root)
+	// If this is an empty slot, i.e. no block
+	IsEmpty() bool
 	// State root (of the post-state of this entry). Should match state-root in the block at the same slot (if any)
 	StateRoot() Root
 	// The context of this chain entry (shuffling, proposers, etc.)
@@ -37,6 +37,13 @@ type Chain interface {
 	ByBlockRoot(root Root) (ChainEntry, error)
 	ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainEntry, error)
 	BySlot(slot Slot) (ChainEntry, error)
+	Iter() ChainIter
+}
+
+type ChainIter interface {
+	PrevSlot() (ok bool)
+	NextSlot() (ok bool)
+	ThisEntry() (entry ChainEntry, ok bool, err error)
 }
 
 type BlockSlotKey [32 + 8]byte
@@ -79,20 +86,19 @@ func (cs *Chains) Create(id ChainID, anchor *HotEntry) (pi *FullChain, err error
 	// TODO: genesis?
 	coldCh := NewFinalizedChain(anchor.slot)
 	hotCh, err := NewUnfinalizedChain(anchor,
-		BlockSinkFn(func(
-			block forkchoice.BlockRef, state *beacon.BeaconStateView,
-			epc *beacon.EpochsContext, canonical bool) {
-		if canonical {
-			coldCh.OnFinalizedBlock(block, state, epc)
-		}
-		// TODO keep track of pruned non-finalized blocks?
-	}))
+		BlockSinkFn(func(entry *HotEntry, canonical bool) error {
+			if canonical {
+				return coldCh.OnFinalizedEntry(entry)
+			}
+			return nil
+			// TODO keep track of pruned non-finalized blocks?
+		}))
 	if err != nil {
 		return nil, err
 	}
 
 	c := &FullChain{
-		HotChain: hotCh,
+		HotChain:  hotCh,
 		ColdChain: coldCh,
 	}
 	_, alreadyExisted := cs.chains.LoadOrStore(id, c)

@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/protolambda/rumor/chain"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
@@ -25,11 +26,13 @@ type Actor struct {
 	TcpPort uint16
 	UdpPort uint16
 
-	GlobalPeerInfos   *track.PeerInfos
+	GlobalPeerInfos   track.PeerInfos
 	PeerStatusState   PeerStatusState
 	PeerMetadataState PeerMetadataState
 
+	GlobalChains chain.Chains
 	ChainState  ChainState
+
 	Dv5State    Dv5State
 	KadState    KadState
 	GossipState GossipState

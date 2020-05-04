@@ -11,22 +11,38 @@ import (
 
 type HotEntry struct {
 	slot       Slot
-	epc        *beacon.EpochsContext
-	state      *beacon.BeaconStateView
 	blockRoot  Root
 	parentRoot Root
+	epc        *beacon.EpochsContext
+	state      *beacon.BeaconStateView
+}
+
+func NewHotEntry(
+	slot Slot, blockRoot Root, parentRoot Root,
+	state *beacon.BeaconStateView, epc *beacon.EpochsContext) *HotEntry {
+	return &HotEntry{
+		slot:       slot,
+		epc:        epc,
+		state:      state,
+		blockRoot:  blockRoot,
+		parentRoot: parentRoot,
+	}
 }
 
 func (e *HotEntry) Slot() Slot {
 	return e.slot
 }
 
-func (e *HotEntry) ParentRoot() (root Root, ok bool) {
-	return e.parentRoot, e.parentRoot == Root{}
+func (e *HotEntry) IsEmpty() bool {
+	return e.parentRoot == Root{}
 }
 
-func (e *HotEntry) BlockRoot() (root Root, here bool) {
-	return e.blockRoot, e.parentRoot == Root{}
+func (e *HotEntry) ParentRoot() (root Root) {
+	return e.parentRoot
+}
+
+func (e *HotEntry) BlockRoot() (root Root) {
+	return e.blockRoot
 }
 
 func (e *HotEntry) StateRoot() Root {
@@ -54,21 +70,87 @@ type HotChain interface {
 type UnfinalizedChain struct {
 	ForkChoice *forkchoice.ForkChoice
 
+	AnchorSlot Slot
+
 	// block++slot -> Entry
 	Entries map[BlockSlotKey]*HotEntry
 	// state root -> block+slot key
 	State2Key map[Root]BlockSlotKey
+
+	// BlockSink takes pruned entries and their canon status, and processes them.
+	// Empty-slot entries will only occur for canonical chain,
+	// non-canonical empty entries are ignored, as there can theoretically be an unlimited number of.
+	// Non-canonical non-empty entries are still available, to track what is getting abandoned by the chain
+	BlockSink BlockSink
+}
+
+
+type HotChainIter struct {
+	// ordered from head to 0
+	entries []*HotEntry
+	i int
+	err error
+}
+
+func (fi *HotChainIter) PrevSlot() (ok bool) {
+	if fi.err != nil {
+		return false
+	}
+	if fi.i + 1 >= len(fi.entries) {
+		return false
+	}
+	fi.i += 1
+	return true
+}
+
+func (fi *HotChainIter) NextSlot() (ok bool) {
+	if fi.err != nil {
+		return false
+	}
+	if fi.i <= 0 {
+		return false
+	}
+	fi.i -= 1
+	return true
+}
+
+func (fi *HotChainIter) ThisEntry() (entry ChainEntry, ok bool, err error) {
+	if fi.err != nil {
+		return nil, false, fi.err
+	}
+	if fi.i <= len(fi.entries) {
+		return nil, false, nil
+	}
+	return fi.entries[fi.i], true, nil
+}
+
+func (uc *UnfinalizedChain) Iter() ChainIter {
+	headRef, err := uc.ForkChoice.FindHead()
+	if err != nil {
+		return &HotChainIter{nil, 0, err}
+	}
+	entries := make([]*HotEntry, 0)
+	root := headRef.Root
+	for {
+		entry, err := uc.ByBlockRoot(root)
+		if err != nil {
+			break
+		}
+		entries = append(entries, entry.(*HotEntry))
+		root = entry.ParentRoot()
+	}
+	return &HotChainIter{entries, len(entries)-1, nil}
 }
 
 type BlockSink interface {
 	// Sink handles blocks that come from the Hot part, and may be finalized or not
-	Sink(block forkchoice.BlockRef, state *beacon.BeaconStateView, epc *beacon.EpochsContext, canonical bool)
+	Sink(entry *HotEntry, canonical bool) error
 }
 
-type BlockSinkFn func(block forkchoice.BlockRef, state *beacon.BeaconStateView, epc *beacon.EpochsContext, canonical bool)
+type BlockSinkFn func(entry *HotEntry, canonical bool) error
 
-func (fn BlockSinkFn) Sink(block forkchoice.BlockRef, state *beacon.BeaconStateView, epc *beacon.EpochsContext, canonical bool) {
-	fn(block, state, epc, canonical)
+func (fn BlockSinkFn) Sink(entry *HotEntry, canonical bool) error {
+	return fn(entry, canonical)
 }
 
 func NewUnfinalizedChain(finalizedBlock *HotEntry, sink BlockSink) (*UnfinalizedChain, error) {
@@ -91,54 +173,57 @@ func NewUnfinalizedChain(finalizedBlock *HotEntry, sink BlockSink) (*Unfinalized
 	key := NewBlockSlotKey(finalizedBlock.blockRoot, finalizedBlock.slot)
 	uc := &UnfinalizedChain{
 		ForkChoice: nil,
-		Entries: map[BlockSlotKey]*HotEntry{key: finalizedBlock},
-		State2Key: map[Root]BlockSlotKey{finalizedBlock.StateRoot(): key},
+		Entries:    map[BlockSlotKey]*HotEntry{key: finalizedBlock},
+		State2Key:  map[Root]BlockSlotKey{finalizedBlock.StateRoot(): key},
+		BlockSink:  sink,
 	}
-	fc, err := forkchoice.NewForkChoice(forkchoice.BlockRef{
-		Slot: finalizedBlock.slot,
-		Root: finalizedBlock.blockRoot,
-	}, finCh, justCh, forkchoice.BlockSinkFn(func(node *forkchoice.ProtoNode, canonical bool) {
-		entryId := NewBlockSlotKey(node.Block.Root, node.Block.Slot)
-		// TODO concurrency safety
-		entry, ok := uc.Entries[entryId]
-		if ok {
-			delete(uc.Entries, entryId)
-			delete(uc.State2Key, entry.StateRoot())
-			sink.Sink(node.Block, entry.state, entry.epc, canonical)
-		}
-		// TODO: log that we are pruning unrecognized blocks?
-	}))
-	if err != nil {
-		return nil, err
-	}
-	uc.ForkChoice = fc
+	uc.ForkChoice = forkchoice.NewForkChoice(finCh, justCh, forkchoice.BlockSinkFn(uc.OnPrunedBlock))
 	return uc, nil
 }
 
-func (uc *UnfinalizedChain) OnPrunedBlock(node *forkchoice.ProtoNode) (pruned []ChainEntry) {
+func (uc *UnfinalizedChain) OnPrunedBlock(node *forkchoice.ProtoNode, canonical bool) error {
 	blockRef := node.Block
 
 	key := NewBlockSlotKey(blockRef.Root, blockRef.Slot)
 	entry, ok := uc.Entries[key]
 	if ok {
-		// Return the block
+		pruned := make([]*HotEntry, 0)
 		pruned = append(pruned, entry)
 		// Remove block from hot state
 		delete(uc.Entries, key)
 		delete(uc.State2Key, entry.StateRoot())
-		// There may be empty slots leading up to the block
-		prevBlockRoot, _ := entry.ParentRoot()
+		if entry.slot > uc.AnchorSlot {
+			uc.AnchorSlot = entry.slot
+		}
+		// There may be empty slots leading up to the block,
+		// If this block is not canonical, we cannot delete them,
+		// because a later block may still share the history, and be canonical.
+		prevBlockRoot := entry.ParentRoot()
 		for slot := blockRef.Slot; true; slot-- {
 			key = NewBlockSlotKey(prevBlockRoot, slot)
-			entry, ok = uc.Entries[key]
+			prevEntry, ok := uc.Entries[key]
 			if ok {
-				pruned = append(pruned, entry)
+				pruned = append(pruned, prevEntry)
 			} else {
 				break
 			}
 		}
+		if canonical {
+			// sink from oldest to newest entry
+			for i := len(pruned); i >= 0; i-- {
+				entry := pruned[i]
+				if err := uc.BlockSink.Sink(entry, true); err != nil {
+					return err
+				}
+			}
+		} else {
+			// Only sink the actual block that was pruned, if non-canonical.
+			if err := uc.BlockSink.Sink(entry, true); err != nil {
+				return err
+			}
+		}
 	}
-	return
+	return nil
 }
 
 func (uc *UnfinalizedChain) ByStateRoot(root Root) (ChainEntry, error) {
@@ -184,7 +269,7 @@ func (uc *UnfinalizedChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainE
 }
 
 func (uc *UnfinalizedChain) BySlot(slot Slot) (ChainEntry, error) {
-	_, at, _, err := uc.ForkChoice.BlocksAroundSlot(uc.Finalized().Root, slot)
+	_, at, _, err := uc.ForkChoice.BlocksAroundSlot(uc.Justified().Root, slot)
 	if err != nil {
 		return nil, err
 	}
@@ -219,8 +304,8 @@ func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.Si
 		return err
 	}
 
-	if root, ok := pre.BlockRoot(); !ok || root != block.ParentRoot {
-		return fmt.Errorf("unknown parent root %x, found other root %x (ok: %v)", block.ParentRoot, root, ok)
+	if root := pre.BlockRoot(); root != block.ParentRoot {
+		return fmt.Errorf("unknown parent root %x, found other root %x", block.ParentRoot, root)
 	}
 
 	epc, err := pre.EpochsContext(ctx)
@@ -310,6 +395,10 @@ func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.Si
 	uc.ForkChoice.ProcessBlock(
 		forkchoice.BlockRef{Slot: block.Slot, Root: blockRoot},
 		block.ParentRoot, justifiedEpoch, finalizedEpoch)
+
+	if block.Slot < uc.AnchorSlot {
+		uc.AnchorSlot = block.Slot
+	}
 	return nil
 }
 

@@ -5,47 +5,39 @@ import (
 	"errors"
 	"fmt"
 	"github.com/protolambda/zrnt/eth2/beacon"
-	"github.com/protolambda/zrnt/eth2/forkchoice"
 	"github.com/protolambda/ztyp/tree"
 )
-
-type ColdEntry struct {
-	slot Slot
-
-	// Can be copy of the previous root if empty
-	blockRoot Root
-	// Zeroed if empty.
-	parentRoot Root
-
-	stateRoot Root
-}
-
-func (e *ColdEntry) Slot() Slot {
-	return e.slot
-}
-
-func (e *ColdEntry) ParentRoot() (root Root, ok bool) {
-	return e.parentRoot, e.parentRoot == Root{}
-}
-
-func (e *ColdEntry) BlockRoot() (root Root, here bool) {
-	return e.blockRoot, e.parentRoot == (Root{})
-}
-
-func (e *ColdEntry) StateRoot() Root {
-	return e.stateRoot
-}
 
 type ColdChain interface {
 	Start() Slot
 	End() Slot
-	OnFinalizedBlock(block forkchoice.BlockRef, state *beacon.BeaconStateView, epc *beacon.EpochsContext)
+	OnFinalizedEntry(entry *HotEntry) error
 	Chain
 }
 
 type FinalizedEntryView struct {
-	*ColdEntry
+	slot     Slot
 	finChain *FinalizedChain
+}
+
+func (e *FinalizedEntryView) Slot() Slot {
+	return e.slot
+}
+
+func (e *FinalizedEntryView) IsEmpty() bool {
+	return e.ParentRoot() == e.BlockRoot()
+}
+
+func (e *FinalizedEntryView) ParentRoot() (root Root) {
+	return e.finChain.parentRoot(e.slot)
+}
+
+func (e *FinalizedEntryView) BlockRoot() (root Root) {
+	return e.finChain.blockRoot(e.slot)
+}
+
+func (e *FinalizedEntryView) StateRoot() Root {
+	return e.finChain.stateRoot(e.slot)
 }
 
 func (e *FinalizedEntryView) EpochsContext(ctx context.Context) (*beacon.EpochsContext, error) {
@@ -62,14 +54,18 @@ type FinalizedChain struct {
 	PubkeyCache *beacon.PubkeyCache
 	// Start of the historical data
 	AnchorSlot Slot
-	// History stores canonical chain by slot, starting at AnchorSlot
-	History []ColdEntry
-	// Proposers, grouped by epoch, starting from AnchorSlot.ToEpoch()
-	ProposerHistory [][beacon.SLOTS_PER_EPOCH]ValidatorIndex
+
+	// Block roots, starting at AnchorSlot
+	// A blockRoot can be a copy of the previous root if current entry is empty
+	BlockRoots []Root
+
+	// State roots, starting at AnchorSlot
+	StateRoots []Root
+
 	// BlockRoots maps the canonical chain block roots to the block slot
-	BlockRoots map[Root]Slot
+	SlotsByBlockRoot map[Root]Slot
 	// BlockRoots maps the canonical chain state roots to the state slot
-	StateRoots map[Root]Slot
+	SlotsByStateRoot map[Root]Slot
 }
 
 var _ = ColdChain((*FinalizedChain)(nil))
@@ -77,12 +73,53 @@ var _ = ColdChain((*FinalizedChain)(nil))
 func NewFinalizedChain(anchorSlot Slot) *FinalizedChain {
 	initialCapacity := Slot(200)
 	return &FinalizedChain{
-		PubkeyCache:     beacon.EmptyPubkeyCache(),
-		AnchorSlot:      anchorSlot,
-		History:         make([]ColdEntry, 0, initialCapacity),
-		ProposerHistory: make([][beacon.SLOTS_PER_EPOCH]ValidatorIndex, 0, initialCapacity.ToEpoch()),
-		BlockRoots:      make(map[Root]Slot, initialCapacity),
-		StateRoots:      make(map[Root]Slot, initialCapacity),
+		PubkeyCache:      beacon.EmptyPubkeyCache(),
+		AnchorSlot:       anchorSlot,
+		BlockRoots:       make([]Root, 0, initialCapacity),
+		StateRoots:       make([]Root, 0, initialCapacity),
+		SlotsByBlockRoot: make(map[Root]Slot, initialCapacity),
+		SlotsByStateRoot: make(map[Root]Slot, initialCapacity),
+	}
+}
+
+type ColdChainIter struct {
+	Chain Chain
+	Start, End Slot
+	Slot Slot
+}
+
+func (fi *ColdChainIter) PrevSlot() (ok bool) {
+	if fi.Slot <= fi.Start {
+		return false
+	}
+	fi.Slot -= 1
+	return true
+}
+
+func (fi *ColdChainIter) NextSlot() (ok bool) {
+	if fi.Slot >= fi.End {
+		return false
+	}
+	fi.Slot += 1
+	return true
+}
+
+func (fi *ColdChainIter) ThisEntry() (entry ChainEntry, ok bool, err error) {
+	if fi.Slot <= fi.Start || fi.Slot >= fi.End {
+		return nil, false, nil
+	}
+	entry, err = fi.Chain.BySlot(fi.Slot)
+	ok = true
+	return
+}
+
+func (f *FinalizedChain) Iter() ChainIter {
+	start := f.Start()
+	return &ColdChainIter{
+		Chain: f,
+		Start: start,
+		End:   f.End(),
+		Slot:  start,
 	}
 }
 
@@ -91,13 +128,13 @@ func (f *FinalizedChain) Start() Slot {
 }
 
 func (f *FinalizedChain) End() Slot {
-	return f.AnchorSlot + Slot(len(f.History))
+	return f.AnchorSlot + Slot(len(f.StateRoots))
 }
 
 var UnknownRootErr = errors.New("unknown root")
 
 func (f *FinalizedChain) ByStateRoot(root Root) (ChainEntry, error) {
-	slot, ok := f.StateRoots[root]
+	slot, ok := f.SlotsByStateRoot[root]
 	if !ok {
 		return nil, UnknownRootErr
 	}
@@ -105,7 +142,7 @@ func (f *FinalizedChain) ByStateRoot(root Root) (ChainEntry, error) {
 }
 
 func (f *FinalizedChain) ByBlockRoot(root Root) (ChainEntry, error) {
-	slot, ok := f.StateRoots[root]
+	slot, ok := f.SlotsByBlockRoot[root]
 	if !ok {
 		return nil, UnknownRootErr
 	}
@@ -117,7 +154,7 @@ func (f *FinalizedChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainEntr
 		return nil, fmt.Errorf("slot %d is too early. Start is at slot %d", toSlot, start)
 	}
 	// check if the root is canonical
-	_, ok := f.StateRoots[fromBlockRoot]
+	_, ok := f.SlotsByStateRoot[fromBlockRoot]
 	if !ok {
 		return nil, UnknownRootErr
 	}
@@ -131,53 +168,57 @@ func (f *FinalizedChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainEntr
 }
 
 func (f *FinalizedChain) BySlot(slot Slot) (ChainEntry, error) {
-	if start := f.AnchorSlot; slot < start {
+	if start := f.Start(); slot < start {
 		return nil, fmt.Errorf("slot %d is too early. Chain starts at slot %d", slot, start)
 	}
-	if end := f.AnchorSlot + Slot(len(f.History)); slot >= end {
+	if end := f.End(); slot >= end {
 		return nil, fmt.Errorf("slot %d is too late. Chain ends at slot %d", slot, end)
 	}
 	return &FinalizedEntryView{
-		ColdEntry: &f.History[slot-f.AnchorSlot],
-		finChain:  f,
+		slot:     slot,
+		finChain: f,
 	}, nil
 }
 
-func (f *FinalizedChain) OnFinalizedBlock(block forkchoice.BlockRef, state *beacon.BeaconStateView, epc *beacon.EpochsContext) {
-	postStateRoot := state.HashTreeRoot(tree.GetHashFn())
-	f.History = append(f.History, ColdEntry{
-		slot:      block.Slot,
-		blockRoot: block.Root,
-		stateRoot: postStateRoot,
-	})
-	// If it's a new epoch, store the proposers for the epoch
-	if f.AnchorSlot.ToEpoch() + Epoch(len(f.ProposerHistory)) <= block.Slot.ToEpoch() {
-		f.ProposerHistory = append(f.ProposerHistory, *epc.Proposers)
+func (f *FinalizedChain) OnFinalizedEntry(entry *HotEntry) error {
+	if end := f.End(); entry.slot != end {
+		return fmt.Errorf("expected next finalized entry to have slot %d, but got %d from entry with block root %x", end, entry.slot, entry.blockRoot)
 	}
-	f.BlockRoots[block.Root] = block.Slot
-	f.StateRoots[postStateRoot] = block.Slot
+	postStateRoot := entry.state.HashTreeRoot(tree.GetHashFn())
+	f.BlockRoots = append(f.BlockRoots, entry.blockRoot)
+	f.StateRoots = append(f.StateRoots, postStateRoot)
+	f.SlotsByStateRoot[postStateRoot] = entry.slot
+	if entry.parentRoot != entry.blockRoot {
+		// if it's not an empty slot, remember it by block root
+		f.SlotsByBlockRoot[entry.blockRoot] = entry.slot
+	}
+	return nil
 }
 
-func (f *FinalizedChain) Proposers(epoch Epoch) (*[beacon.SLOTS_PER_EPOCH]ValidatorIndex, error) {
-	anchorEpoch := f.AnchorSlot.ToEpoch()
-	if epoch < anchorEpoch {
-		return nil, errors.New("epoch too early for finalized chain")
+func (f *FinalizedChain) parentRoot(slot Slot) (root Root) {
+	if slot <= f.AnchorSlot {
+		return Root{}
 	}
-	if max := f.End().ToEpoch(); epoch >= max {
-		return nil, errors.New("epoch too late for finalized chain")
+	return f.BlockRoots[slot-1-f.AnchorSlot]
+}
+
+func (f *FinalizedChain) blockRoot(slot Slot) (root Root) {
+	if slot < f.AnchorSlot {
+		return Root{}
 	}
-	return &f.ProposerHistory[epoch-anchorEpoch], nil
+	return f.BlockRoots[slot-f.AnchorSlot]
+}
+
+func (f *FinalizedChain) stateRoot(slot Slot) Root {
+	if slot < f.AnchorSlot {
+		return Root{}
+	}
+	return f.StateRoots[slot-f.AnchorSlot]
 }
 
 func (f *FinalizedChain) getEpochsContext(ctx context.Context, slot Slot) (*beacon.EpochsContext, error) {
-	// TODO: context can be partially constructed from contexts around this.
-	proposers, err := f.Proposers(slot.ToEpoch())
-	if err != nil {
-		return nil, err
-	}
 	epc := &beacon.EpochsContext{
 		PubkeyCache: f.PubkeyCache,
-		Proposers:   proposers,
 	}
 	// We do not store shuffling for older epochs
 	// TODO: maybe store it after all, for archive node functionality?
@@ -186,6 +227,9 @@ func (f *FinalizedChain) getEpochsContext(ctx context.Context, slot Slot) (*beac
 		return nil, err
 	}
 	if err := epc.LoadShuffling(state); err != nil {
+		return nil, err
+	}
+	if err := epc.LoadProposers(state); err != nil {
 		return nil, err
 	}
 	return epc, nil
