@@ -28,8 +28,14 @@ require (
 	github.com/libp2p/go-ws-transport v0.2.0
 	github.com/minio/sha256-simd v0.1.1
 	github.com/multiformats/go-multiaddr v0.2.0
+	github.com/protolambda/zrnt v0.11.1
 	github.com/protolambda/zssz v0.1.4
+	github.com/protolambda/ztyp v0.0.0
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
-	github.com/spf13/pflag v1.0.3
+)
+
+replace (
+	github.com/protolambda/zrnt => ../zrnt
+	github.com/protolambda/ztyp => ../ztyp
 )

@@ -5,6 +5,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/addrutil"
+	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"time"
@@ -15,33 +16,75 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 		Use:   "peer",
 		Short: "Manage Libp2p peerstore",
 	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "list <all,connected>",
-		Short: "List peers in peerstore. Defaults to connected only.",
-		Args:  cobra.ArbitraryArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			if len(args) == 0 {
-				args = append(args, "connected")
-			}
-			var peers []peer.ID
-			switch args[0] {
-			case "all":
-				peers = h.Peerstore().Peers()
-			case "connected":
-				peers = h.Network().Peers()
-			default:
-				log.Errorf("invalid peer type: %s", args[0])
-			}
-			log.Infof("%d peers", len(peers))
-			for i, p := range peers {
-				log.Infof("%4d: %s", i, h.Peerstore().PeerInfo(p).String())
-			}
-		},
-	})
+	{
+		var listLatency, listProtocols, listAddrs, listStatus, listMetadata, listClaimSeq bool
+		listCmd := &cobra.Command{
+			Use:   "list [all|connected]",
+			Short: "List peers in peerstore. Defaults to connected only.",
+			Args:  cobra.ArbitraryArgs,
+			Run: func(cmd *cobra.Command, args []string) {
+				h, hasHost := r.Host(log)
+				if !hasHost {
+					return
+				}
+				if len(args) == 0 {
+					args = append(args, "connected")
+				}
+				var peers []peer.ID
+				switch args[0] {
+				case "all":
+					peers = h.Peerstore().Peers()
+				case "connected":
+					peers = h.Network().Peers()
+				default:
+					log.Errorf("invalid peer type: %s", args[0])
+				}
+				store := h.Peerstore()
+				peerData := make(map[peer.ID]map[string]interface{})
+				for _, p := range peers {
+					v := make(map[string]interface{})
+					if listAddrs {
+						 v["addrs"] = store.PeerInfo(p).Addrs
+					}
+					// TODO: add dv5 node ID
+					if listLatency {
+						v["latency"] = store.LatencyEWMA(p).Seconds()  // A float, ok for json
+					}
+					if listProtocols {
+						protocols, err := store.GetProtocols(p)
+						if err != nil {
+							v["protocols"] = protocols
+						}
+					}
+					if listStatus || listMetadata || listClaimSeq {
+						pInfoData, ok := r.GlobalPeerInfos.Find(p)
+						if ok {
+							if listStatus {
+								v["status"] = pInfoData.Status()
+							}
+							if listMetadata {
+								v["metadata"] = pInfoData.Metadata()
+							}
+							if listClaimSeq {
+								v["metadata"] = pInfoData.ClaimedSeq()
+							}
+						}
+					}
+					peerData[p] = v
+				}
+				log.WithField("peers", peerData).Infof("%d peers", len(peers))
+			},
+		}
+		flags := listCmd.Flags()
+		flags.BoolVar(&listLatency, "latency", false, "list peer latency")
+		flags.BoolVar(&listProtocols, "protocols", false, "list peer protocols")
+		flags.BoolVar(&listAddrs, "addrs", true, "list peer addrs")
+		flags.BoolVar(&listStatus, "status", false, "list peer status")
+		flags.BoolVar(&listMetadata, "metadata", false, "list peer metadata")
+		flags.BoolVar(&listClaimSeq, "claimseq", false, "list peer claimed metadata seq nr")
+		cmd.AddCommand(listCmd)
+	}
+
 	cmd.AddCommand(&cobra.Command{
 		Use:   "trim",
 		Short: "Trim peers (2 second time allowance)",
@@ -181,5 +224,69 @@ func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 			}
 		},
 	})
+	return cmd
+}
+
+type PeerStatusState struct {
+	Following bool
+	Local methods.Status
+}
+
+func (r *Actor) InitPeerStatusCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Manage and track peer status",
+	}
+	/* TODO
+				fetch <peer id>
+
+				poll <interval>  # poll connected peers for status by sending them repeated status requests
+
+				get
+				set
+				follow
+
+				serve   # handle status requests on RPC and respond based on chain
+	*/
+	cmd.AddCommand(&cobra.Command{
+		Use:   "fetch <peerID>",
+		Short: "Fetch status of connected peer.",
+		Args:  cobra.ArbitraryArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			// TODO do status request, using current status (fetch from current chain if following)
+			// TODO register status in global peer infos
+			// TODO log resulting status
+		},
+	})
+
+	return cmd
+}
+
+type PeerMetadataState struct {
+	Following bool
+	Local methods.MetaData
+}
+
+func (r *Actor) InitPeerMetadataCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "metadata",
+		Short: "Manage and track peer metadata",
+	}
+	/* TODO
+		  ping <peer id>  --update # request peer for pong, update metadata maybe
+		  pong --update   # serve others with pongs, and if ping is new enough, request them for metadata if --update=true
+
+		  fetch <peer id>  # get metadata of peer
+		  list
+
+		  poll <interval>  # poll connected peers for metadata by pinging them on interval
+
+		  get
+		  set
+		  follow
+
+		  serve   # serve meta data
+	actors
+	*/
 	return cmd
 }
