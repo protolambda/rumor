@@ -369,10 +369,10 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 			Use:   "req",
 			Short: "Make requests",
 		}
-		reqWithCmd := &cobra.Command{
-			Use:   "with <peer-ID>",
-			Short: "Build and make a request with the given arguments",
-		}
+		//reqWithCmd := &cobra.Command{
+		//	Use:   "with <peer-ID>",
+		//	Short: "Build and make a request with the given arguments",
+		//}
 		//{ TODO
 		//	reqFn := prepareReqFn(reqWithCmd, m)
 		//	reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
@@ -409,7 +409,7 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 				reqFn(peerID, reqInput)
 			}
 		}
-		reqCmd.AddCommand(reqWithCmd, reqRawCmd)
+		reqCmd.AddCommand(reqRawCmd)
 		methodCmd.AddCommand(reqCmd)
 
 		// Listen
