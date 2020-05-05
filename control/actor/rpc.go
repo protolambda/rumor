@@ -115,12 +115,15 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 				log.Error(err)
 				return
 			}
-
+			protocolId := m.Protocol
+			if comp != nil {
+				protocolId += protocol.ID("_" + comp.Name())
+			}
 			if err := m.RunRequest(reqCtx, sFn, peerID, comp, reqInput, maxChunks,
 				func(chunk reqresp.ChunkedResponseHandler) error {
 					resultCode := chunk.ResultCode()
 					f := map[string]interface{}{
-						"protocol":    m.Protocol,
+						"protocol":    protocolId,
 						"from":        peerID.String(),
 						"chunk_index": chunk.ChunkIndex(),
 						"chunk_size":  chunk.ChunkSize(),
@@ -193,10 +196,14 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 				log.Error(err)
 				return
 			}
+			protocolId := m.Protocol
+			if comp != nil {
+				protocolId += protocol.ID("_" + comp.Name())
+			}
 			listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
 				req := map[string]interface{}{
 					"from":     peerId.String(),
-					"protocol": m.Protocol,
+					"protocol": protocolId,
 				}
 				if readContents {
 					if raw {
@@ -466,7 +473,6 @@ func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.C
 				log.WithFields(logrus.Fields{
 					"req_id":   key,
 					"peer":     req.From.String(),
-					"protocol": m.Protocol,
 				}).Infof("Closed request.")
 			},
 		}
