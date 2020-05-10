@@ -249,7 +249,7 @@ func (h *chReqHandler) RawRequest() ([]byte, error) {
 		return nil, h.invalidInputErr
 	}
 	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(h.r); err != nil {
+	if _, err := buf.ReadFrom(io.LimitReader(h.r, int64(h.reqLen))); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
