@@ -2,220 +2,242 @@ package actor
 
 import (
 	"context"
-	"encoding/hex"
+	"errors"
+	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 )
 
 type Dv5State struct {
 	Dv5Node dv5.Discv5
 }
 
-func (r *Actor) InitDv5Cmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "dv5",
-		Short: "Manage Ethereum Discv5",
-	}
+type Dv5Cmd struct {
+	*Actor    `ask:"-"`
+	log       logrus.FieldLogger
+	*Dv5State `ask:"-"`
+}
 
-	noDv5 := func(cmd *cobra.Command) bool {
-		if r.Dv5State.Dv5Node == nil {
-			log.Error("REPL must have initialized discv5. Try 'dv5 start'")
-			return true
+func (c *Dv5Cmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
+	}
+	switch args[0] {
+	case "sleep":
+		cmd = &DebugSleepCmd{
+			Actor: c.Actor,
+			log:   c.log,
 		}
-		return false
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
 	}
+	return cmd, args[1:], nil
+}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "start [<bootstrap-addr> [...]]",
-		Short: "Start discv5.",
-		Long:  "Start discv5.",
-		Args:  cobra.ArbitraryArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			_, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			if r.IP == nil {
-				log.Error("Host has no IP yet. Get with 'host listen'")
-				return
-			}
-			if r.Dv5State.Dv5Node != nil {
-				log.Errorf("Already have dv5 open at %s", r.Dv5State.Dv5Node.Self().String())
-				return
-			}
-			bootNodes := make([]*enode.Node, 0, len(args))
-			for i := 1; i < len(args); i++ {
-				dv5Addr, err := addrutil.ParseEnrOrEnode(args[i])
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				bootNodes = append(bootNodes, dv5Addr)
-			}
-			var err error
-			r.Dv5State.Dv5Node, err = dv5.NewDiscV5(log, r.IP, r.UdpPort, r.PrivKey, bootNodes)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.Info("Started discv5")
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "stop",
-		Short: "Stop discv5",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			r.Dv5State.Dv5Node.Close()
-			r.Dv5State.Dv5Node = nil
-			log.Info("Stopped discv5")
-		},
-	})
+func (c *Dv5Cmd) Help() string {
+	return "For debugging purposes" // TODO list subcommands
+}
 
-	printLookupResult := func(nodes []*enode.Node) {
-		enrs := make([]string, 0, len(nodes))
-		for _, v := range nodes {
-			enrs = append(enrs, v.String())
+type Dv5StartCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func (c *Dv5StartCmd) Help() string {
+	return "Start discv5."
+}
+
+func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
+	_, err := c.Host()
+	if err != nil {
+		return err
+	}
+	if c.IP == nil {
+		return errors.New("Host has no IP yet. Get with 'host listen'")
+	}
+	if c.Dv5State.Dv5Node != nil {
+		return fmt.Errorf("Already have dv5 open at %s", c.Dv5State.Dv5Node.Self().String())
+	}
+	bootNodes := make([]*enode.Node, 0, len(args))
+	for i := 1; i < len(args); i++ {
+		dv5Addr, err := addrutil.ParseEnrOrEnode(args[i])
+		if err != nil {
+			return err
 		}
-		log.WithField("nodes", enrs).Infof("Lookup complete")
+		bootNodes = append(bootNodes, dv5Addr)
+	}
+	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.log, c.IP, c.UdpPort, c.PrivKey, bootNodes)
+	if err != nil {
+		return err
+	}
+	log.Info("Started discv5")
+	return nil
+}
+
+var NoDv5Err = errors.New("REPL must have initialized discv5. Try 'dv5 start'")
+
+type Dv5StopCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func (c *Dv5StopCmd) Help() string {
+	return "Stop discv5"
+}
+
+func (c *Dv5StopCmd) Run(ctx context.Context, args ...string) error {
+	if c.Dv5State.Dv5Node == nil {
+		return NoDv5Err
+	}
+	c.Dv5State.Dv5Node.Close()
+	c.Dv5State.Dv5Node = nil
+	log.Info("Stopped discv5")
+	return nil
+}
+
+type Dv5PingCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+	Target *EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
+}
+
+func (c *Dv5PingCmd) Help() string {
+	return "Run discv5-ping"
+}
+
+func (c *Dv5PingCmd) Run(ctx context.Context, args ...string) error {
+	if c.Dv5State.Dv5Node == nil {
+		return NoDv5Err
+	}
+	if err := c.Dv5State.Dv5Node.Ping(c.Target.Enode); err != nil {
+		return fmt.Errorf("Failed to ping: %v", err)
+	}
+	c.log.Infof("Successfully pinged")
+	return nil
+}
+
+type Dv5ResolveCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+	Target *EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
+}
+
+func (c *Dv5ResolveCmd) Help() string {
+	return "Resolve target address and try to find latest record for it."
+}
+
+func (c *Dv5ResolveCmd) Run(ctx context.Context, args ...string) error {
+	if c.Dv5State.Dv5Node == nil {
+		return NoDv5Err
+	}
+	resolved := c.Dv5State.Dv5Node.Resolve(c.Target.Enode)
+	if resolved != nil {
+		return fmt.Errorf("Failed to resolve %s, nil result", c.Target.String())
+	}
+	c.log.WithField("enr", resolved.String()).Infof("Successfully resolved")
+	return nil
+}
+
+type Dv5RequestCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+	Target *EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
+}
+
+func (c *Dv5RequestCmd) Help() string {
+	return "Request target address directly."
+}
+
+func (c *Dv5RequestCmd) Run(ctx context.Context, args ...string) error {
+	if c.Dv5State.Dv5Node == nil {
+		return NoDv5Err
+	}
+	enrRes, err := c.Dv5State.Dv5Node.RequestENR(c.Target.Enode)
+	if err != nil {
+		return err
+	}
+	c.log.WithField("enr", enrRes.String()).Infof("Successfully got ENR for node")
+	return nil
+}
+
+type Dv5LookupCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+	Target *NodeIDFlexibleFlag `ask:"<target>" help:"Target ENR/enode/node-id"`
+}
+
+func (c *Dv5LookupCmd) Help() string {
+	return "Get list of nearby nodes. If no target node is provided, then find nodes nearby to self."
+}
+
+func (c *Dv5LookupCmd) Run(ctx context.Context, args ...string) error {
+	if c.Dv5State.Dv5Node == nil {
+		return NoDv5Err
+	}
+	if c.Target.ID == (enode.ID{}) {
+		c.Target.ID = c.Dv5State.Dv5Node.Self().ID()
 	}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "ping <target node: enode address or ENR (url-base64)>",
-		Short: "Run discv5-ping",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			target, err := addrutil.ParseEnrOrEnode(args[0])
-			if err != nil {
-				log.Error(err)
-			}
-			if err := r.Dv5State.Dv5Node.Ping(target); err != nil {
-				log.Errorf("Failed to ping: %v", err)
-				return
-			}
-			log.Infof("Successfully pinged")
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "resolve <target node: enode address or ENR (url-base64)>",
-		Short: "Resolve target address and try to find latest record for it.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			target, err := addrutil.ParseEnrOrEnode(args[0])
-			if err != nil {
-				log.Error(err)
-			}
-			resolved := r.Dv5State.Dv5Node.Resolve(target)
-			if resolved != nil {
-				log.Errorf("Failed to resolve %s, nil result", target.String())
-				return
-			}
-			log.WithField("enr", resolved.String()).Infof("Successfully resolved")
-		},
-	})
-
-	cmd.AddCommand(&cobra.Command{
-		Use:   "get-enr <target node: enode address or ENR (url-base64)>",
-		Short: "Resolve target address and try to find latest record for it.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			target, err := addrutil.ParseEnrOrEnode(args[0])
-			if err != nil {
-				log.Error(err)
-			}
-			enrRes, err := r.Dv5State.Dv5Node.RequestENR(target)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.WithField("enr", enrRes.String()).Infof("Successfully got ENR for node")
-		},
-	})
-
-	lookupCmd := &cobra.Command{
-		Use:   "lookup [target node: hex node ID, enode address or ENR (url-base64)]",
-		Short: "Get list of nearby nodes. If no target node is provided, then find nodes nearby to self.",
-		Args:  cobra.RangeArgs(0, 1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			target := r.Dv5State.Dv5Node.Self().ID()
-			if len(args) > 0 {
-				if n, err := addrutil.ParseEnrOrEnode(args[0]); err != nil {
-					if h, err := hex.DecodeString(args[0]); err != nil {
-						log.Error("provided target node is not a valid node ID, enode address or ENR")
-						return
-					} else {
-						if len(h) != 32 {
-							log.Error("hex node ID is not 32 bytes")
-							return
-						} else {
-							copy(target[:], h)
-						}
-					}
-				} else {
-					target = n.ID()
-				}
-			}
-			printLookupResult(r.Dv5State.Dv5Node.Lookup(target))
-		},
+	res := c.Dv5State.Dv5Node.Lookup(c.Target.ID)
+	enrs := make([]string, 0, len(res))
+	for _, v := range res {
+		enrs = append(enrs, v.String())
 	}
-	cmd.AddCommand(lookupCmd)
+	c.log.WithField("nodes", enrs).Infof("Lookup complete")
+	return nil
+}
 
-	randomCommand := &cobra.Command{
-		Use:   "lookup-random",
-		Short: "Get random multi addrs, keep going until stopped",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			randomNodes := r.Dv5State.Dv5Node.RandomNodes()
-			log.Info("Started looking for random nodes")
+type Dv5LookupRandomCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
 
-			go func() {
-				<-ctx.Done()
-				randomNodes.Close()
-			}()
-			for {
-				if !randomNodes.Next() {
-					break
-				}
-				res := randomNodes.Node()
-				log.WithField("node", res.String()).Infof("Got random node")
-			}
-			log.Info("Stopped looking for random nodes")
-		},
+func (c *Dv5LookupRandomCmd) Help() string {
+	return "Get random multi addrs, keep going until stopped"
+}
+
+func (c *Dv5LookupRandomCmd) Run(ctx context.Context, args ...string) error {
+	if c.Dv5State.Dv5Node == nil {
+		return NoDv5Err
 	}
-	cmd.AddCommand(randomCommand)
+	randomNodes := c.Dv5State.Dv5Node.RandomNodes()
+	log.Info("Started looking for random nodes")
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "self",
-		Short: "get local discv5 ENR",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if noDv5(cmd) {
-				return
-			}
-			log.WithField("enr", r.Dv5State.Dv5Node.Self()).Infof("local dv5 node")
-		},
-	})
-	return cmd
+	go func() {
+		<-ctx.Done()
+		randomNodes.Close()
+	}()
+	for {
+		if !randomNodes.Next() {
+			break
+		}
+		res := randomNodes.Node()
+		c.log.WithField("node", res.String()).Infof("Got random node")
+	}
+	log.Info("Stopped looking for random nodes")
+	return nil
+}
+
+type Dv5SelfCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func DefaultDv5SelfCmd(a *Actor, log logrus.FieldLogger) *Dv5SelfCmd {
+	return &Dv5SelfCmd{Actor: a, log: log}
+}
+
+func (c *Dv5SelfCmd) Help() string {
+	return "get local discv5 ENR"
+}
+
+func (c *Dv5SelfCmd) Run(ctx context.Context, args ...string) error {
+	if c.Dv5State.Dv5Node == nil {
+		return NoDv5Err
+	}
+	c.log.WithField("enr", c.Dv5State.Dv5Node.Self()).Infof("local dv5 node")
+	return nil
 }

@@ -35,42 +35,15 @@ func (c *HostCmd) Get(ctx context.Context, args ...string) (cmd interface{}, rem
 	}
 	switch args[0] {
 	case "start":
-		cmd = &HostStartCmd{
-			Actor:            c.Actor,
-			log:              c.log,
-			PrivKeyStr:       "",
-			TransportsStrArr: []string{"tcp"},
-			MuxStrArr:        []string{"yamux", "mplex"},
-			SecurityStr:      "secio",
-			RelayEnabled:     false,
-			LoPeers:          15,
-			HiPeers:          20,
-			GracePeriodMs:    20_000,
-			NatEnabled:       true,
-		}
+		cmd = DefaultHostStartCmd(c.Actor, c.log)
 	case "stop":
-		cmd = &HostStopCmd{
-			Actor: c.Actor,
-			log:   c.log,
-		}
+		cmd = (*HostStopCmd)(DefaultBasicCmd(c.Actor, c.log))
 	case "view":
-		cmd = &HostViewCmd{
-			Actor: c.Actor,
-			log:   c.log,
-		}
+		cmd = (*HostViewCmd)(DefaultBasicCmd(c.Actor, c.log))
 	case "listen":
-		cmd = &HostListenCmd{
-			Actor:   c.Actor,
-			log:     c.log,
-			IP:      nil,
-			TcpPort: 9000,
-			UdpPort: 9000,
-		}
+		cmd = DefaultHostListenCmd(c.Actor, c.log)
 	case "event":
-		cmd = &HostEventCmd{
-			Actor: c.Actor,
-			log:   c.log,
-		}
+		cmd = (*HostEventCmd)(DefaultBasicCmd(c.Actor, c.log))
 	default:
 		return nil, args, fmt.Errorf("unrecognized command: %v", args)
 	}
@@ -89,6 +62,22 @@ type HostStartCmd struct {
 	HiPeers          int      `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
 	GracePeriodMs    int      `ask:"--peer-grace-period" help:"Time in milliseconds to grace a peer from being trimmed"`
 	NatEnabled       bool     `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
+}
+
+func DefaultHostStartCmd(a *Actor, log logrus.FieldLogger) *HostStartCmd {
+	return &HostStartCmd{
+		Actor:            a,
+		log:              log,
+		PrivKeyStr:       "",
+		TransportsStrArr: []string{"tcp"},
+		MuxStrArr:        []string{"yamux", "mplex"},
+		SecurityStr:      "secio",
+		RelayEnabled:     false,
+		LoPeers:          15,
+		HiPeers:          20,
+		GracePeriodMs:    20_000,
+		NatEnabled:       true,
+	}
 }
 
 func (c *HostStartCmd) Help() string {
@@ -180,10 +169,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-type HostStopCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
-}
+type HostStopCmd BasicCmd
 
 func (c *HostStopCmd) Help() string {
 	return "Stop the host node."
@@ -212,6 +198,15 @@ type HostListenCmd struct {
 
 	TcpPort uint16 `ask:"--tcp" help:"If no tcp port is specified, it defaults to 9000."`
 	UdpPort uint16 `ask:"--udp" help:"If no udp port is specified (= 0), UDP equals TCP."`
+}
+
+func DefaultHostListenCmd(a *Actor, log logrus.FieldLogger) *HostListenCmd {
+	return &HostListenCmd{
+		Actor:   a,
+		log:     log,
+		IP:      nil,
+		TcpPort: 9000,
+		UdpPort: 9000}
 }
 
 func (c *HostListenCmd) Help() string {
@@ -279,10 +274,7 @@ func (c *HostListenCmd) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-type HostViewCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
-}
+type HostViewCmd BasicCmd
 
 func (c *HostViewCmd) Help() string {
 	return "View local peer ID, listening addresses, etc."
@@ -305,10 +297,7 @@ func (c *HostViewCmd) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-type HostEventCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
-}
+type HostEventCmd BasicCmd
 
 func (c *HostEventCmd) Help() string {
 	return "Get notified of specific events, as long as the command runs."

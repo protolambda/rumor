@@ -19,10 +19,7 @@ func (c *DebugCmd) Get(ctx context.Context, args ...string) (cmd interface{}, re
 	}
 	switch args[0] {
 	case "sleep":
-		cmd = &DebugSleepCmd{
-			Actor: c.Actor,
-			log:   c.log,
-		}
+		cmd = DefaultDebugSleepCmd(c.Actor, c.log)
 	default:
 		return nil, args, fmt.Errorf("unrecognized command: %v", args)
 	}
@@ -37,6 +34,10 @@ type DebugSleepCmd struct {
 	*Actor `ask:"-"`
 	log    logrus.FieldLogger
 	Ms     uint64 `ask:"<ms>" help:"How long to sleep, in milliseconds"`
+}
+
+func DefaultDebugSleepCmd(a *Actor, log logrus.FieldLogger) *DebugSleepCmd {
+	return &DebugSleepCmd{Actor: a, log: log}
 }
 
 func (c *DebugSleepCmd) Help() string {

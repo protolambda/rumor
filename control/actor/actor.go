@@ -9,8 +9,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/protolambda/rumor/chain"
 	"github.com/protolambda/rumor/p2p/addrutil"
-	"github.com/protolambda/rumor/p2p/peering/dv5"
-	"github.com/protolambda/rumor/p2p/peering/kad"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -34,7 +32,7 @@ type Actor struct {
 	PeerMetadataState PeerMetadataState
 
 	GlobalChains chain.Chains
-	ChainState  ChainState
+	ChainState   ChainState
 
 	Dv5State    Dv5State
 	KadState    KadState
@@ -43,6 +41,15 @@ type Actor struct {
 
 	ActorCtx    context.Context
 	actorCancel context.CancelFunc
+}
+
+type BasicCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func DefaultBasicCmd(a *Actor, log logrus.FieldLogger) *BasicCmd {
+	return &BasicCmd{Actor: a, log: log}
 }
 
 func NewActor() *Actor {

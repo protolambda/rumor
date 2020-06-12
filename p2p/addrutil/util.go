@@ -109,14 +109,18 @@ func ParseEnr(v string) (*enr.Record, error) {
 	return &record, nil
 }
 
+func ParseEnode(v string) (*enode.Node, error) {
+	addr := new(enode.Node)
+	err := addr.UnmarshalText([]byte(v))
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
 func ParseEnrOrEnode(v string) (*enode.Node, error) {
 	if strings.HasPrefix(v, "enode://") {
-		addr := new(enode.Node)
-		err := addr.UnmarshalText([]byte(v))
-		if err != nil {
-			return nil, err
-		}
-		return addr, nil
+		return ParseEnode(v)
 	} else {
 		enrAddr, err := ParseEnr(v)
 		if err != nil {
@@ -128,6 +132,38 @@ func ParseEnrOrEnode(v string) (*enode.Node, error) {
 			return nil, err
 		}
 		return enodeAddr, nil
+	}
+}
+
+func ParseNodeID(v string) (enode.ID, error) {
+	if h, err := hex.DecodeString(v); err != nil {
+		return enode.ID{}, fmt.Errorf("provided target node is not a valid node ID: %s", v)
+	} else {
+		if len(h) != 32 {
+			return enode.ID{}, fmt.Errorf("hex node ID is not 32 bytes: %s", v)
+		} else {
+			var out enode.ID
+			copy(out[:], h)
+			return out, nil
+		}
+	}
+}
+
+func ParseNodeIDOrEnrOrEnode(v string) (enode.ID, error) {
+	if h, err := hex.DecodeString(v); err != nil {
+		en, err := ParseEnrOrEnode(v)
+		if err != nil {
+			return enode.ID{}, fmt.Errorf("provided target node is not a valid node ID, enode address or ENR: %s", v)
+		}
+		return en.ID(), nil
+	} else {
+		if len(h) != 32 {
+			return enode.ID{}, fmt.Errorf("hex node ID is not 32 bytes: %s", v)
+		} else {
+			var out enode.ID
+			copy(out[:], h)
+			return out, nil
+		}
 	}
 }
 
