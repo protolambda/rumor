@@ -3,6 +3,7 @@ package actor
 import (
 	"context"
 	"crypto/ecdsa"
+	"errors"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -78,13 +79,12 @@ func (r *Actor) Cmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command 
 }
 
 // shortcut to check if there is a libp2p host available, and error-log if not available.
-func (r *Actor) Host(log logrus.FieldLogger) (h host.Host, ok bool) {
+func (r *Actor) Host() (h host.Host, err error) {
 	h = r.P2PHost
 	if h == nil {
-		log.Error("REPL must have initialized Libp2p host. Try 'host start'")
-		return nil, false
+		return nil, errors.New("REPL must have initialized Libp2p host. Try 'host start'")
 	}
-	return h, true
+	return h, nil
 }
 
 func (r *Actor) GetEnr() *enr.Record {

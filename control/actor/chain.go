@@ -24,6 +24,15 @@ func (r *Actor) InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra
 
 	/*
 	 TODO chain cmd
+	# TODO: new commands
+	  chain
+	    switch <chain name>  # Change actor to a different chain
+	    create <chain name> <genesis>
+	    copy <chain name>  # fork the chain by creating a copy of it
+	    hot
+	      view [anchor root]
+	    cold
+	      view <start> <stop>
 
 	    block
 	      import <root>  # import block (reference to block db)

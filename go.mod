@@ -3,13 +3,10 @@ module github.com/protolambda/rumor
 go 1.13
 
 require (
-	github.com/allegro/bigcache v1.2.1 // indirect
-	github.com/aristanetworks/goarista v0.0.0-20200214154357-2151774b0d85 // indirect
 	github.com/btcsuite/btcd v0.20.1-beta
 	github.com/chzyer/logex v1.1.10 // indirect
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1 // indirect
-	github.com/elastic/gosigar v0.10.5 // indirect
 	github.com/ethereum/go-ethereum v1.9.13
 	github.com/golang/snappy v0.0.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
@@ -30,12 +27,13 @@ require (
 	github.com/multiformats/go-multiaddr v0.2.0
 	github.com/protolambda/zrnt v0.11.1
 	github.com/protolambda/zssz v0.1.4
-	github.com/protolambda/ztyp v0.0.0
+	github.com/protolambda/ztyp v0.0.1
 	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/cobra v0.0.5
+	github.com/protolambda/ask v0.0.1
 )
 
 replace (
 	github.com/protolambda/zrnt => ../zrnt
 	github.com/protolambda/ztyp => ../ztyp
+	github.com/protolambda/ask => ../ask
 )

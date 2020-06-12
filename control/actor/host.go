@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
@@ -18,301 +19,305 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"net"
 	"strings"
 	"time"
 )
 
-func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "host",
-		Short: "Manage host",
+type HostCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func (c *HostCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
 	}
-	var privKeyStr string
-	var transportsStrArr []string
-	var muxStrArr []string
-	var securityStr string
-	var relayEnabled bool
-	var loPeers, hiPeers int
-	var gracePeriodMs int
-	var natEnabled bool
+	switch args[0] {
+	case "start":
+		cmd = &HostStartCmd{
+			Actor:            c.Actor,
+			log:              c.log,
+			PrivKeyStr:       "",
+			TransportsStrArr: []string{"tcp"},
+			MuxStrArr:        []string{"yamux", "mplex"},
+			SecurityStr:      "secio",
+			RelayEnabled:     false,
+			LoPeers:          15,
+			HiPeers:          20,
+			GracePeriodMs:    20_000,
+			NatEnabled:       true,
+		}
+	case "stop":
+		cmd = &HostStopCmd{
+			Actor: c.Actor,
+			log:   c.log,
+		}
+	case "view":
+		cmd = &HostViewCmd{
+			Actor: c.Actor,
+			log:   c.log,
+		}
+	case "listen":
+		cmd = &HostListenCmd{
+			Actor:   c.Actor,
+			log:     c.log,
+			IP:      nil,
+			TcpPort: 9000,
+			UdpPort: 9000,
+		}
+	case "event":
+		cmd = &HostEventCmd{
+			Actor: c.Actor,
+			log:   c.log,
+		}
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+	}
+	return cmd, args[1:], nil
+}
 
-	startCmd := &cobra.Command{
-		Use:   "start",
-		Short: "Start the host node. See flags for security, transport, mux etc. options",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			r.hLock.Lock()
-			defer r.hLock.Unlock()
-			if r.P2PHost != nil {
-				log.Error("Already have a host open.")
-				return
-			}
-			{
-				if privKeyStr == "" { // generate new private key if non was specified
-					var err error
-					r.PrivKey, _, err = crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
-					if err != nil {
-						log.Error(err)
-						return
-					}
-					p, err := r.PrivKey.Raw()
-					if err != nil {
-						log.Error(err)
-						return
-					}
-					log.WithField("priv", hex.EncodeToString(p)).Info("Generated random Secp256k1 private key")
-				} else {
-					priv, err := addrutil.ParsePrivateKey(privKeyStr)
-					if err != nil {
-						log.Error(err)
-						return
-					}
-					r.PrivKey = (*crypto.Secp256k1PrivateKey)(priv)
-				}
-			}
-			hostOptions := make([]libp2p.Option, 0)
+type HostStartCmd struct {
+	*Actor           `ask:"-"`
+	log              logrus.FieldLogger
+	PrivKeyStr       string   `ask:"--priv" help:"hex-encoded RSA private key for libp2p host. Random if none is specified."`
+	TransportsStrArr []string `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
+	MuxStrArr        []string `ask:"--mux" help:"Multiplexers to use"`
+	SecurityStr      string   `ask:"--security" help:"Security to use. Options: secio, none"`
+	RelayEnabled     bool     `ask:"--relay" help:"enable relayer functionality"`
+	LoPeers          int      `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
+	HiPeers          int      `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
+	GracePeriodMs    int      `ask:"--peer-grace-period" help:"Time in milliseconds to grace a peer from being trimmed"`
+	NatEnabled       bool     `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
+}
 
-			for _, v := range transportsStrArr {
-				v = strings.ToLower(strings.TrimSpace(v))
-				switch v {
-				case "tcp":
-					hostOptions = append(hostOptions, libp2p.Transport(tcp.NewTCPTransport))
-				case "ws":
-					hostOptions = append(hostOptions, libp2p.Transport(ws.New))
-				default:
-					log.Errorf("could not recognize transport %s", v)
-					return
-				}
-			}
+func (c *HostStartCmd) Help() string {
+	return "Start the host node. See flags for security, transport, mux etc. options"
+}
 
-			for _, v := range muxStrArr {
-				v = strings.ToLower(strings.TrimSpace(v))
-				switch v {
-				case "yamux":
-					hostOptions = append(hostOptions, libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport))
-				case "mplex":
-					hostOptions = append(hostOptions, libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport))
-				default:
-					log.Errorf("could not recognize mux %s", v)
-					return
-				}
-			}
-
-			{
-				switch securityStr {
-				case "none":
-					// no security, for debugging etc.
-				case "secio":
-					hostOptions = append(hostOptions, libp2p.Security(secio.ID, secio.New))
-				default:
-					log.Errorf("could not recognize security %s", securityStr)
-					return
-				}
-			}
-
-			if natEnabled {
-				hostOptions = append(hostOptions, libp2p.NATPortMap())
-			}
-
-			if relayEnabled {
-				hostOptions = append(hostOptions, libp2p.EnableRelay())
-			}
-
-			hostOptions = append(hostOptions,
-				libp2p.Identity(r.PrivKey),
-				libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
-				libp2p.ConnectionManager(connmgr.NewConnManager(loPeers, hiPeers, time.Millisecond*time.Duration(gracePeriodMs))),
-			)
-			// Not the command ctx, we want the host to stay open after the command.
-			h, err := libp2p.New(r.ActorCtx, hostOptions...)
+func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
+	c.hLock.Lock()
+	defer c.hLock.Unlock()
+	if c.P2PHost != nil {
+		return errors.New("Already have a host open.")
+	}
+	{
+		if c.PrivKeyStr == "" { // generate new private key if non was specified
+			var err error
+			c.PrivKey, _, err = crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
 			if err != nil {
-				log.Error(err)
-				return
+				return err
 			}
-			r.P2PHost = h
-		},
-	}
-	startCmd.Flags().StringVar(&privKeyStr, "priv-key", "", "hex-encoded RSA private key for libp2p host. Random if none is specified.")
-	startCmd.Flags().StringArrayVar(&muxStrArr, "mux", []string{"yamux", "mplex"}, "Multiplexers to use")
-	startCmd.Flags().StringArrayVar(&transportsStrArr, "transports", []string{"tcp"}, "Transports to use. Options: tcp, ws")
-	startCmd.Flags().StringVar(&securityStr, "security", "secio", "Security to use. Options: secio, none")
-	startCmd.Flags().BoolVar(&relayEnabled, "relay", false, "enable relayer functionality")
-	startCmd.Flags().BoolVar(&natEnabled, "nat", true, "enable nat address discovery (upnp/pmp)")
-	startCmd.Flags().IntVar(&loPeers, "lo-peers", 15, "low-water for connection manager to trim peer count to")
-	startCmd.Flags().IntVar(&hiPeers, "hi-peers", 20, "high-water for connection manager to trim peer count from")
-	startCmd.Flags().IntVar(&gracePeriodMs, "peer-grace-period", 20_000, "Time in milliseconds to grace a peer from being trimmed")
-
-	cmd.AddCommand(startCmd)
-
-	stopCmd := &cobra.Command{
-		Use:   "stop",
-		Short: "Stop the host node.",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			r.hLock.Lock()
-			defer r.hLock.Unlock()
-			if r.P2PHost == nil {
-				log.Error("No host was open.")
-				return
-			}
-			err := r.P2PHost.Close()
+			p, err := c.PrivKey.Raw()
 			if err != nil {
-				log.Error(err)
-			} else {
-				log.Info("Successfully closed host")
+				return err
 			}
-			r.P2PHost = nil
-		},
+			c.log.WithField("priv", hex.EncodeToString(p)).Info("Generated random Secp256k1 private key")
+		} else {
+			priv, err := addrutil.ParsePrivateKey(c.PrivKeyStr)
+			if err != nil {
+				return err
+			}
+			c.PrivKey = (*crypto.Secp256k1PrivateKey)(priv)
+		}
 	}
-	cmd.AddCommand(stopCmd)
+	hostOptions := make([]libp2p.Option, 0)
 
-	printEnr := func(cmd *cobra.Command) {
-		enrStr, err := addrutil.EnrToString(r.GetEnr())
+	for _, v := range c.TransportsStrArr {
+		v = strings.ToLower(strings.TrimSpace(v))
+		switch v {
+		case "tcp":
+			hostOptions = append(hostOptions, libp2p.Transport(tcp.NewTCPTransport))
+		case "ws":
+			hostOptions = append(hostOptions, libp2p.Transport(ws.New))
+		default:
+			return fmt.Errorf("could not recognize transport %s", v)
+		}
+	}
+
+	for _, v := range c.MuxStrArr {
+		v = strings.ToLower(strings.TrimSpace(v))
+		switch v {
+		case "yamux":
+			hostOptions = append(hostOptions, libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport))
+		case "mplex":
+			hostOptions = append(hostOptions, libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport))
+		default:
+			return fmt.Errorf("could not recognize mux %s", v)
+		}
+	}
+
+	{
+		switch c.SecurityStr {
+		case "none":
+			// no security, for debugging etc.
+		case "secio":
+			hostOptions = append(hostOptions, libp2p.Security(secio.ID, secio.New))
+		default:
+			return fmt.Errorf("could not recognize security %s", c.SecurityStr)
+		}
+	}
+
+	if c.NatEnabled {
+		hostOptions = append(hostOptions, libp2p.NATPortMap())
+	}
+
+	if c.RelayEnabled {
+		hostOptions = append(hostOptions, libp2p.EnableRelay())
+	}
+
+	hostOptions = append(hostOptions,
+		libp2p.Identity(c.PrivKey),
+		libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
+		libp2p.ConnectionManager(connmgr.NewConnManager(c.LoPeers, c.HiPeers, time.Millisecond*time.Duration(c.GracePeriodMs))),
+	)
+	// Not the command ctx, we want the host to stay open after the command.
+	h, err := libp2p.New(c.ActorCtx, hostOptions...)
+	if err != nil {
+		return err
+	}
+	c.P2PHost = h
+	return nil
+}
+
+type HostStopCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func (c *HostStopCmd) Help() string {
+	return "Stop the host node."
+}
+
+func (c *HostStopCmd) Run(ctx context.Context, args ...string) error {
+	c.hLock.Lock()
+	defer c.hLock.Unlock()
+	if c.P2PHost == nil {
+		return errors.New("No host was open.")
+	}
+	err := c.P2PHost.Close()
+	if err != nil {
+		return err
+	} else {
+		c.log.Info("Successfully closed host")
+	}
+	c.P2PHost = nil
+	return nil
+}
+
+type HostListenCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+	IP     net.IP `ask:"--ip" help:"If no IP is specified, network interfaces are checked for one."`
+
+	TcpPort uint16 `ask:"--tcp" help:"If no tcp port is specified, it defaults to 9000."`
+	UdpPort uint16 `ask:"--udp" help:"If no udp port is specified (= 0), UDP equals TCP."`
+}
+
+func (c *HostListenCmd) Help() string {
+	return "Start listening on given address (see option flags)."
+}
+
+func (c *HostListenCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	// hack to get a non-loopback address, to be improved.
+	if c.IP == nil {
+		ifaces, err := net.Interfaces()
 		if err != nil {
-			log.Error(err)
-			return
+			return err
 		}
-		log.WithField("enr", enrStr).Info("ENR") // TODO put all data in fields
-	}
-
-	{
-		var ipStr string
-		var tcpPort, udpPort uint16
-		listenCmd := &cobra.Command{
-			Use:   "listen",
-			Short: "Start listening on given address (see option flags).",
-			Args:  cobra.NoArgs,
-			Run: func(cmd *cobra.Command, args []string) {
-				h, hasHost := r.Host(log)
-				if !hasHost {
-					return
-				}
-				ip := net.ParseIP(ipStr)
-				// hack to get a non-loopback address, to be improved.
-				if ip == nil {
-					ifaces, err := net.Interfaces()
-					if err != nil {
-						log.Error(err)
-						return
-					}
-					for _, i := range ifaces {
-						addrs, err := i.Addrs()
-						if err != nil {
-							log.Error(err)
-							return
-						}
-						for _, addr := range addrs {
-							var addrIP net.IP
-							switch v := addr.(type) {
-							case *net.IPNet:
-								addrIP = v.IP
-							case *net.IPAddr:
-								addrIP = v.IP
-							}
-							if addrIP.IsGlobalUnicast() {
-								ip = addrIP
-							}
-						}
-					}
-				}
-				if ip == nil {
-					log.Error("no IP found")
-					return
-				}
-				ipScheme := "ip4"
-				if ip4 := ip.To4(); ip4 == nil {
-					ipScheme = "ip6"
-				} else {
-					ip = ip4
-				}
-				if udpPort == 0 {
-					udpPort = tcpPort
-				}
-				log.Infof("ip: %s tcp: %d", ipScheme, tcpPort)
-				mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, ip.String(), tcpPort))
-				if err != nil {
-					log.Errorf("could not construct multi addr: %v", err)
-					return
-				}
-				if err := h.Network().Listen(mAddr); err != nil {
-					log.Error(err)
-					return
-				}
-				r.IP = ip
-				r.TcpPort = tcpPort
-				r.UdpPort = udpPort
-				printEnr(cmd)
-			},
-		}
-		listenCmd.Flags().StringVar(&ipStr, "ip", "", "If no IP is specified, network interfaces are checked for one.")
-		listenCmd.Flags().Uint16Var(&tcpPort, "tcp", 9000, "If no tcp port is specified, it defaults to 9000.")
-		listenCmd.Flags().Uint16Var(&udpPort, "udp", 0, "If no udp port is specified (= 0), UDP equals TCP.")
-		cmd.AddCommand(listenCmd)
-	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "view",
-		Short: "View local peer ID, listening addresses, etc.",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
+		for _, i := range ifaces {
+			addrs, err := i.Addrs()
+			if err != nil {
+				return err
 			}
-			log.WithField("peer_id", h.ID()).Info("Peer ID")
-			for _, a := range h.Addrs() {
-				log.Infof("Listening on: %s", a.String())
+			for _, addr := range addrs {
+				var addrIP net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					addrIP = v.IP
+				case *net.IPAddr:
+					addrIP = v.IP
+				}
+				if addrIP.IsGlobalUnicast() {
+					c.IP = addrIP
+				}
 			}
-			log.Infof("Security: %s,  Mux: %s,  Transports: %s,  Relay: %v",
-				strings.ToLower(securityStr),
-				strings.ToLower(strings.Join(muxStrArr, ", ")),
-				strings.ToLower(strings.Join(transportsStrArr, ", ")),
-				relayEnabled)
+		}
+	}
+	if c.IP == nil {
+		return errors.New("no IP found")
+	}
+	ipScheme := "ip4"
+	if ip4 := c.IP.To4(); ip4 == nil {
+		ipScheme = "ip6"
+	} else {
+		c.IP = ip4
+	}
+	if c.UdpPort == 0 {
+		c.UdpPort = c.TcpPort
+	}
+	c.log.Infof("ip: %s tcp: %d", ipScheme, c.TcpPort)
+	mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, c.IP.String(), c.TcpPort))
+	if err != nil {
+		return fmt.Errorf("could not construct multi addr: %v", err)
+	}
+	if err := h.Network().Listen(mAddr); err != nil {
+		return err
+	}
+	c.Actor.IP = c.IP
+	c.Actor.TcpPort = c.TcpPort
+	c.Actor.UdpPort = c.UdpPort
+	enr, err := addrutil.EnrToString(c.GetEnr())
+	if err != nil {
+		return err
+	}
+	c.log.WithField("enr", enr).Info("ENR")
+	return nil
+}
 
-			printEnr(cmd)
-		},
-	})
-	{
-		listenF := func(net network.Network, addr ma.Multiaddr) {
-			log.WithFields(logrus.Fields{"event": "listen_open", "addr": addr.String()}).Debug("opened network listener")
-		}
-		listenCloseF := func(net network.Network, addr ma.Multiaddr) {
-			log.WithFields(logrus.Fields{"event": "listen_close", "addr": addr.String()}).Debug("closed network listener")
-		}
+type HostViewCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
 
-		connectedF := func(net network.Network, conn network.Conn) {
-			log.WithFields(logrus.Fields{
-				"event": "connection_open", "peer": conn.RemotePeer().String(),
-				"direction": fmtDirection(conn.Stat().Direction),
-			}).Debug("new peer connection")
-		}
-		disconnectedF := func(net network.Network, conn network.Conn) {
-			log.WithFields(logrus.Fields{
-				"event": "connection_close", "peer": conn.RemotePeer().String(),
-				"direction": fmtDirection(conn.Stat().Direction),
-			}).Debug("peer disconnected")
-		}
+func (c *HostViewCmd) Help() string {
+	return "View local peer ID, listening addresses, etc."
+}
 
-		openedStreamF := func(net network.Network, str network.Stream) {
-			log.WithFields(logrus.Fields{
-				"event": "stream_open", "peer": str.Conn().RemotePeer().String(),
-				"direction": fmtDirection(str.Stat().Direction),
-				"protocol":  str.Protocol(),
-			}).Debug("opened stream")
-		}
-		closedStreamF := func(net network.Network, str network.Stream) {
-			log.WithFields(logrus.Fields{
-				"event": "stream_close", "peer": str.Conn().RemotePeer().String(),
-				"direction": fmtDirection(str.Stat().Direction),
-				"protocol":  str.Protocol(),
-			}).Debug("closed stream")
-		}
+func (c *HostViewCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	c.log.WithField("peer_id", h.ID()).Info("Peer ID")
+	for _, a := range h.Addrs() {
+		c.log.Infof("Listening on: %s", a.String())
+	}
+	enr, err := addrutil.EnrToString(c.GetEnr())
+	if err != nil {
+		return err
+	}
+	c.log.WithField("enr", enr).Info("ENR")
+	return nil
+}
 
-		cmd.AddCommand(&cobra.Command{
-			Use:   "notify <event-types>...",
-			Short: "Get notified of specific events, as long as the command runs.",
-			Long: `
+type HostEventCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func (c *HostEventCmd) Help() string {
+	return "Get notified of specific events, as long as the command runs."
+}
+
+func (c *HostEventCmd) HelpLong() string {
+	return `
+Args: <event-types>...
+
 Network event notifications. 
 Valid event types: 
  - listen (listen_open listen_close)
@@ -325,60 +330,95 @@ Notification logs will have keys: "event" - one of the above detailed event type
 - "direction": "inbound"/"outbound"/"unknown", for connections and streams
 - "extra": stream/connection extra data
 - "protocol": protocol ID for streams.
-`,
-			Args: cobra.MinimumNArgs(1),
-			Run: func(cmd *cobra.Command, args []string) {
-				h, hasHost := r.Host(log)
-				if !hasHost {
-					return
-				}
-				bundle := &network.NotifyBundle{}
-				for _, notifyType := range args {
-					notifyType = strings.TrimSpace(notifyType)
-					if notifyType == "" {
-						continue
-					}
-					switch notifyType {
-					case "listen_open":
-						bundle.ListenF = listenF
-					case "listen_close":
-						bundle.ListenCloseF = listenCloseF
-					case "connection_open":
-						bundle.ConnectedF = connectedF
-					case "connection_close":
-						bundle.DisconnectedF = disconnectedF
-					case "stream_open":
-						bundle.OpenedStreamF = openedStreamF
-					case "stream_close":
-						bundle.ClosedStreamF = closedStreamF
-					case "listen":
-						bundle.ListenF = listenF
-						bundle.ListenCloseF = listenCloseF
-					case "connection":
-						bundle.ConnectedF = connectedF
-						bundle.DisconnectedF = disconnectedF
-					case "stream":
-						bundle.OpenedStreamF = openedStreamF
-						bundle.ClosedStreamF = closedStreamF
-					case "all":
-						bundle.ListenF = listenF
-						bundle.ListenCloseF = listenCloseF
-						bundle.ConnectedF = connectedF
-						bundle.DisconnectedF = disconnectedF
-						bundle.OpenedStreamF = openedStreamF
-						bundle.ClosedStreamF = closedStreamF
-					default:
-						log.Errorf("unrecognized notification type: %s", notifyType)
-						return
-					}
-				}
-				h.Network().Notify(bundle)
-				<-ctx.Done()
-				h.Network().StopNotify(bundle)
-			},
-		})
+`
+}
+
+func (c *HostEventCmd) listenF(net network.Network, addr ma.Multiaddr) {
+	c.log.WithFields(logrus.Fields{"event": "listen_open", "addr": addr.String()}).Debug("opened network listener")
+}
+
+func (c *HostEventCmd) listenCloseF(net network.Network, addr ma.Multiaddr) {
+	c.log.WithFields(logrus.Fields{"event": "listen_close", "addr": addr.String()}).Debug("closed network listener")
+}
+
+func (c *HostEventCmd) connectedF(net network.Network, conn network.Conn) {
+	c.log.WithFields(logrus.Fields{
+		"event": "connection_open", "peer": conn.RemotePeer().String(),
+		"direction": fmtDirection(conn.Stat().Direction),
+	}).Debug("new peer connection")
+}
+
+func (c *HostEventCmd) disconnectedF(net network.Network, conn network.Conn) {
+	c.log.WithFields(logrus.Fields{
+		"event": "connection_close", "peer": conn.RemotePeer().String(),
+		"direction": fmtDirection(conn.Stat().Direction),
+	}).Debug("peer disconnected")
+}
+
+func (c *HostEventCmd) openedStreamF(net network.Network, str network.Stream) {
+	c.log.WithFields(logrus.Fields{
+		"event": "stream_open", "peer": str.Conn().RemotePeer().String(),
+		"direction": fmtDirection(str.Stat().Direction),
+		"protocol":  str.Protocol(),
+	}).Debug("opened stream")
+}
+
+func (c *HostEventCmd) closedStreamF(net network.Network, str network.Stream) {
+	c.log.WithFields(logrus.Fields{
+		"event": "stream_close", "peer": str.Conn().RemotePeer().String(),
+		"direction": fmtDirection(str.Stat().Direction),
+		"protocol":  str.Protocol(),
+	}).Debug("closed stream")
+}
+
+func (c *HostEventCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
 	}
-	return cmd
+	bundle := &network.NotifyBundle{}
+	for _, notifyType := range args {
+		notifyType = strings.TrimSpace(notifyType)
+		if notifyType == "" {
+			continue
+		}
+		switch notifyType {
+		case "listen_open":
+			bundle.ListenF = c.listenF
+		case "listen_close":
+			bundle.ListenCloseF = c.listenCloseF
+		case "connection_open":
+			bundle.ConnectedF = c.connectedF
+		case "connection_close":
+			bundle.DisconnectedF = c.disconnectedF
+		case "stream_open":
+			bundle.OpenedStreamF = c.openedStreamF
+		case "stream_close":
+			bundle.ClosedStreamF = c.closedStreamF
+		case "listen":
+			bundle.ListenF = c.listenF
+			bundle.ListenCloseF = c.listenCloseF
+		case "connection":
+			bundle.ConnectedF = c.connectedF
+			bundle.DisconnectedF = c.disconnectedF
+		case "stream":
+			bundle.OpenedStreamF = c.openedStreamF
+			bundle.ClosedStreamF = c.closedStreamF
+		case "all":
+			bundle.ListenF = c.listenF
+			bundle.ListenCloseF = c.listenCloseF
+			bundle.ConnectedF = c.connectedF
+			bundle.DisconnectedF = c.disconnectedF
+			bundle.OpenedStreamF = c.openedStreamF
+			bundle.ClosedStreamF = c.closedStreamF
+		default:
+			return fmt.Errorf("unrecognized notification type: %s", notifyType)
+		}
+	}
+	h.Network().Notify(bundle)
+	<-ctx.Done()
+	h.Network().StopNotify(bundle)
+	return nil
 }
 
 func fmtDirection(d network.Direction) string {
