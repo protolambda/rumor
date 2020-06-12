@@ -25,6 +25,7 @@ func (c *Dv5Cmd) Get(ctx context.Context, args ...string) (cmd interface{}, rema
 	if len(args) == 0 {
 		return nil, nil, errors.New("no subcommand specified")
 	}
+	// TODO: when initializing a command, init the Target field
 	switch args[0] {
 	case "sleep":
 		cmd = &DebugSleepCmd{

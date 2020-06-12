@@ -3,15 +3,14 @@ package actor
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -67,424 +66,412 @@ func (r *Responder) AddRequest(req *RequestEntry) RequestKey {
 	return key
 }
 
-func readOptionalComp(cmd *cobra.Command) (reqresp.Compression, error) {
-	if compStr, err := cmd.Flags().GetString("compression"); err != nil {
-		return nil, err
-	} else {
-		switch compStr {
-		case "none", "", "false":
-			// no compression
-			return nil, nil
-		case "snappy":
-			return reqresp.SnappyCompression{}, nil
-		default:
-			return nil, fmt.Errorf("cannot recognize compression '%s'", compStr)
-		}
+type RpcCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func (c *RpcCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
+	}
+	switch args[0] {
+	case "goodbye":
+		cmd = c.Method("goodbye", &c.RPCState.Goodbye, &methods.GoodbyeRPCv1)
+	case "status":
+		cmd = c.Method("status", &c.RPCState.Status, &methods.StatusRPCv1)
+	case "ping":
+		cmd = c.Method("ping", &c.RPCState.Ping, &methods.PingRPCv1)
+	case "metadata":
+		cmd = c.Method("metadata", &c.RPCState.Metadata, &methods.MetaDataRPCv1)
+	case "blocks-by-range":
+		cmd = c.Method("blocks-by-range", &c.RPCState.BlocksByRange, &methods.BlocksByRangeRPCv1)
+	case "blocks-by-root":
+		cmd = c.Method("blocks-by-root", &c.RPCState.BlocksByRoot, &methods.BlocksByRootRPCv1)
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+	}
+	return cmd, args[1:], nil
+}
+
+func (c *RpcCmd) Help() string {
+	return "Manage Eth2 RPC" // TODO list subcommands
+}
+
+func (c *RpcCmd) Method(name string, resp *Responder, method *reqresp.RPCMethod) *RpcMethodCmd {
+	return &RpcMethodCmd{
+		Actor:     c.Actor,
+		log:       c.log,
+		Name:      name,
+		Responder: resp,
+		Method:    method,
 	}
 }
 
-func (r *Actor) InitRpcCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "rpc",
-		Short: "Manage Eth2 RPC",
+type RpcMethodCmd struct {
+	*Actor    `ask:"-"`
+	log       logrus.FieldLogger
+	Name      string
+	Responder *Responder
+	Method    *reqresp.RPCMethod
+}
+
+func (c *RpcMethodCmd) Help() string {
+	return fmt.Sprintf("Manage %s RPC", c.Name)
+}
+
+func (c *RpcMethodCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
 	}
-
-	prepareReqFn := func(cmd *cobra.Command, m *reqresp.RPCMethod) func(peerID peer.ID, reqInput reqresp.RequestInput) {
-		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
-		var maxChunks uint64
-		cmd.Flags().Uint64Var(&maxChunks, "max-chunks", m.DefaultResponseChunkCount, "Max response chunk count, if 0, do not wait for a response at all.")
-		var timeout uint64
-		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds the stream (complete request <> response time). 0 to Disable timeout.")
-		var rawChunks bool
-		cmd.Flags().BoolVar(&rawChunks, "raw", false, "If chunks should be logged as raw hex-encoded byte strings")
-
-		return func(peerID peer.ID, reqInput reqresp.RequestInput) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			sFn := reqresp.NewStreamFn(h.NewStream)
-
-			reqCtx := ctx
-			if timeout != 0 {
-				reqCtx, _ = context.WithTimeout(reqCtx, time.Millisecond*time.Duration(timeout))
-			}
-			comp, err := readOptionalComp(cmd)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			protocolId := m.Protocol
-			if comp != nil {
-				protocolId += protocol.ID("_" + comp.Name())
-			}
-			if err := m.RunRequest(reqCtx, sFn, peerID, comp, reqInput, maxChunks,
-				func(chunk reqresp.ChunkedResponseHandler) error {
-					resultCode := chunk.ResultCode()
-					f := map[string]interface{}{
-						"protocol":    protocolId,
-						"from":        peerID.String(),
-						"chunk_index": chunk.ChunkIndex(),
-						"chunk_size":  chunk.ChunkSize(),
-						"result_code": resultCode,
-					}
-					if rawChunks {
-						bytez, err := chunk.ReadRaw()
-						if err != nil {
-							return err
-						}
-						f["data"] = hex.EncodeToString(bytez)
-					} else {
-						switch resultCode {
-						case reqresp.ServerErrCode, reqresp.InvalidReqCode:
-							msg, err := chunk.ReadErrMsg()
-							if err != nil {
-								return err
-							}
-							f["msg"] = msg
-						case reqresp.SuccessCode:
-							data := m.ResponseChunkCodec.Alloc()
-							if err := chunk.ReadObj(data); err != nil {
-								return err
-							}
-							f["data"] = data
-						default:
-							bytez, err := chunk.ReadRaw()
-							if err != nil {
-								return err
-							}
-							f["data"] = hex.EncodeToString(bytez)
-						}
-					}
-					log.WithField("chunk", f).Info("Received chunk")
-					return nil
-				}); err != nil {
-				log.Errorf("failed request: %v", err)
-			}
+	switch args[0] {
+	case "req":
+		cmd = &RpcMethodReqCmd{
+			RpcMethodCmd: c,
 		}
+	case "listen":
+		cmd = &RpcMethodListenCmd{
+			RpcMethodCmd: c,
+			Timeout:      10 * time.Second,
+			Compression:  CompressionFlag{Compression: reqresp.SnappyCompression{}},
+			Raw:          false,
+			Drop:         c.Method.DefaultResponseChunkCount == 0,
+			Read:         true,
+		}
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+	}
+	return cmd, args[1:], nil
+}
+
+func (c *RpcMethodCmd) checkAndGetReq(reqKeyStr string) (key RequestKey, req *RequestEntry, err error) {
+	reqId, err := strconv.ParseUint(reqKeyStr, 0, 64)
+	if err != nil {
+		return 0, nil, fmt.Errorf("Could not parse request key '%s'", reqKeyStr)
 	}
 
-	makeListenCmd := func(
-		responder *Responder,
-		cmd *cobra.Command,
-		m *reqresp.RPCMethod,
-	) {
-		cmd.Flags().String("compression", "none", "Optional compression. Try 'snappy' for streaming-snappy")
-		var readContents bool
-		cmd.Flags().BoolVar(&readContents, "read", true, "Read the contents of the request.")
-		var drop bool
-		cmd.Flags().BoolVar(&drop, "drop", m.DefaultResponseChunkCount == 0, "Drop the requests, do not queue for a response.")
-		var raw bool
-		cmd.Flags().BoolVar(&raw, "raw", false, "Do not decode the request, look at raw bytes")
-		var timeout uint64
-		cmd.Flags().Uint64Var(&timeout, "timeout", 10_000, "Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout.")
-		cmd.Run = func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			sCtxFn := func() context.Context {
-				if timeout == 0 {
-					return ctx
-				}
-				reqCtx, _ := context.WithTimeout(ctx, time.Millisecond*time.Duration(timeout))
-				return reqCtx
-			}
-			comp, err := readOptionalComp(cmd)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			protocolId := m.Protocol
-			if comp != nil {
-				protocolId += protocol.ID("_" + comp.Name())
-			}
-			listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
-				req := map[string]interface{}{
-					"from":     peerId.String(),
-					"protocol": protocolId,
-				}
-				if readContents {
-					if raw {
-						bytez, err := handler.RawRequest()
-						if err != nil {
-							req["input_err"] = err.Error()
-						} else {
-							req["data"] = hex.EncodeToString(bytez)
-						}
-					} else {
-						reqObj := m.RequestCodec.Alloc()
-						err := handler.ReadRequest(reqObj)
-						if err != nil {
-							req["input_err"] = err.Error()
-						} else {
-							req["data"] = reqObj
-						}
-					}
-				}
+	key = RequestKey(reqId)
+	req = c.Responder.GetRequest(key)
+	if req == nil {
+		return 0, nil, fmt.Errorf("Could not find request corresponding to key '%s'", key)
+	}
+	return key, req, nil
+}
 
-				if drop {
-					log.WithField("req", req).Infof("Received request, dropping it!")
+type RpcMethodReqCmd struct {
+	*RpcMethodCmd `ask:"-"`
+}
+
+func (c *RpcMethodReqCmd) Help() string {
+	return "Make requests"
+}
+
+func (c *RpcMethodReqCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
+	}
+	switch args[0] {
+	case "raw":
+		cmd = &RpcMethodReqRawCmd{
+			RpcMethodReqCmd: c,
+			Timeout:         10 * time.Second,
+			Compression:     CompressionFlag{Compression: reqresp.SnappyCompression{}},
+			MaxChunks:       c.Method.DefaultResponseChunkCount,
+			Raw:             false,
+		}
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+	}
+	return cmd, args[1:], nil
+}
+
+type RpcMethodReqRawCmd struct {
+	*RpcMethodReqCmd `ask:"-"`
+	Timeout          time.Duration   `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
+	Compression      CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	MaxChunks        uint64          `ask:"--max-chunks" help:"Max response chunk count, if 0, do not wait for a response at all."`
+	Raw              bool            `ask:"--raw" help:"If chunks should be logged as raw hex-encoded byte strings"`
+	PeerID           PeerIDFlag      `ask:"<peer-id>" help:"libp2p Peer-ID to request"`
+	Data             BytesHexFlag    `ask:"<data>" help:"Raw uncompressed hex-encoded request data"`
+}
+
+func (c *RpcMethodReqRawCmd) Help() string {
+	return "Make raw requests"
+}
+
+func (c *RpcMethodReqRawCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	sFn := reqresp.NewStreamFn(h.NewStream)
+
+	reqCtx := ctx
+	if c.Timeout != 0 {
+		reqCtx, _ = context.WithTimeout(reqCtx, c.Timeout)
+	}
+
+	protocolId := c.Method.Protocol
+	if c.Compression.Compression != nil {
+		protocolId += protocol.ID("_" + c.Compression.Compression.Name())
+	}
+	return c.Method.RunRequest(reqCtx, sFn, c.PeerID.PeerID, c.Compression.Compression,
+		reqresp.RequestBytesInput(c.Data), c.MaxChunks,
+		func(chunk reqresp.ChunkedResponseHandler) error {
+			resultCode := chunk.ResultCode()
+			f := map[string]interface{}{
+				"protocol":    protocolId,
+				"from":        c.PeerID.PeerID.String(),
+				"chunk_index": chunk.ChunkIndex(),
+				"chunk_size":  chunk.ChunkSize(),
+				"result_code": resultCode,
+			}
+			if c.Raw {
+				bytez, err := chunk.ReadRaw()
+				if err != nil {
+					return err
+				}
+				f["data"] = hex.EncodeToString(bytez)
+			} else {
+				switch resultCode {
+				case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+					msg, err := chunk.ReadErrMsg()
+					if err != nil {
+						return err
+					}
+					f["msg"] = msg
+				case reqresp.SuccessCode:
+					data := c.Method.ResponseChunkCodec.Alloc()
+					if err := chunk.ReadObj(data); err != nil {
+						return err
+					}
+					f["data"] = data
+				default:
+					bytez, err := chunk.ReadRaw()
+					if err != nil {
+						return err
+					}
+					f["data"] = hex.EncodeToString(bytez)
+				}
+			}
+			c.log.WithField("chunk", f).Info("Received chunk")
+			return nil
+		})
+}
+
+type RpcMethodListenCmd struct {
+	*RpcMethodCmd `ask:"-"`
+	Timeout       time.Duration   `ask:"--timeout" help:"Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout"`
+	Compression   CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	Raw           bool            `ask:"--raw" help:"Do not decode the request, look at raw bytes"`
+	Drop          bool            `ask:"--drop" help:"Drop the requests, do not queue for a response."`
+	Read          bool            `ask:"--read" help:"Read the contents of the request."`
+}
+
+func (c *RpcMethodListenCmd) Help() string {
+	return "Listen for new requests"
+}
+
+func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	sCtxFn := func() context.Context {
+		if c.Timeout == 0 {
+			return ctx
+		}
+		reqCtx, _ := context.WithTimeout(ctx, c.Timeout)
+		return reqCtx
+	}
+	protocolId := c.Method.Protocol
+	if c.Compression.Compression != nil {
+		protocolId += protocol.ID("_" + c.Compression.Compression.Name())
+	}
+	listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
+		req := map[string]interface{}{
+			"from":     peerId.String(),
+			"protocol": protocolId,
+		}
+		if c.Read {
+			if c.Raw {
+				bytez, err := handler.RawRequest()
+				if err != nil {
+					req["input_err"] = err.Error()
 				} else {
-					ctx, cancel := context.WithCancel(ctx)
-					reqId := responder.AddRequest(&RequestEntry{
-						From:    peerId,
-						handler: handler,
-						cancel:  cancel,
-					})
-					req["req_id"] = reqId
-
-					log.WithField("req", req).Infof("Received request, queued it to respond to!")
-
-					// Wait for context to stop processing the request (stream will be closed after return)
-					<-ctx.Done()
+					req["data"] = hex.EncodeToString(bytez)
+				}
+			} else {
+				reqObj := c.Method.RequestCodec.Alloc()
+				err := handler.ReadRequest(reqObj)
+				if err != nil {
+					req["input_err"] = err.Error()
+				} else {
+					req["data"] = reqObj
 				}
 			}
-			streamHandler := m.MakeStreamHandler(sCtxFn, comp, listenReq)
-			prot := m.Protocol
-			if comp != nil {
-				prot += protocol.ID("_" + comp.Name())
-			}
-			h.SetStreamHandler(prot, streamHandler)
-			log.WithField("started", true).Infof("Opened listener")
+		}
+
+		if c.Drop {
+			c.log.WithField("req", req).Infof("Received request, dropping it!")
+		} else {
+			ctx, cancel := context.WithCancel(ctx)
+			reqId := c.Responder.AddRequest(&RequestEntry{
+				From:    peerId,
+				handler: handler,
+				cancel:  cancel,
+			})
+			req["req_id"] = reqId
+
+			c.log.WithField("req", req).Infof("Received request, queued it to respond to!")
+
+			// Wait for context to stop processing the request (stream will be closed after return)
 			<-ctx.Done()
-			// TODO unset stream handler?
 		}
 	}
-
-	checkAndGetReq := func(reqKeyStr string, responder *Responder) (key RequestKey, req *RequestEntry, ok bool) {
-		_, hasHost := r.Host(log)
-		if !hasHost {
-			return 0, nil, false
-		}
-		reqId, err := strconv.ParseUint(reqKeyStr, 0, 64)
-		if err != nil {
-			log.Errorf("Could not parse request key '%s'", reqKeyStr)
-			return 0, nil, false
-		}
-
-		key = RequestKey(reqId)
-		req = responder.GetRequest(key)
-		if req == nil {
-			log.Errorf("Could not find request corresponding to key '%s'", key)
-			return 0, nil, false
-		}
-		return key, req, true
+	streamHandler := c.Method.MakeStreamHandler(sCtxFn, c.Compression.Compression, listenReq)
+	prot := c.Method.Protocol
+	if c.Compression.Compression != nil {
+		prot += protocol.ID("_" + c.Compression.Compression.Name())
 	}
+	h.SetStreamHandler(prot, streamHandler)
+	c.log.WithField("started", true).Infof("Opened listener")
+	<-ctx.Done()
+	// TODO unset stream handler?
+	return nil
+}
 
-	decodeByteStr := func(byteStr string) ([]byte, error) {
-		if strings.HasPrefix(byteStr, "0x") {
-			byteStr = byteStr[2:]
-		}
-		return hex.DecodeString(byteStr)
+type RpcMethodRespCmd struct {
+	*RpcMethodCmd `ask:"-"`
+}
+
+func (c *RpcMethodRespCmd) Help() string {
+	return "Respond to requests"
+}
+
+func (c *RpcMethodRespCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
 	}
-
-	makeRawRespChunkCmd := func(
-		responder *Responder,
-		cmd *cobra.Command,
-		doneDefault bool,
-	) {
-		var done bool
-		cmd.Flags().BoolVar(&done, "done", doneDefault, "After writing this chunk, close the response (no more chunks).")
-		var resultCode uint8
-		cmd.Flags().Uint8Var(&resultCode, "result-code", 0, "Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)")
-		cmd.Args = cobra.ExactArgs(2)
-		cmd.Run = func(cmd *cobra.Command, args []string) {
-			key, req, ok := checkAndGetReq(args[0], responder)
-			if !ok {
-				return
-			}
-			byteStr := args[1]
-			bytez, err := decodeByteStr(byteStr)
-			if err != nil {
-				log.Errorf("Data is not a valid hex-string: '%s'", byteStr)
-				return
-			}
-
-			if err := req.handler.WriteRawResponseChunk(bytez); err != nil {
-				log.Error(err)
-				return
-			}
-
-			if done {
-				responder.CloseRequest(key)
-			}
+	switch args[0] {
+	case "chunk":
+		cmd = &RpcMethodRespChunkCmd{
+			RpcMethodRespCmd: c,
 		}
+	case "invalid-request":
+		cmd = &RpcMethodRespErrorCmd{
+			RpcMethodRespCmd: c,
+			Done:             true,
+			ResultCode:       reqresp.InvalidReqCode,
+		}
+	case "server-error":
+		cmd = &RpcMethodRespErrorCmd{
+			RpcMethodRespCmd: c,
+			Done:             true,
+			ResultCode:       reqresp.ServerErrCode,
+		}
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
 	}
+	return cmd, args[1:], nil
+}
 
-	makeInvalidRequestCmd := func(
-		responder *Responder,
-	) *cobra.Command {
-		cmd := &cobra.Command{
-			Use:   "invalid-request <request-ID> <message>",
-			Short: "Respond with an invalid-input message chunk",
-		}
-		var done bool
-		cmd.Flags().BoolVar(&done, "done", true, "After writing this chunk, close the response (no more chunks).")
-		cmd.Args = cobra.ExactArgs(2)
-		cmd.Run = func(cmd *cobra.Command, args []string) {
-			key, req, ok := checkAndGetReq(args[0], responder)
-			if !ok {
-				return
-			}
-			if err := req.handler.WriteInvalidRequestChunk(args[1]); err != nil {
-				log.Error(err)
-				return
-			}
-			if done {
-				responder.CloseRequest(key)
-			}
-		}
-		return cmd
+type RpcMethodRespChunkCmd struct {
+	*RpcMethodRespCmd `ask:"-"`
+}
+
+func (c *RpcMethodRespChunkCmd) Help() string {
+	return "Respond a chunk to a request"
+}
+
+func (c *RpcMethodRespChunkCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
 	}
-
-	makeServerErrorCmd := func(
-		responder *Responder,
-	) *cobra.Command {
-		cmd := &cobra.Command{
-			Use:   "server-error <request-ID> <message>",
-			Short: "Respond with a server-error message chunk",
+	switch args[0] {
+	case "raw":
+		cmd = &RpcMethodRespChunkRawCmd{
+			RpcMethodRespChunkCmd: c,
+			// if there is one normally only one response chunk, then close it right after by default.
+			Done:       c.Method.DefaultResponseChunkCount <= 1,
+			ResultCode: reqresp.SuccessCode,
 		}
-		var done bool
-		cmd.Flags().BoolVar(&done, "done", true, "After writing this chunk, close the response (no more chunks).")
-		cmd.Args = cobra.ExactArgs(2)
-		cmd.Run = func(cmd *cobra.Command, args []string) {
-			key, req, ok := checkAndGetReq(args[0], responder)
-			if !ok {
-				return
-			}
-			if err := req.handler.WriteServerErrorChunk(args[1]); err != nil {
-				log.Error(err)
-				return
-			}
-			if done {
-				responder.CloseRequest(key)
-			}
-		}
-		return cmd
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
 	}
+	return cmd, args[1:], nil
+}
 
-	makeMethodCmd := func(name string, responder *Responder, m *reqresp.RPCMethod) *cobra.Command {
-		methodCmd := &cobra.Command{
-			Use:   name,
-			Short: fmt.Sprintf("Manage %s RPC", name),
-		}
-		// Requests
-		// -----------------------------------
-		reqCmd := &cobra.Command{
-			Use:   "req",
-			Short: "Make requests",
-		}
-		//reqWithCmd := &cobra.Command{
-		//	Use:   "with <peer-ID>",
-		//	Short: "Build and make a request with the given arguments",
-		//}
-		//{ TODO
-		//	reqFn := prepareReqFn(reqWithCmd, m)
-		//	reqWithCmd.Run = func(cmd *cobra.Command, args []string) {
-		//		peerID, err := peer.Decode(args[0])
-		//		if err != nil {
-		//			log.Error(err)
-		//			return
-		//		}
-		//		// TODO parse args/flags into request input
-		//		reqInput := reqresp.RequestSSZInput{Obj: req}
-		//		reqFn(peerID, reqInput)
-		//	}
-		//}
-		reqRawCmd := &cobra.Command{
-			Use:   "raw <peer-ID> <hex-data>",
-			Short: "Make raw requests.",
-			Args:  cobra.ExactArgs(2),
-		}
-		{
-			reqFn := prepareReqFn(reqRawCmd, m)
-			reqRawCmd.Run = func(cmd *cobra.Command, args []string) {
-				peerID, err := peer.Decode(args[0])
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				byteStr := args[1]
-				bytez, err := decodeByteStr(byteStr)
-				if err != nil {
-					log.Errorf("Data is not a valid hex-string: '%s'", byteStr)
-					return
-				}
-				reqInput := reqresp.RequestBytesInput(bytez)
-				reqFn(peerID, reqInput)
-			}
-		}
-		reqCmd.AddCommand(reqRawCmd)
-		methodCmd.AddCommand(reqCmd)
+type RpcMethodRespChunkRawCmd struct {
+	*RpcMethodRespChunkCmd `ask:"-"`
+	Done                   bool                 `ask:"--done" help:"After writing this chunk, close the response (no more chunks)."`
+	ResultCode             reqresp.ResponseCode `ask:"--result-code" help:"Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)"`
+	ReqId                  string               `ask:"<req-id>" help:"the ID of the request to respond to"`
+	Data                   BytesHexFlag         `ask:"<data>" help:"chunk bytes (uncompressed, hex-encoded)"`
+}
 
-		// Listen
-		// -----------------------------------
-		listenCmd := &cobra.Command{
-			Use:   "listen",
-			Short: "Listen for new requests",
-		}
-		makeListenCmd(responder, listenCmd, m)
+func (c *RpcMethodRespChunkRawCmd) Help() string {
+	return "Respond a raw chunk to a request"
+}
 
-		methodCmd.AddCommand(listenCmd)
-
-		// Responses
-		// -----------------------------------
-		respCmd := &cobra.Command{
-			Use:   "resp",
-			Short: "Respond to requests",
-		}
-		respChunkCmd := &cobra.Command{
-			Use:   "chunk",
-			Short: "Respond a chunk to a request",
-		}
-		//respChunkWithCmd := &cobra.Command{
-		//	Use:   "with <request-ID>",
-		//	Short: "Build and make a request with the given arguments",
-		//}
-		// TODO: respChunkWithCmd
-
-		respChunkRawCmd := &cobra.Command{
-			Use:   "raw",
-			Short: "Make raw responses",
-		}
-		makeRawRespChunkCmd(responder, respChunkRawCmd, m.DefaultResponseChunkCount > 1)
-		respChunkCmd.AddCommand(respChunkRawCmd)
-
-		respInvalidInputCmd := makeInvalidRequestCmd(responder)
-		respServerErrorCmd := makeServerErrorCmd(responder)
-
-		respCmd.AddCommand(respChunkCmd, respInvalidInputCmd, respServerErrorCmd)
-		methodCmd.AddCommand(respCmd)
-
-		// Close
-		// -----------------------------------
-		closeCmd := &cobra.Command{
-			Use:   "close <request-id>",
-			Short: "Close open requests",
-			Args:  cobra.ExactArgs(1),
-			Run: func(cmd *cobra.Command, args []string) {
-				key, req, ok := checkAndGetReq(args[0], responder)
-				if !ok {
-					return
-				}
-				responder.CloseRequest(key)
-				log.WithFields(logrus.Fields{
-					"req_id":   key,
-					"peer":     req.From.String(),
-				}).Infof("Closed request.")
-			},
-		}
-		methodCmd.AddCommand(closeCmd)
-
-		return methodCmd
+func (c *RpcMethodRespChunkRawCmd) Run(ctx context.Context, args ...string) error {
+	key, req, err := c.checkAndGetReq(c.ReqId)
+	if err != nil {
+		return err
 	}
+	if err := req.handler.WriteRawResponseChunk(c.ResultCode, c.Data); err != nil {
+		return err
+	}
+	if c.Done {
+		c.Responder.CloseRequest(key)
+	}
+	return nil
+}
 
-	cmd.AddCommand(makeMethodCmd("goodbye", &r.RPCState.Goodbye, &methods.GoodbyeRPCv1))
-	cmd.AddCommand(makeMethodCmd("status", &r.RPCState.Status, &methods.StatusRPCv1))
-	cmd.AddCommand(makeMethodCmd("ping", &r.RPCState.Ping, &methods.PingRPCv1))
-	cmd.AddCommand(makeMethodCmd("metadata", &r.RPCState.Metadata, &methods.MetaDataRPCv1))
-	cmd.AddCommand(makeMethodCmd("blocks-by-range", &r.RPCState.BlocksByRange, &methods.BlocksByRangeRPCv1))
-	cmd.AddCommand(makeMethodCmd("blocks-by-root", &r.RPCState.BlocksByRoot, &methods.BlocksByRootRPCv1))
-	return cmd
+type RpcMethodRespErrorCmd struct {
+	*RpcMethodRespCmd `ask:"-"`
+	Done              bool                 `ask:"--done" help:"After writing this chunk, close the response (no more chunks)."`
+	ResultCode        reqresp.ResponseCode `ask:"--result-code" help:"Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)"`
+	ReqId             string               `ask:"<req-id>" help:"the ID of the request to respond to"`
+	Text              string               `ask:"<text>" help:"error text data"`
+}
+
+func (c *RpcMethodRespErrorCmd) Help() string {
+	return "Respond a raw chunk to a request"
+}
+
+func (c *RpcMethodRespErrorCmd) Run(ctx context.Context, args ...string) error {
+	key, req, err := c.checkAndGetReq(c.ReqId)
+	if err != nil {
+		return err
+	}
+	if err := req.handler.WriteErrorChunk(c.ResultCode, c.Text); err != nil {
+		return err
+	}
+	if c.Done {
+		c.Responder.CloseRequest(key)
+	}
+	return nil
+}
+
+type RpcMethodCloseCmd struct {
+	*RpcMethodCmd `ask:"-"`
+	ReqId         string `ask:"<req-id>" help:"the ID of the request to close"`
+}
+
+func (c *RpcMethodCloseCmd) Help() string {
+	return "Close open requests"
+}
+
+func (c *RpcMethodCloseCmd) Run(ctx context.Context, args ...string) error {
+	key, req, err := c.checkAndGetReq(c.ReqId)
+	if err != nil {
+		return err
+	}
+	c.Responder.CloseRequest(key)
+	c.log.WithFields(logrus.Fields{
+		"req_id": key,
+		"peer":   req.From.String(),
+	}).Infof("Closed request.")
+	return nil
 }

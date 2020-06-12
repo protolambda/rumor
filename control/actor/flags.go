@@ -1,9 +1,14 @@
 package actor
 
 import (
+	"encoding/hex"
+	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/rumor/p2p/addrutil"
+	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"strings"
 )
 
 type EnrFlag struct {
@@ -28,6 +33,10 @@ func (f *EnrFlag) Set(v string) error {
 	}
 	f.ENR = enrAddr
 	return nil
+}
+
+func (f *EnrFlag) Type() string {
+	return "ENR"
 }
 
 type EnodeFlag struct {
@@ -124,4 +133,87 @@ func (f *NodeIDFlexibleFlag) Set(v string) error {
 
 func (f *NodeIDFlexibleFlag) Type() string {
 	return "Dv5 flexible ID"
+}
+
+
+type PeerIDFlag struct {
+	PeerID peer.ID
+}
+
+func (f *PeerIDFlag) String() string {
+	if f == nil {
+		return "nil peer id"
+	}
+	return f.PeerID.String()
+}
+
+func (f *PeerIDFlag) Set(v string) error {
+	id, err := peer.Decode(v)
+	if err != nil {
+		return err
+	}
+	f.PeerID = id
+	return nil
+}
+
+func (f *PeerIDFlag) Type() string {
+	return "Peer ID"
+}
+
+
+
+type CompressionFlag struct {
+	Compression reqresp.Compression
+}
+
+func (f *CompressionFlag) String() string {
+	if f == nil {
+		return "nil compression"
+	}
+	if f.Compression == nil {
+		return "none"
+	}
+	return f.Compression.Name()
+}
+
+func (f *CompressionFlag) Set(v string) error {
+	if v == "snappy" {
+		f.Compression = reqresp.SnappyCompression{}
+		return nil
+	} else if v == "none" || v == "" {
+		f.Compression = nil
+		return nil
+	} else {
+		return fmt.Errorf("unrecognized compression: %s", v)
+	}
+}
+
+func (f *CompressionFlag) Type() string {
+	return "RPC compression"
+}
+
+// BytesHex exposes bytes as a flag, hex-encoded,
+// optional whitespace padding, case insensitive, and optional 0x prefix.
+type BytesHexFlag []byte
+
+func (f BytesHexFlag) String() string {
+	return fmt.Sprintf("%x", []byte(bytesHex))
+}
+
+func (f *BytesHexFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	value = strings.ToLower(value)
+	if strings.HasPrefix(value, "0x") {
+		value = value[2:]
+	}
+	b, err := hex.DecodeString(value)
+	if err != nil {
+		return err
+	}
+	*f = b
+	return nil
+}
+
+func (f *BytesHexFlag) Type() string {
+	return "Hex-encoded bytes"
 }

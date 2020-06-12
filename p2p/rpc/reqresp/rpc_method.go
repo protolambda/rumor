@@ -213,11 +213,11 @@ type RequestReader interface {
 	RawRequest() ([]byte, error)
 }
 type RequestResponder interface {
-	WriteResponseChunk(data interface{}) error
-	WriteRawResponseChunk(chunk []byte) error
-	WriteInvalidRequestChunk(msg string) error
-	WriteServerErrorChunk(msg string) error
+	WriteResponseChunk(code ResponseCode, data interface{}) error
+	WriteRawResponseChunk(code ResponseCode, chunk []byte) error
+	WriteErrorChunk(code ResponseCode, msg string) error
 }
+
 type ChunkedRequestHandler interface {
 	RequestReader
 	RequestResponder
@@ -255,24 +255,20 @@ func (h *chReqHandler) RawRequest() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (h *chReqHandler) WriteResponseChunk(data interface{}) error {
+func (h *chReqHandler) WriteResponseChunk(code ResponseCode, data interface{}) error {
 	h.respBuf.Reset() // re-use buffer for each response chunk
 	if err := h.m.ResponseChunkCodec.Encode(&h.respBuf, data); err != nil {
 		return err
 	}
-	return EncodeChunk(SuccessCode, bytes.NewReader(h.respBuf.Bytes()), h.w, h.comp)
+	return EncodeChunk(code, bytes.NewReader(h.respBuf.Bytes()), h.w, h.comp)
 }
 
-func (h *chReqHandler) WriteRawResponseChunk(chunk []byte) error {
-	return EncodeChunk(SuccessCode, bytes.NewReader(chunk), h.w, h.comp)
+func (h *chReqHandler) WriteRawResponseChunk(code ResponseCode, chunk []byte) error {
+	return EncodeChunk(code, bytes.NewReader(chunk), h.w, h.comp)
 }
 
-func (h *chReqHandler) WriteInvalidRequestChunk(msg string) error {
-	return EncodeChunk(InvalidReqCode, bytes.NewReader([]byte(msg)), h.w, h.comp)
-}
-
-func (h *chReqHandler) WriteServerErrorChunk(msg string) error {
-	return EncodeChunk(ServerErrCode, bytes.NewReader([]byte(msg)), h.w, h.comp)
+func (h *chReqHandler) WriteErrorChunk(code ResponseCode, msg string) error {
+	return EncodeChunk(code, bytes.NewReader([]byte(msg)), h.w, h.comp)
 }
 
 type OnRequestListener func(ctx context.Context, peerId peer.ID, handler ChunkedRequestHandler)
