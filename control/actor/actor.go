@@ -9,6 +9,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/protolambda/rumor/chain"
 	"github.com/protolambda/rumor/p2p/addrutil"
+	"github.com/protolambda/rumor/p2p/peering/dv5"
+	"github.com/protolambda/rumor/p2p/peering/kad"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"

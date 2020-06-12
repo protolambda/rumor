@@ -2,37 +2,55 @@ package actor
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"strconv"
 	"time"
 )
 
-func (r *Actor) IniDebugCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "debug",
-		Short: "For debugging purposes",
-	}
+type DebugCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "sleep <ms>",
-		Short: "Sleep for given amount of milliseconds",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			count, err := strconv.ParseUint(args[0], 0, 64)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.Infoln("started sleeping!")
-			sleepCtx, _ := context.WithTimeout(ctx, time.Duration(count)*time.Millisecond)
-			<-sleepCtx.Done()
-			if ctx.Err() == nil {
-				log.Infoln("done sleeping!")
-			} else {
-				log.Infof("stopped sleep, exit early: %v", ctx.Err())
-			}
-		},
-	})
-	return cmd
+func (c *DebugCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
+	}
+	switch args[0] {
+	case "sleep":
+		cmd = &DebugSleepCmd{
+			Actor: c.Actor,
+			log:   c.log,
+		}
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+	}
+	return cmd, args[1:], nil
+}
+
+func (c *DebugCmd) Help() string {
+	return "For debugging purposes" // TODO list subcommands
+}
+
+type DebugSleepCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+	Ms     uint64 `ask:"<ms>" help:"How long to sleep, in milliseconds"`
+}
+
+func (c *DebugSleepCmd) Help() string {
+	return "Sleep for given amount of milliseconds"
+}
+
+func (c *DebugSleepCmd) Run(ctx context.Context, args ...string) error {
+	c.log.Infoln("started sleeping!")
+	sleepCtx, _ := context.WithTimeout(ctx, time.Duration(c.Ms)*time.Millisecond)
+	<-sleepCtx.Done()
+	if ctx.Err() == nil {
+		c.log.Infoln("done sleeping!")
+	} else {
+		c.log.Infof("stopped sleep, exit early: %v", ctx.Err())
+	}
+	return nil
 }
