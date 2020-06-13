@@ -3,12 +3,12 @@ package actor
 import (
 	"context"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"github.com/golang/snappy"
-	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/protolambda/rumor/p2p/gossip"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"strings"
 	"sync"
 )
@@ -20,259 +20,280 @@ type GossipState struct {
 	Topics sync.Map
 }
 
-func (r *Actor) InitGossipCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
-	noGS := func(cmd *cobra.Command) bool {
-		_, hasHost := r.Host(log)
-		if !hasHost {
-			return true
-		}
-		if r.GossipState.GsNode == nil {
-			log.Error("REPL must have initialized GossipSub. Try 'gossip start'")
-			return true
-		}
+type GossipCmd struct {
+	*Actor       `ask:"-"`
+	log          logrus.FieldLogger
+	*GossipState `ask:"-"`
+}
+
+func (c *GossipCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
+	}
+	switch args[0] {
+	case "start":
+		cmd = &GossipStartCmd{GossipCmd: c}
+
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+	}
+	return cmd, args[1:], nil
+}
+
+func (c *GossipCmd) Help() string {
+	return "Manage Libp2p GossipSub" // TODO list subcommands
+}
+
+type GossipStartCmd struct {
+	*GossipCmd `ask:"-"`
+}
+
+func (c *GossipStartCmd) Help() string {
+	return "Start GossipSub"
+}
+
+func (c *GossipStartCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	if c.GossipState.GsNode != nil {
+		return errors.New("Already started GossipSub")
+	}
+	c.GossipState.GsNode, err = gossip.NewGossipSub(c.ActorCtx, h)
+	if err != nil {
+		return err
+	}
+	c.log.Info("Started GossipSub")
+	return nil
+}
+
+var NoGossipErr = errors.New("Must start gossip-sub first. Try 'gossip start'")
+
+type GossipListCmd struct {
+	*GossipCmd `ask:"-"`
+}
+
+func (c *GossipListCmd) Help() string {
+	return "List joined gossip topics"
+}
+
+func (c *GossipListCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
+	}
+	topics := make([]string, 0)
+	c.GossipState.Topics.Range(func(key, value interface{}) bool {
+		topics = append(topics, key.(string))
 		return false
+	})
+	c.log.WithField("topics", topics).Infof("On %d topics.", len(topics))
+	return nil
+}
+
+type GossipJoinCmd struct {
+	*GossipCmd `ask:"-"`
+	TopicName  string `ask:"<topic>" help:"The name of the topic to join"`
+}
+
+func (c *GossipJoinCmd) Help() string {
+	return "Join a gossip topic. This only sets up the topic, it does not actively find peers. See `gossip log start` and `gossip publish`."
+}
+
+func (c *GossipJoinCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
 	}
-	cmd := &cobra.Command{
-		Use:   "gossip",
-		Short: "Manage Libp2p GossipSub",
+	_, ok := c.GossipState.Topics.Load(c.TopicName)
+	if ok {
+		return fmt.Errorf("already on gossip topic %s", c.TopicName)
 	}
-	cmd.AddCommand(&cobra.Command{
-		Use:   "start",
-		Short: "Start GossipSub",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			if r.GossipState.GsNode != nil {
-				log.Error("Already started GossipSub")
-				return
-			}
-			var err error
-			r.GossipState.GsNode, err = gossip.NewGossipSub(r.ActorCtx, h)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			log.Info("Started GossipSub")
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "list",
-		Short: "List joined gossip topics",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			topics := make([]string, 0)
-			r.GossipState.Topics.Range(func(key, value interface{}) bool {
-				topics = append(topics, key.(string))
-				return false
-			})
-			log.WithField("topics", topics).Infof("On %d topics.", len(topics))
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "join <topic>",
-		Short: "Join a gossip topic. This only sets up the topic, it does not actively find peers. See `gossip log start` and `gossip publish`.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			topicName := args[0]
-			_, ok := r.GossipState.Topics.Load(topicName)
-			if ok {
-				log.Errorf("already on gossip topic %s", topicName)
-				return
-			}
-			top, err := r.GossipState.GsNode.Join(topicName)
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			r.GossipState.Topics.Store(topicName, top)
-			log.Infof("joined topic %s", topicName)
-		},
-	})
+	top, err := c.GossipState.GsNode.Join(c.TopicName)
+	if err != nil {
+		return err
+	}
+	c.GossipState.Topics.Store(c.TopicName, top)
+	c.log.Infof("joined topic %s", c.TopicName)
+	return nil
+}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "events <topic>",
-		Short: "Listen for events (not messages) on this topic. Events: 'join=<peer-ID>', 'leave=<peer-ID>'",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			topicName := args[0]
-			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
-				log.Errorf("not on gossip topic %s", topicName)
-				return
-			} else {
-				evHandler, err := top.(*pubsub.Topic).EventHandler()
-				if err != nil {
-					log.Error(err)
-				} else {
-					log.Infof("Started listening for peer join/leave events for topic %s", topicName)
-					for {
-						ev, err := evHandler.NextPeerEvent(ctx)
-						if err != nil {
-							log.Infof("Stopped listening for peer join/leave events for topic %s", topicName)
-							return
-						}
-						switch ev.Type {
-						case pubsub.PeerJoin:
-							log.WithField("join", ev.Peer.Pretty()).Infof("peer %s joined topic %s", ev.Peer.Pretty(), topicName)
-						case pubsub.PeerLeave:
-							log.WithField("leave", ev.Peer.Pretty()).Infof("peer %s left topic %s", ev.Peer.Pretty(), topicName)
-						}
-					}
-				}
-			}
-		},
-	})
+type GossipEventsCmd struct {
+	*GossipCmd `ask:"-"`
+	TopicName  string `ask:"<topic>" help:"The name of the topic to track events of"`
+}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "list-peers <topic>",
-		Short: "List the peers known for the given topic",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			topicName := args[0]
-			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
-				log.Errorf("not on gossip topic %s", topicName)
-				return
-			} else {
-				peers := top.(*pubsub.Topic).ListPeers()
-				log.WithField("peers", peers).Infof("%d peers on topic %s", len(peers), topicName)
-			}
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "blacklist <peer-ID>",
-		Short: "Blacklist a peer from GossipSub",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			peerID, err := peer.Decode(args[0])
+func (c *GossipEventsCmd) Help() string {
+	return "Listen for events (not messages) on this topic. Events: 'join=<peer-ID>', 'leave=<peer-ID>'"
+}
+
+func (c *GossipEventsCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
+	}
+	top, ok := c.GossipState.Topics.Load(c.TopicName)
+	if !ok {
+		return fmt.Errorf("not on gossip topic %s", c.TopicName)
+	}
+	evHandler, err := top.(*pubsub.Topic).EventHandler()
+	if err != nil {
+		return err
+	} else {
+		c.log.Infof("Started listening for peer join/leave events for topic %s", c.TopicName)
+		for {
+			ev, err := evHandler.NextPeerEvent(ctx)
 			if err != nil {
-				log.Error(err)
-				return
+				c.log.Infof("Stopped listening for peer join/leave events for topic %s", c.TopicName)
+				return nil
 			}
-			r.GossipState.GsNode.BlacklistPeer(peerID)
-			log.Infof("Blacklisted peer %s", peerID.Pretty())
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "leave <topic>",
-		Short: "Leave a gossip topic.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
+			switch ev.Type {
+			case pubsub.PeerJoin:
+				c.log.WithField("join", ev.Peer.Pretty()).Infof("peer %s joined topic %s", ev.Peer.Pretty(), c.TopicName)
+			case pubsub.PeerLeave:
+				c.log.WithField("leave", ev.Peer.Pretty()).Infof("peer %s left topic %s", ev.Peer.Pretty(), c.TopicName)
 			}
-			topicName := args[0]
-			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
-				log.Errorf("not on gossip topic %s", topicName)
-				return
-			} else {
-				err := top.(*pubsub.Topic).Close()
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				r.GossipState.Topics.Delete(topicName)
-			}
-		},
-	})
+		}
+	}
+}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "log <topic>",
-		Short: "Log the messages of a gossip topic. Messages are hex-encoded. Join a topic first.",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			topicName := args[0]
-			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
-				log.Errorf("not on gossip topic %s", topicName)
-				return
-			} else {
-				sub, err := top.(*pubsub.Topic).Subscribe()
-				if err != nil {
-					log.Errorf("Cannot open subscription on topic %s: %v", topicName, err)
-					return
+type GossipListPeersCmd struct {
+	*GossipCmd `ask:"-"`
+	TopicName  string `ask:"<topic>" help:"The name of the topic to list peers of"`
+}
+
+func (c *GossipListPeersCmd) Help() string {
+	return "List the peers known for the given topic"
+}
+
+func (c *GossipListPeersCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
+	}
+	if top, ok := c.GossipState.Topics.Load(c.TopicName); !ok {
+		return fmt.Errorf("not on gossip topic %s", c.TopicName)
+	} else {
+		peers := top.(*pubsub.Topic).ListPeers()
+		c.log.WithField("peers", peers).Infof("%d peers on topic %s", len(peers), c.TopicName)
+		return nil
+	}
+}
+
+type GossipBlacklistCmd struct {
+	*GossipCmd `ask:"-"`
+	PeerID     PeerIDFlag `ask:"<peer-id>" help:"The peer to blacklist"`
+}
+
+func (c *GossipBlacklistCmd) Help() string {
+	return "Blacklist a peer from GossipSub"
+}
+
+func (c *GossipBlacklistCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
+	}
+	c.GossipState.GsNode.BlacklistPeer(c.PeerID.PeerID)
+	c.log.Infof("Blacklisted peer %s", c.PeerID.PeerID.Pretty())
+	return nil
+}
+
+type GossipLeaveCmd struct {
+	*GossipCmd `ask:"-"`
+	TopicName  string `ask:"<topic>" help:"The name of the topic to leave"`
+}
+
+func (c *GossipLeaveCmd) Help() string {
+	return "Leave a gossip topic."
+}
+
+func (c *GossipLeaveCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
+	}
+	if top, ok := c.GossipState.Topics.Load(c.TopicName); !ok {
+		return fmt.Errorf("not on gossip topic %s", c.TopicName)
+	} else {
+		err := top.(*pubsub.Topic).Close()
+		if err != nil {
+			return err
+		}
+		c.GossipState.Topics.Delete(c.TopicName)
+		return nil
+	}
+}
+
+type GossipLogCmd struct {
+	*GossipCmd `ask:"-"`
+	TopicName  string `ask:"<topic>" help:"The name of the topic to log messages of"`
+}
+
+func (c *GossipLogCmd) Help() string {
+	return "Log the messages of a gossip topic. Messages are hex-encoded. Join a topic first."
+}
+
+func (c *GossipLogCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
+	}
+	if top, ok := c.GossipState.Topics.Load(c.TopicName); !ok {
+		return fmt.Errorf("not on gossip topic %s", c.TopicName)
+	} else {
+		sub, err := top.(*pubsub.Topic).Subscribe()
+		if err != nil {
+			return fmt.Errorf("Cannot open subscription on topic %s: %v", c.TopicName, err)
+		}
+		defer sub.Cancel()
+		for {
+			msg, err := sub.Next(ctx)
+			if err != nil {
+				if err == ctx.Err() { // expected quit, context stopped.
+					break
 				}
-				for {
-					msg, err := sub.Next(ctx)
+				return fmt.Errorf("Gossip subscription on %s encountered error: %v", c.TopicName, err)
+			} else {
+				var msgData []byte
+				if strings.HasSuffix(c.TopicName, "_snappy") {
+					msgData, err = snappy.Decode(nil, msg.Data)
 					if err != nil {
-						if err == ctx.Err() { // expected quit, context stopped.
-							break
-						}
-						log.Errorf("Gossip subscription on %s encountered error: %v", topicName, err)
-						break
-					} else {
-						var msgData []byte
-						if strings.HasSuffix(topicName, "_snappy") {
-							msgData, err = snappy.Decode(nil, msg.Data)
-							if err != nil {
-								log.Errorf("Cannot decode message on %s with snappy: %v", topicName, err)
-								return
-							}
-						} else {
-							msgData = msg.Data
-						}
-						log.WithFields(logrus.Fields{
-							"from":      msg.GetFrom().String(),
-							"data":      hex.EncodeToString(msgData),
-							"signature": hex.EncodeToString(msg.Signature),
-							"seq_no":    hex.EncodeToString(msg.Seqno),
-						}).Infof("new message on %s", topicName)
+						return fmt.Errorf("Cannot decode message on %s with snappy: %v", c.TopicName, err)
 					}
+				} else {
+					msgData = msg.Data
 				}
-				sub.Cancel()
+				c.log.WithFields(logrus.Fields{
+					"from":      msg.GetFrom().String(),
+					"data":      hex.EncodeToString(msgData),
+					"signature": hex.EncodeToString(msg.Signature),
+					"seq_no":    hex.EncodeToString(msg.Seqno),
+				}).Infof("new message on %s", c.TopicName)
 			}
-		},
-	})
+		}
+		return nil
+	}
+}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "publish <topic> <message>",
-		Short: "Publish a message to the topic. The message should be hex-encoded.",
-		Args:  cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			if noGS(cmd) {
-				return
-			}
-			topicName := args[0]
-			if top, ok := r.GossipState.Topics.Load(topicName); !ok {
-				log.Errorf("not on gossip topic %s", topicName)
-				return
-			} else {
-				hexData := args[1]
-				if strings.HasPrefix(hexData, "0x") {
-					hexData = hexData[2:]
-				}
-				data, err := hex.DecodeString(hexData)
-				if err != nil {
-					log.Errorf("cannot decode message from hex, err: %v, msg: %s", err, hexData)
-					return
-				}
-				if strings.HasSuffix(topicName, "_snappy") {
-					data = snappy.Encode(nil, data)
-				}
-				if err := top.(*pubsub.Topic).Publish(ctx, data); err != nil {
-					log.Errorf("failed to publish message, err: %v", err)
-					return
-				}
-			}
-		},
-	})
-	return cmd
+type GossipPublishCmd struct {
+	*GossipCmd `ask:"-"`
+	TopicName  string       `ask:"<topic>" help:"The name of the topic to publish to"`
+	Message    BytesHexFlag `ask:"<message>" help:"The uncompressed message bytes, hex-encoded"`
+}
+
+func (c *GossipPublishCmd) Help() string {
+	return "Publish a message to the topic. The message should be hex-encoded."
+}
+
+func (c *GossipPublishCmd) Run(ctx context.Context, args ...string) error {
+	if c.GossipState.GsNode == nil {
+		return NoGossipErr
+	}
+	if top, ok := c.GossipState.Topics.Load(c.TopicName); !ok {
+		return fmt.Errorf("not on gossip topic %s", c.TopicName)
+	} else {
+		data := c.Message
+		if strings.HasSuffix(c.TopicName, "_snappy") {
+			data = snappy.Encode(nil, data)
+		}
+		if err := top.(*pubsub.Topic).Publish(ctx, data); err != nil {
+			return fmt.Errorf("failed to publish message, err: %v", err)
+		}
+		return nil
+	}
 }

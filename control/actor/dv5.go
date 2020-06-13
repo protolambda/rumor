@@ -78,7 +78,7 @@ func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-var NoDv5Err = errors.New("REPL must have initialized discv5. Try 'dv5 start'")
+var NoDv5Err = errors.New("Must start discv5 first. Try 'dv5 start'")
 
 type Dv5StopCmd struct {
 	*Actor `ask:"-"`
