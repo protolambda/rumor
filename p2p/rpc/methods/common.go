@@ -1,8 +1,11 @@
 package methods
 
-type BLSSignature [96]byte
-type ForkVersion [4]byte
-type Root [32]byte
-type Epoch uint64
-type Slot uint64
-type ValidatorIndex uint64
+import "github.com/protolambda/zrnt/eth2/beacon"
+
+type BLSSignature = beacon.BLSSignature
+type ForkVersion = beacon.Version
+type Root = beacon.Root
+type Epoch = beacon.Epoch
+type Slot = beacon.Slot
+type ValidatorIndex = beacon.ValidatorIndex
+
