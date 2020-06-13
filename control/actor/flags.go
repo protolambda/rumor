@@ -1,10 +1,12 @@
 package actor
 
 import (
+	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
@@ -197,7 +199,7 @@ func (f *CompressionFlag) Type() string {
 type BytesHexFlag []byte
 
 func (f BytesHexFlag) String() string {
-	return fmt.Sprintf("%x", []byte(bytesHex))
+	return hex.EncodeToString(f)
 }
 
 func (f *BytesHexFlag) Set(value string) error {
@@ -214,6 +216,33 @@ func (f *BytesHexFlag) Set(value string) error {
 	return nil
 }
 
-func (f *BytesHexFlag) Type() string {
-	return "Hex-encoded bytes"
+type P2pPrivKeyFlag struct {
+	Priv *ecdsa.PrivateKey
+}
+
+func (f P2pPrivKeyFlag) String() string {
+	if f.Priv == nil {
+		return "? (no private key)"
+	}
+	secpKey := (*crypto.Secp256k1PrivateKey)(f.Priv)
+	keyBytes, err := secpKey.Raw()
+	if err != nil {
+		return "? (invalid private key)"
+	}
+	return hex.EncodeToString(keyBytes)
+}
+
+func (f *P2pPrivKeyFlag) Set(value string) error {
+	var priv *ecdsa.PrivateKey
+	var err error
+	priv, err = addrutil.ParsePrivateKey(value)
+	if err != nil {
+		return fmt.Errorf("could not parse private key: %v", err)
+	}
+	f.Priv = priv
+	return nil
+}
+
+func (f *P2pPrivKeyFlag) Type() string {
+	return "P2P Private key"
 }

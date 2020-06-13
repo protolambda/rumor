@@ -138,6 +138,14 @@ func (c *RpcMethodCmd) Get(ctx context.Context, args ...string) (cmd interface{}
 			Drop:         c.Method.DefaultResponseChunkCount == 0,
 			Read:         true,
 		}
+	case "resp":
+		cmd = &RpcMethodRespCmd{
+			RpcMethodCmd: c,
+		}
+	case "close":
+		cmd = &RpcMethodCloseCmd{
+			RpcMethodCmd: c,
+		}
 	default:
 		return nil, args, fmt.Errorf("unrecognized command: %v", args)
 	}
