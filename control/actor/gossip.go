@@ -33,6 +33,22 @@ func (c *GossipCmd) Get(ctx context.Context, args ...string) (cmd interface{}, r
 	switch args[0] {
 	case "start":
 		cmd = &GossipStartCmd{GossipCmd: c}
+	case "list":
+		cmd = &GossipListCmd{GossipCmd: c}
+	case "join":
+		cmd = &GossipJoinCmd{GossipCmd: c}
+	case "events":
+		cmd = &GossipEventsCmd{GossipCmd: c}
+	case "list-peers":
+		cmd = &GossipListPeersCmd{GossipCmd: c}
+	case "blacklist":
+		cmd = &GossipBlacklistCmd{GossipCmd: c}
+	case "leave":
+		cmd = &GossipLeaveCmd{GossipCmd: c}
+	case "log":
+		cmd = &GossipLogCmd{GossipCmd: c}
+	case "publish":
+		cmd = &GossipPublishCmd{GossipCmd: c}
 
 	default:
 		return nil, args, fmt.Errorf("unrecognized command: %v", args)

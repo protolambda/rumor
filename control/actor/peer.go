@@ -3,6 +3,7 @@ package actor
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -12,226 +13,268 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-func (r *Actor) InitPeerCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "peer",
-		Short: "Manage Libp2p peerstore",
-	}
-	{
-		var listLatency, listProtocols, listAddrs, listStatus, listMetadata, listClaimSeq bool
-		listCmd := &cobra.Command{
-			Use:   "list [all|connected]",
-			Short: "List peers in peerstore. Defaults to connected only.",
-			Args:  cobra.ArbitraryArgs,
-			Run: func(cmd *cobra.Command, args []string) {
-				h, hasHost := r.Host(log)
-				if !hasHost {
-					return
-				}
-				if len(args) == 0 {
-					args = append(args, "connected")
-				}
-				var peers []peer.ID
-				switch args[0] {
-				case "all":
-					peers = h.Peerstore().Peers()
-				case "connected":
-					peers = h.Network().Peers()
-				default:
-					log.Errorf("invalid peer type: %s", args[0])
-				}
-				store := h.Peerstore()
-				peerData := make(map[peer.ID]map[string]interface{})
-				for _, p := range peers {
-					v := make(map[string]interface{})
-					if listAddrs {
-						v["addrs"] = store.PeerInfo(p).Addrs
-					}
-					// TODO: add dv5 node ID
-					if listLatency {
-						v["latency"] = store.LatencyEWMA(p).Seconds() // A float, ok for json
-					}
-					if listProtocols {
-						protocols, err := store.GetProtocols(p)
-						if err != nil {
-							v["protocols"] = protocols
-						}
-					}
-					if listStatus || listMetadata || listClaimSeq {
-						pInfoData, ok := r.GlobalPeerInfos.Find(p)
-						if ok {
-							if listStatus {
-								v["status"] = pInfoData.Status()
-							}
-							if listMetadata {
-								v["metadata"] = pInfoData.Metadata()
-							}
-							if listClaimSeq {
-								v["metadata"] = pInfoData.ClaimedSeq()
-							}
-						}
-					}
-					peerData[p] = v
-				}
-				log.WithField("peers", peerData).Infof("%d peers", len(peers))
-			},
-		}
-		flags := listCmd.Flags()
-		flags.BoolVar(&listLatency, "latency", false, "list peer latency")
-		flags.BoolVar(&listProtocols, "protocols", false, "list peer protocols")
-		flags.BoolVar(&listAddrs, "addrs", true, "list peer addrs")
-		flags.BoolVar(&listStatus, "status", false, "list peer status")
-		flags.BoolVar(&listMetadata, "metadata", false, "list peer metadata")
-		flags.BoolVar(&listClaimSeq, "claimseq", false, "list peer claimed metadata seq nr")
-		cmd.AddCommand(listCmd)
-	}
 
-	cmd.AddCommand(&cobra.Command{
-		Use:   "trim",
-		Short: "Trim peers (2 second time allowance)",
-		Args:  cobra.NoArgs,
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*2)
-			h.ConnManager().TrimOpenConns(ctx)
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "connect <addr> [<tag>]",
-		Short: "Connect to peer. Addr can be a multi-addr, enode or ENR",
-		Args:  cobra.RangeArgs(1, 2),
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			addrStr := args[0]
-			var muAddr ma.Multiaddr
-			if dv5Addr, err := addrutil.ParseEnrOrEnode(addrStr); err != nil {
-				muAddr, err = ma.NewMultiaddr(args[0])
-				if err != nil {
-					log.Info("addr not an enode or multi addr")
-					log.Error(err)
-					return
-				}
-			} else {
-				muAddr, err = addrutil.EnodeToMultiAddr(dv5Addr)
-				if err != nil {
-					log.Error(err)
-					return
-				}
-			}
-			addrInfo, err := peer.AddrInfoFromP2pAddr(muAddr)
+type PeerCmd struct {
+	*Actor `ask:"-"`
+	log    logrus.FieldLogger
+}
+
+func (c *PeerCmd) Help() string {
+	return "Manage the libp2p peerstore"
+}
+
+func (c *PeerCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
+	if len(args) == 0 {
+		return nil, nil, errors.New("no subcommand specified")
+	}
+	switch args[0] {
+	case "start":
+		cmd = DefaultHostStartCmd(c.Actor, c.log)
+	// TODO
+	default:
+		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+	}
+	return cmd, args[1:], nil
+}
+
+func (c *PeerCmd) PeerList() *PeerListCmd {
+	return &PeerListCmd{
+		PeerCmd: c,
+		Which:         "connected",
+		ListLatency:   false,
+		ListProtocols: false,
+		ListAddrs:     true,
+		ListStatus:    false,
+		ListMetadata:  false,
+		ListClaimSeq:  false,
+	}
+}
+
+func (c *PeerCmd) Trim() *PeerTrimCmd {
+	return &PeerTrimCmd{
+		PeerCmd: c,
+		Timeout: time.Second*2,
+	}
+}
+
+type PeerListCmd struct {
+	*PeerCmd `ask:"-"`
+
+	Which  string `ask:"[which]" help:"Which peers to list, possible values: 'all', 'connected'."`
+
+	ListLatency bool `ask:"--latency" help:"list peer latency"`
+	ListProtocols bool `ask:"--protocols" help:"list peer protocols"`
+	ListAddrs bool `ask:"--addrs" help:"list peer addrs"`
+	ListStatus bool `ask:"--status" help:"list peer status"`
+	ListMetadata bool `ask:"--metadata" help:"list peer metadata"`
+	ListClaimSeq bool `ask:"--claimseq" help:"list peer claimed metadata seq nr"`
+}
+
+func (c *PeerListCmd) Help() string {
+	return "Stop the host node."
+}
+
+func (c *PeerListCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	if len(args) == 0 {
+		args = append(args, "connected")
+	}
+	var peers []peer.ID
+	switch args[0] {
+	case "all":
+		peers = h.Peerstore().Peers()
+	case "connected":
+		peers = h.Network().Peers()
+	default:
+		return fmt.Errorf("invalid peer type: %s", args[0])
+	}
+	store := h.Peerstore()
+	peerData := make(map[peer.ID]map[string]interface{})
+	for _, p := range peers {
+		v := make(map[string]interface{})
+		if c.ListAddrs {
+			v["addrs"] = store.PeerInfo(p).Addrs
+		}
+		// TODO: add dv5 node ID
+		if c.ListLatency {
+			v["latency"] = store.LatencyEWMA(p).Seconds() // A float, ok for json
+		}
+		if c.ListProtocols {
+			protocols, err := store.GetProtocols(p)
 			if err != nil {
-				log.Error(err)
-				return
+				v["protocols"] = protocols
 			}
-			ctx, _ := context.WithTimeout(context.Background(), time.Second*5)
-			if err := h.Connect(ctx, *addrInfo); err != nil {
-				log.Error(err)
-				return
-			}
-			log.WithField("peer_id", addrInfo.ID.Pretty()).Infof("connected to peer")
-			if len(args) > 1 {
-				h.ConnManager().Protect(addrInfo.ID, args[1])
-				log.Infof("protected peer %s as tag %s", addrInfo.ID.Pretty(), args[1])
-			}
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "disconnect <peerID>",
-		Short: "Disconnect peer",
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			peerID, err := peer.Decode(args[0])
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			conns := h.Network().ConnsToPeer(peerID)
-			for _, c := range conns {
-				if err := c.Close(); err != nil {
-					log.Infof("error during disconnect of peer %s (%s)", peerID.Pretty(), c.RemoteMultiaddr().String())
+		}
+		if c.ListStatus || c.ListMetadata || c.ListClaimSeq {
+			pInfoData, ok := c.GlobalPeerInfos.Find(p)
+			if ok {
+				if c.ListStatus {
+					v["status"] = pInfoData.Status()
+				}
+				if c.ListMetadata {
+					v["metadata"] = pInfoData.Metadata()
+				}
+				if c.ListClaimSeq {
+					v["metadata"] = pInfoData.ClaimedSeq()
 				}
 			}
-			log.Infof("disconnected peer %s", peerID.Pretty())
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "protect <peerID> <tag>",
-		Short: "Protect peer, tagging them as <tag>",
-		Args:  cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			peerID, err := peer.Decode(args[0])
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			tag := args[1]
-			h.ConnManager().Protect(peerID, tag)
-			log.Infof("protected peer %s as %s", peerID.Pretty(), tag)
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "unprotect <peerID> <tag>",
-		Short: "Unprotect peer, un-tagging them as <tag>",
-		Args:  cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			peerID, err := peer.Decode(args[0])
-			if err != nil {
-				log.Error(err)
-				return
-			}
-			tag := args[1]
-			h.ConnManager().Unprotect(peerID, tag)
-			log.Infof("un-protected peer %s as %s", peerID.Pretty(), tag)
-		},
-	})
-	cmd.AddCommand(&cobra.Command{
-		Use:   "addrs [peerID]",
-		Short: "View known addresses of [peerID]. Defaults to local addresses if no peer id is specified.",
-		Args:  cobra.RangeArgs(0, 1),
-		Run: func(cmd *cobra.Command, args []string) {
-			h, hasHost := r.Host(log)
-			if !hasHost {
-				return
-			}
-			if len(args) > 0 {
-				peerID, err := peer.Decode(args[0])
-				if err != nil {
-					log.Error(err)
-					return
-				}
-				addrs := h.Peerstore().Addrs(peerID)
-				log.WithField("addrs", addrs).Infof("addrs for peer %s", peerID.Pretty())
-			} else {
-				addrs := h.Addrs()
-				log.WithField("addrs", addrs).Infof("host addrs")
-			}
-		},
-	})
-	return cmd
+		}
+		peerData[p] = v
+	}
+	c.log.WithField("peers", peerData).Infof("%d peers", len(peers))
+	return nil
+}
+
+type PeerTrimCmd struct {
+	*PeerCmd `ask:"-"`
+	Timeout  time.Duration `ask:"[which]" help:"Timeout for trimming."`
+}
+
+func (c *PeerTrimCmd) Help() string {
+	return "Trim peers, with timeout."
+}
+
+func (c *PeerTrimCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	trimCtx, _ := context.WithTimeout(ctx, c.Timeout)
+	h.ConnManager().TrimOpenConns(trimCtx)
+	return nil
+}
+
+type PeerConnectCmd struct {
+	*PeerCmd `ask:"-"`
+	Timeout time.Duration `ask:"--timeout" help:"connection timeout, 0 to disable"`
+	Addr FlexibleAddrFlag `ask:"<addr>" help:"ENR, enode or multi address to connect to"`
+	Tag string `ask:"[tag]" help:"Optionally tag the peer upon connection, e.g. tag 'bootnode'"`
+}
+
+func (c *PeerConnectCmd) Help() string {
+	return "Connect to peer."
+}
+
+func (c *PeerConnectCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	addrInfo, err := peer.AddrInfoFromP2pAddr(c.Addr.MultiAddr)
+	if err != nil {
+		return err
+	}
+	if c.Timeout != 0 {
+		ctx, _ = context.WithTimeout(ctx, c.Timeout)
+	}
+	if err := h.Connect(ctx, *addrInfo); err != nil {
+		return err
+	}
+	c.log.WithField("peer_id", addrInfo.ID.Pretty()).Infof("connected to peer")
+	if c.Tag != "" {
+		h.ConnManager().Protect(addrInfo.ID, c.Tag)
+		c.log.Infof("tagged peer %s as %s", addrInfo.ID.Pretty(), c.Tag)
+	}
+	return nil
+}
+
+type PeerDisconnectCmd struct {
+	*PeerCmd `ask:"-"`
+	PeerID PeerIDFlag `ask:"<peer-id>" help:"The peer to close all connections of"`
+}
+
+func (c *PeerDisconnectCmd) Help() string {
+	return "Close all open connections with the given peer"
+}
+
+func (c *PeerDisconnectCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	conns := h.Network().ConnsToPeer(c.PeerID.PeerID)
+	for _, conn := range conns {
+		if err := conn.Close(); err != nil {
+			c.log.Infof("error during disconnect of peer %s (%s)",
+				c.PeerID.PeerID.Pretty(), conn.RemoteMultiaddr().String())
+		}
+	}
+	c.log.Infof("disconnected peer %s", c.PeerID.PeerID.Pretty())
+	return nil
+}
+
+type PeerProtectCmd struct {
+	*PeerCmd `ask:"-"`
+	PeerID PeerIDFlag `ask:"<peer-id>" help:"The peer to protect with a tag"`
+	Tag string `ask:"<tag>" help:"Tag to give to the peer"`
+}
+
+func (c *PeerProtectCmd) Help() string {
+	return "Protect a peer by giving it a tag"
+}
+
+func (c *PeerProtectCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	h.ConnManager().Protect(c.PeerID.PeerID, c.Tag)
+	c.log.Infof("protected peer %s as %s", c.PeerID.PeerID.Pretty(), c.Tag)
+	return nil
+}
+
+type PeerUnprotectCmd struct {
+	*PeerCmd `ask:"-"`
+	PeerID PeerIDFlag `ask:"<peer-id>" help:"The peer to un-protect with a tag"`
+	Tag string `ask:"<tag>" help:"Tag to remove from the peer"`
+}
+
+func (c *PeerUnprotectCmd) Help() string {
+	return "Unprotect a peer by removing a tag"
+}
+
+func (c *PeerUnprotectCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	h.ConnManager().Unprotect(c.PeerID.PeerID, c.Tag)
+	c.log.Infof("un-protected peer %s as %s", c.PeerID.PeerID.Pretty(), c.Tag)
+	return nil
+}
+
+type PeerAddrsCmd struct {
+	*PeerCmd `ask:"-"`
+	PeerID PeerIDFlag `ask:"[peer-id]" help:"The peer to view addresses of, or local peer if omitted."`
+}
+
+func (c *PeerAddrsCmd) Help() string {
+	return "View known addresses of [peerID]. Defaults to local addresses if no peer id is specified."
+}
+
+func (c *PeerAddrsCmd) Run(ctx context.Context, args ...string) error {
+	h, err := c.Host()
+	if err != nil {
+		return err
+	}
+	if c.PeerID.PeerID == "" {
+		addrs := h.Addrs()
+		c.log.WithField("addrs", addrs).Infof("host addrs")
+	} else {
+		addrs := h.Peerstore().Addrs(c.PeerID.PeerID)
+		c.log.WithField("addrs", addrs).Infof("addrs for peer %s", c.PeerID.PeerID.Pretty())
+	}
+	return nil
 }
 
 func parseRoot(v string) ([32]byte, error) {

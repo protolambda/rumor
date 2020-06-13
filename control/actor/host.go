@@ -29,6 +29,10 @@ type HostCmd struct {
 	log    logrus.FieldLogger
 }
 
+func (c *HostCmd) Help() string {
+	return "Manage the libp2p host"
+}
+
 func (c *HostCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
 	if len(args) == 0 {
 		return nil, nil, errors.New("no subcommand specified")
@@ -169,7 +173,9 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-type HostStopCmd BasicCmd
+type HostStopCmd struct {
+	*HostCmd `ask:"-"`
+}
 
 func (c *HostStopCmd) Help() string {
 	return "Stop the host node."

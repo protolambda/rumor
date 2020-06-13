@@ -4,10 +4,12 @@ import (
 	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
+
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"strings"
@@ -87,6 +89,38 @@ func (f *EnrOrEnodeFlag) Set(v string) error {
 
 func (f *EnrOrEnodeFlag) Type() string {
 	return "Enr/Enode"
+}
+
+type FlexibleAddrFlag struct {
+	MultiAddr ma.Multiaddr
+}
+
+func (f *FlexibleAddrFlag) String() string {
+	if f == nil {
+		return "nil flex addr"
+	}
+	return f.MultiAddr.String()
+}
+
+func (f *FlexibleAddrFlag) Set(v string) error {
+	muAddr, err := ma.NewMultiaddr(v)
+	if err != nil {
+		en, err := addrutil.ParseEnrOrEnode(v)
+		if err != nil {
+			return err
+		}
+		muAddr, err = addrutil.EnodeToMultiAddr(en)
+		if err != nil {
+			return err
+		}
+	}
+
+	f.MultiAddr = muAddr
+	return nil
+}
+
+func (f *FlexibleAddrFlag) Type() string {
+	return "ENR/enode/Multi-addr"
 }
 
 type NodeIDFlag struct {
