@@ -2,42 +2,31 @@ package actor
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"github.com/sirupsen/logrus"
+	"github.com/protolambda/ask"
 	"time"
 )
 
 type DebugCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*RootCmd
 }
 
-func (c *DebugCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	switch args[0] {
+func (c *DebugCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
 	case "sleep":
-		cmd = DefaultDebugSleepCmd(c.Actor, c.log)
+		cmd = DebugSleepCmd{DebugCmd: c, Time: 1}
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
 }
 
 func (c *DebugCmd) Help() string {
-	return "For debugging purposes" // TODO list subcommands
+	return "For debugging purposes"
 }
 
 type DebugSleepCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
-	Ms     uint64 `ask:"<ms>" help:"How long to sleep, in milliseconds"`
-}
-
-func DefaultDebugSleepCmd(a *Actor, log logrus.FieldLogger) *DebugSleepCmd {
-	return &DebugSleepCmd{Actor: a, log: log}
+	*DebugCmd
+	Time     time.Duration `ask:"<time>" help:"How long to sleep, e.g. 1s"`
 }
 
 func (c *DebugSleepCmd) Help() string {
@@ -45,8 +34,8 @@ func (c *DebugSleepCmd) Help() string {
 }
 
 func (c *DebugSleepCmd) Run(ctx context.Context, args ...string) error {
-	c.log.Infoln("started sleeping!")
-	sleepCtx, _ := context.WithTimeout(ctx, time.Duration(c.Ms)*time.Millisecond)
+	c.log.Infoln("started sleeping for duration %s!", c.Time.String())
+	sleepCtx, _ := context.WithTimeout(ctx, c.Time)
 	<-sleepCtx.Done()
 	if ctx.Err() == nil {
 		c.log.Infoln("done sleeping!")

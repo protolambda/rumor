@@ -5,12 +5,12 @@ import (
 	"crypto/ecdsa"
 	crand "crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/sirupsen/logrus"
 	"net"
@@ -21,11 +21,8 @@ type EnrCmd struct {
 	log    logrus.FieldLogger
 }
 
-func (c *EnrCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	switch args[0] {
+func (c *EnrCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
 	case "view":
 		cmd = &EnrViewCmd{EnrCmd: c}
 	case "gen-key":
@@ -33,13 +30,13 @@ func (c *EnrCmd) Get(ctx context.Context, args ...string) (cmd interface{}, rema
 	case "make":
 		cmd = &EnrMakeCmd{EnrCmd: c}
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
 }
 
 func (c *EnrCmd) Help() string {
-	return "Ethereum Name Record (ENR) utilities" // TODO list subcommands
+	return "Ethereum Name Record (ENR) utilities"
 }
 
 

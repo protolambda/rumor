@@ -35,7 +35,6 @@ type Actor struct {
 	ChainState   ChainState
 
 	Dv5State    Dv5State
-	KadState    KadState
 	GossipState GossipState
 	RPCState    RPCState
 
@@ -43,13 +42,9 @@ type Actor struct {
 	actorCancel context.CancelFunc
 }
 
-type BasicCmd struct {
-	*Actor `ask:"-"`
+type RootCmd struct {
+	*Actor
 	log    logrus.FieldLogger
-}
-
-func DefaultBasicCmd(a *Actor, log logrus.FieldLogger) *BasicCmd {
-	return &BasicCmd{Actor: a, log: log}
 }
 
 func NewActor() *Actor {

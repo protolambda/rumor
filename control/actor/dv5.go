@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
-	"github.com/sirupsen/logrus"
 )
 
 type Dv5State struct {
@@ -16,35 +16,44 @@ type Dv5State struct {
 }
 
 type Dv5Cmd struct {
-	*Actor    `ask:"-"`
-	log       logrus.FieldLogger
+	*RootCmd
 	*Dv5State `ask:"-"`
 }
 
-func (c *Dv5Cmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	// TODO: when initializing a command, init the Target field
-	switch args[0] {
-	case "sleep":
-		cmd = &DebugSleepCmd{
-			Actor: c.Actor,
-			log:   c.log,
-		}
+func (c *Dv5Cmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
+	case "start":
+		cmd = &Dv5StartCmd{Dv5Cmd: c}
+	case "stop":
+		cmd = &Dv5StopCmd{Dv5Cmd: c}
+	case "ping":
+		cmd = &Dv5PingCmd{Dv5Cmd: c}
+	case "resolve":
+		cmd = &Dv5ResolveCmd{Dv5Cmd: c}
+	case "request":
+		cmd = &Dv5RequestCmd{Dv5Cmd: c}
+	case "lookup":
+		cmd = &Dv5LookupCmd{Dv5Cmd: c}
+	case "random":
+		cmd = &Dv5LookupRandomCmd{Dv5Cmd: c}
+	case "self":
+		cmd = &Dv5SelfCmd{Dv5Cmd: c}
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
+}
+
+func (c *Dv5Cmd) Routes() []string {
+	return []string{"start", "stop", "ping", "resolve", "request", "lookup", "random", "self"}
 }
 
 func (c *Dv5Cmd) Help() string {
-	return "For debugging purposes" // TODO list subcommands
+	return "Peer discovery with discv5"
 }
 
 type Dv5StartCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*Dv5Cmd
 }
 
 func (c *Dv5StartCmd) Help() string {
@@ -81,8 +90,7 @@ func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
 var NoDv5Err = errors.New("Must start discv5 first. Try 'dv5 start'")
 
 type Dv5StopCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*Dv5Cmd
 }
 
 func (c *Dv5StopCmd) Help() string {
@@ -100,8 +108,7 @@ func (c *Dv5StopCmd) Run(ctx context.Context, args ...string) error {
 }
 
 type Dv5PingCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*Dv5Cmd
 	Target *EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
 }
 
@@ -121,8 +128,7 @@ func (c *Dv5PingCmd) Run(ctx context.Context, args ...string) error {
 }
 
 type Dv5ResolveCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*Dv5Cmd
 	Target *EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
 }
 
@@ -143,8 +149,7 @@ func (c *Dv5ResolveCmd) Run(ctx context.Context, args ...string) error {
 }
 
 type Dv5RequestCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*Dv5Cmd
 	Target *EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
 }
 
@@ -165,8 +170,7 @@ func (c *Dv5RequestCmd) Run(ctx context.Context, args ...string) error {
 }
 
 type Dv5LookupCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*Dv5Cmd
 	Target *NodeIDFlexibleFlag `ask:"<target>" help:"Target ENR/enode/node-id"`
 }
 
@@ -192,8 +196,7 @@ func (c *Dv5LookupCmd) Run(ctx context.Context, args ...string) error {
 }
 
 type Dv5LookupRandomCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
+	*Dv5Cmd
 }
 
 func (c *Dv5LookupRandomCmd) Help() string {
@@ -223,12 +226,7 @@ func (c *Dv5LookupRandomCmd) Run(ctx context.Context, args ...string) error {
 }
 
 type Dv5SelfCmd struct {
-	*Actor `ask:"-"`
-	log    logrus.FieldLogger
-}
-
-func DefaultDv5SelfCmd(a *Actor, log logrus.FieldLogger) *Dv5SelfCmd {
-	return &Dv5SelfCmd{Actor: a, log: log}
+	*Dv5Cmd
 }
 
 func (c *Dv5SelfCmd) Help() string {

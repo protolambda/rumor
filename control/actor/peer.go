@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/zrnt/eth2/beacon"
@@ -25,18 +26,15 @@ func (c *PeerCmd) Help() string {
 	return "Manage the libp2p peerstore"
 }
 
-func (c *PeerCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	switch args[0] {
+func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
 	case "start":
 		cmd = DefaultHostStartCmd(c.Actor, c.log)
 	// TODO
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
 }
 
 func (c *PeerCmd) PeerList() *PeerListCmd {

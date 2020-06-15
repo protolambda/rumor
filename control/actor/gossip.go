@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/golang/snappy"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/p2p/gossip"
 	"github.com/sirupsen/logrus"
 	"strings"
@@ -26,11 +27,8 @@ type GossipCmd struct {
 	*GossipState `ask:"-"`
 }
 
-func (c *GossipCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	switch args[0] {
+func (c *GossipCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
 	case "start":
 		cmd = &GossipStartCmd{GossipCmd: c}
 	case "list":
@@ -49,15 +47,14 @@ func (c *GossipCmd) Get(ctx context.Context, args ...string) (cmd interface{}, r
 		cmd = &GossipLogCmd{GossipCmd: c}
 	case "publish":
 		cmd = &GossipPublishCmd{GossipCmd: c}
-
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
 }
 
 func (c *GossipCmd) Help() string {
-	return "Manage Libp2p GossipSub" // TODO list subcommands
+	return "Manage Libp2p GossipSub"
 }
 
 type GossipStartCmd struct {

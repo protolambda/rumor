@@ -17,6 +17,7 @@ import (
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/sirupsen/logrus"
 	"net"
@@ -33,11 +34,8 @@ func (c *HostCmd) Help() string {
 	return "Manage the libp2p host"
 }
 
-func (c *HostCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	switch args[0] {
+func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
 	case "start":
 		cmd = DefaultHostStartCmd(c.Actor, c.log)
 	case "stop":
@@ -49,9 +47,9 @@ func (c *HostCmd) Get(ctx context.Context, args ...string) (cmd interface{}, rem
 	case "event":
 		cmd = (*HostEventCmd)(DefaultBasicCmd(c.Actor, c.log))
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
 }
 
 type HostStartCmd struct {

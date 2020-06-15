@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/sirupsen/logrus"
@@ -71,11 +72,8 @@ type RpcCmd struct {
 	log    logrus.FieldLogger
 }
 
-func (c *RpcCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	switch args[0] {
+func (c *RpcCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
 	case "goodbye":
 		cmd = c.Method("goodbye", &c.RPCState.Goodbye, &methods.GoodbyeRPCv1)
 	case "status":
@@ -89,13 +87,13 @@ func (c *RpcCmd) Get(ctx context.Context, args ...string) (cmd interface{}, rema
 	case "blocks-by-root":
 		cmd = c.Method("blocks-by-root", &c.RPCState.BlocksByRoot, &methods.BlocksByRootRPCv1)
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
 }
 
 func (c *RpcCmd) Help() string {
-	return "Manage Eth2 RPC" // TODO list subcommands
+	return "Manage Eth2 RPC"
 }
 
 func (c *RpcCmd) Method(name string, resp *Responder, method *reqresp.RPCMethod) *RpcMethodCmd {
