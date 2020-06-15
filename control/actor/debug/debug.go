@@ -1,4 +1,4 @@
-package actor
+package debug
 
 import (
 	"context"
@@ -34,13 +34,13 @@ func (c *DebugSleepCmd) Help() string {
 }
 
 func (c *DebugSleepCmd) Run(ctx context.Context, args ...string) error {
-	c.log.Infoln("started sleeping for duration %s!", c.Time.String())
+	c.Log.Infoln("started sleeping for duration %s!", c.Time.String())
 	sleepCtx, _ := context.WithTimeout(ctx, c.Time)
 	<-sleepCtx.Done()
 	if ctx.Err() == nil {
-		c.log.Infoln("done sleeping!")
+		c.Log.Infoln("done sleeping!")
 	} else {
-		c.log.Infof("stopped sleep, exit early: %v", ctx.Err())
+		c.Log.Infof("stopped sleep, exit early: %v", ctx.Err())
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-package actor
+package dv5
 
 import (
 	"context"
@@ -10,10 +10,6 @@ import (
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
 )
-
-type Dv5State struct {
-	Dv5Node dv5.Discv5
-}
 
 type Dv5Cmd struct {
 	*RootCmd
@@ -79,7 +75,7 @@ func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
 		}
 		bootNodes = append(bootNodes, dv5Addr)
 	}
-	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.log, c.IP, c.UdpPort, c.PrivKey, bootNodes)
+	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.Log, c.IP, c.UdpPort, c.PrivKey, bootNodes)
 	if err != nil {
 		return err
 	}
@@ -123,7 +119,7 @@ func (c *Dv5PingCmd) Run(ctx context.Context, args ...string) error {
 	if err := c.Dv5State.Dv5Node.Ping(c.Target.Enode); err != nil {
 		return fmt.Errorf("Failed to ping: %v", err)
 	}
-	c.log.Infof("Successfully pinged")
+	c.Log.Infof("Successfully pinged")
 	return nil
 }
 
@@ -144,7 +140,7 @@ func (c *Dv5ResolveCmd) Run(ctx context.Context, args ...string) error {
 	if resolved != nil {
 		return fmt.Errorf("Failed to resolve %s, nil result", c.Target.String())
 	}
-	c.log.WithField("enr", resolved.String()).Infof("Successfully resolved")
+	c.Log.WithField("enr", resolved.String()).Infof("Successfully resolved")
 	return nil
 }
 
@@ -165,7 +161,7 @@ func (c *Dv5RequestCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	c.log.WithField("enr", enrRes.String()).Infof("Successfully got ENR for node")
+	c.Log.WithField("enr", enrRes.String()).Infof("Successfully got ENR for node")
 	return nil
 }
 
@@ -191,7 +187,7 @@ func (c *Dv5LookupCmd) Run(ctx context.Context, args ...string) error {
 	for _, v := range res {
 		enrs = append(enrs, v.String())
 	}
-	c.log.WithField("nodes", enrs).Infof("Lookup complete")
+	c.Log.WithField("nodes", enrs).Infof("Lookup complete")
 	return nil
 }
 
@@ -219,7 +215,7 @@ func (c *Dv5LookupRandomCmd) Run(ctx context.Context, args ...string) error {
 			break
 		}
 		res := randomNodes.Node()
-		c.log.WithField("node", res.String()).Infof("Got random node")
+		c.Log.WithField("node", res.String()).Infof("Got random node")
 	}
 	log.Info("Stopped looking for random nodes")
 	return nil
@@ -237,6 +233,6 @@ func (c *Dv5SelfCmd) Run(ctx context.Context, args ...string) error {
 	if c.Dv5State.Dv5Node == nil {
 		return NoDv5Err
 	}
-	c.log.WithField("enr", c.Dv5State.Dv5Node.Self()).Infof("local dv5 node")
+	c.Log.WithField("enr", c.Dv5State.Dv5Node.Self()).Infof("local dv5 node")
 	return nil
 }

@@ -1,4 +1,4 @@
-package actor
+package flags
 
 import (
 	"crypto/ecdsa"

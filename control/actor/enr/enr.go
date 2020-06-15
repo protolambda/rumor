@@ -1,4 +1,4 @@
-package actor
+package enr
 
 import (
 	"context"
@@ -62,18 +62,18 @@ func (c *EnrViewCmd) Run(ctx context.Context, args ...string) error {
 			enrKVraw[key] = hex.EncodeToString(rawValue)
 			getTypedValue, ok := addrutil.EnrEntries[key]
 			if !ok {
-				c.log.WithField("enr_unknown_"+key, rawValue).Infof("Unrecognized ENR KV pair type: %s", key)
+				c.Log.WithField("enr_unknown_"+key, rawValue).Infof("Unrecognized ENR KV pair type: %s", key)
 			} else {
 				typedValue, getValueStr := getTypedValue()
 				if err := rlp.DecodeBytes(rawValue, typedValue); err != nil {
-					c.log.WithField("enr_fail_"+key, rawValue).Errorf("Failed to decode ENR KV pair: %s", key)
+					c.Log.WithField("enr_fail_"+key, rawValue).Errorf("Failed to decode ENR KV pair: %s", key)
 				}
 				enrKV[key] = getValueStr()
 			}
 		}
 
-		c.log.WithField("raw_enr_kv", enrKVraw).Info("Raw ENR key-value pairs")
-		c.log.WithField("enr_kv", enrKV).Info("Decoded ENR key-value pairs")
+		c.Log.WithField("raw_enr_kv", enrKVraw).Info("Raw ENR key-value pairs")
+		c.Log.WithField("enr_kv", enrKV).Info("Decoded ENR key-value pairs")
 	}
 
 	var enodeRes *enode.Node
@@ -89,7 +89,7 @@ func (c *EnrViewCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	c.log.WithFields(logrus.Fields{
+	c.Log.WithFields(logrus.Fields{
 		"seq":     enodeRes.Seq(),
 		"xy":      fmt.Sprintf("%d %d", pubkey.X, pubkey.Y),
 		"node_id": nodeID.String(),
@@ -120,7 +120,7 @@ func (c *EnrGenKeyCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize key: %v", err)
 	}
-	c.log.WithField("key", hex.EncodeToString(keyBytes)).Infoln("generated key")
+	c.Log.WithField("key", hex.EncodeToString(keyBytes)).Infoln("generated key")
 	return nil
 }
 
@@ -142,7 +142,7 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	c.log.WithField("enr", enrStr).Infof("ENR created!")
+	c.Log.WithField("enr", enrStr).Infof("ENR created!")
 	return nil
 }
 

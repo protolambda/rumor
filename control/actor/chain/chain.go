@@ -1,4 +1,4 @@
-package actor
+package chain
 
 import (
 	"bytes"
@@ -12,9 +12,6 @@ import (
 	"os"
 )
 
-type ChainState struct {
-	CurrentChain chain.ChainID
-}
 
 func (r *Actor) InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{

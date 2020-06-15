@@ -1,4 +1,4 @@
-package actor
+package gossip
 
 import (
 	"context"
@@ -13,13 +13,6 @@ import (
 	"strings"
 	"sync"
 )
-
-type GossipState struct {
-	GsNode  gossip.GossipSub
-	CloseGS context.CancelFunc
-	// string -> *pubsub.Topic
-	Topics sync.Map
-}
 
 type GossipCmd struct {
 	*Actor       `ask:"-"`
@@ -77,7 +70,7 @@ func (c *GossipStartCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	c.log.Info("Started GossipSub")
+	c.Log.Info("Started GossipSub")
 	return nil
 }
 
@@ -100,7 +93,7 @@ func (c *GossipListCmd) Run(ctx context.Context, args ...string) error {
 		topics = append(topics, key.(string))
 		return false
 	})
-	c.log.WithField("topics", topics).Infof("On %d topics.", len(topics))
+	c.Log.WithField("topics", topics).Infof("On %d topics.", len(topics))
 	return nil
 }
 
@@ -126,7 +119,7 @@ func (c *GossipJoinCmd) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	c.GossipState.Topics.Store(c.TopicName, top)
-	c.log.Infof("joined topic %s", c.TopicName)
+	c.Log.Infof("joined topic %s", c.TopicName)
 	return nil
 }
 
@@ -151,18 +144,18 @@ func (c *GossipEventsCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	} else {
-		c.log.Infof("Started listening for peer join/leave events for topic %s", c.TopicName)
+		c.Log.Infof("Started listening for peer join/leave events for topic %s", c.TopicName)
 		for {
 			ev, err := evHandler.NextPeerEvent(ctx)
 			if err != nil {
-				c.log.Infof("Stopped listening for peer join/leave events for topic %s", c.TopicName)
+				c.Log.Infof("Stopped listening for peer join/leave events for topic %s", c.TopicName)
 				return nil
 			}
 			switch ev.Type {
 			case pubsub.PeerJoin:
-				c.log.WithField("join", ev.Peer.Pretty()).Infof("peer %s joined topic %s", ev.Peer.Pretty(), c.TopicName)
+				c.Log.WithField("join", ev.Peer.Pretty()).Infof("peer %s joined topic %s", ev.Peer.Pretty(), c.TopicName)
 			case pubsub.PeerLeave:
-				c.log.WithField("leave", ev.Peer.Pretty()).Infof("peer %s left topic %s", ev.Peer.Pretty(), c.TopicName)
+				c.Log.WithField("leave", ev.Peer.Pretty()).Infof("peer %s left topic %s", ev.Peer.Pretty(), c.TopicName)
 			}
 		}
 	}
@@ -185,7 +178,7 @@ func (c *GossipListPeersCmd) Run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("not on gossip topic %s", c.TopicName)
 	} else {
 		peers := top.(*pubsub.Topic).ListPeers()
-		c.log.WithField("peers", peers).Infof("%d peers on topic %s", len(peers), c.TopicName)
+		c.Log.WithField("peers", peers).Infof("%d peers on topic %s", len(peers), c.TopicName)
 		return nil
 	}
 }
@@ -204,7 +197,7 @@ func (c *GossipBlacklistCmd) Run(ctx context.Context, args ...string) error {
 		return NoGossipErr
 	}
 	c.GossipState.GsNode.BlacklistPeer(c.PeerID.PeerID)
-	c.log.Infof("Blacklisted peer %s", c.PeerID.PeerID.Pretty())
+	c.Log.Infof("Blacklisted peer %s", c.PeerID.PeerID.Pretty())
 	return nil
 }
 
@@ -271,7 +264,7 @@ func (c *GossipLogCmd) Run(ctx context.Context, args ...string) error {
 				} else {
 					msgData = msg.Data
 				}
-				c.log.WithFields(logrus.Fields{
+				c.Log.WithFields(logrus.Fields{
 					"from":      msg.GetFrom().String(),
 					"data":      hex.EncodeToString(msgData),
 					"signature": hex.EncodeToString(msg.Signature),

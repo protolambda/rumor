@@ -16,50 +16,8 @@ import (
 	"sync"
 )
 
-type Actor struct {
-	// only one routine can modify the host at a time
-	hLock   sync.Mutex
-	P2PHost host.Host
 
-	PrivKey crypto.PrivKey
-
-	IP      net.IP
-	TcpPort uint16
-	UdpPort uint16
-
-	GlobalPeerInfos   track.PeerInfos
-	PeerStatusState   PeerStatusState
-	PeerMetadataState PeerMetadataState
-
-	GlobalChains chain.Chains
-	ChainState   ChainState
-
-	Dv5State    Dv5State
-	GossipState GossipState
-	RPCState    RPCState
-
-	ActorCtx    context.Context
-	actorCancel context.CancelFunc
-}
-
-type RootCmd struct {
-	*Actor
-	log    logrus.FieldLogger
-}
-
-func NewActor() *Actor {
-	ctxAll, cancelAll := context.WithCancel(context.Background())
-	return &Actor{
-		ActorCtx:    ctxAll,
-		actorCancel: cancelAll,
-	}
-}
-
-func (r *Actor) Close() {
-	r.actorCancel()
-}
-
-func (r *Actor) Cmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
+func InitRootCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rumor",
 		Short: "A REPL for Eth2 networking.",
@@ -80,18 +38,4 @@ func (r *Actor) Cmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command 
 		r.InitRpcCmd(ctx, log),
 	)
 	return cmd
-}
-
-// shortcut to check if there is a libp2p host available, and error-log if not available.
-func (r *Actor) Host() (h host.Host, err error) {
-	h = r.P2PHost
-	if h == nil {
-		return nil, errors.New("REPL must have initialized Libp2p host. Try 'host start'")
-	}
-	return h, nil
-}
-
-func (r *Actor) GetEnr() *enr.Record {
-	priv := (*ecdsa.PrivateKey)(r.PrivKey.(*crypto.Secp256k1PrivateKey))
-	return addrutil.MakeENR(r.IP, r.TcpPort, r.UdpPort, priv)
 }
