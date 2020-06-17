@@ -8,4 +8,3 @@ type Root = beacon.Root
 type Epoch = beacon.Epoch
 type Slot = beacon.Slot
 type ValidatorIndex = beacon.ValidatorIndex
-

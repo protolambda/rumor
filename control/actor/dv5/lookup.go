@@ -31,4 +31,3 @@ func (c *Dv5LookupCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.WithField("nodes", enrs).Infof("Lookup complete")
 	return nil
 }
-

@@ -11,9 +11,9 @@ import (
 
 type PeerStatusPollCmd struct {
 	*base.Base
-	Timeout        time.Duration   `ask:"--timeout" help:"request timeout, 0 to disable"`
-	Interval       time.Duration   `ask:"--interval" help:"interval to request status of peers on"`
-	Compression    flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	Timeout     time.Duration         `ask:"--timeout" help:"request timeout, 0 to disable"`
+	Interval    time.Duration         `ask:"--interval" help:"interval to request status of peers on"`
+	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 }
 
 func (c *PeerStatusPollCmd) Help() string {
@@ -51,4 +51,3 @@ func (c *PeerStatusPollCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 }
-

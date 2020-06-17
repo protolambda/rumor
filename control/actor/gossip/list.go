@@ -25,4 +25,3 @@ func (c *GossipListCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.WithField("topics", topics).Infof("On %d topics.", len(topics))
 	return nil
 }
-

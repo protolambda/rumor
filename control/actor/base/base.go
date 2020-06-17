@@ -9,7 +9,7 @@ import (
 type Base struct {
 	WithHost
 	BaseContext context.Context
-	Log    logrus.FieldLogger
+	Log         logrus.FieldLogger
 }
 
 type WithHost interface {

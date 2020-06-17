@@ -54,4 +54,3 @@ func parseForkVersion(v string) ([4]byte, error) {
 	_, err := hex.Decode(out[:], []byte(v))
 	return out, err
 }
-

@@ -9,7 +9,7 @@ import (
 
 type GossipEventsCmd struct {
 	*base.Base
-	TopicName  string `ask:"<topic>" help:"The name of the topic to track events of"`
+	TopicName string `ask:"<topic>" help:"The name of the topic to track events of"`
 }
 
 func (c *GossipEventsCmd) Help() string {
@@ -44,4 +44,3 @@ func (c *GossipEventsCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 }
-

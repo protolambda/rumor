@@ -8,7 +8,7 @@ import (
 
 type GossipJoinCmd struct {
 	*base.Base
-	TopicName  string `ask:"<topic>" help:"The name of the topic to join"`
+	TopicName string `ask:"<topic>" help:"The name of the topic to join"`
 }
 
 func (c *GossipJoinCmd) Help() string {

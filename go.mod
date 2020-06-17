@@ -11,11 +11,9 @@ require (
 	github.com/golang/snappy v0.0.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/websocket v1.4.1
-	github.com/ipfs/go-datastore v0.3.1
 	github.com/libp2p/go-libp2p v0.5.1
 	github.com/libp2p/go-libp2p-connmgr v0.2.1
 	github.com/libp2p/go-libp2p-core v0.3.1
-	github.com/libp2p/go-libp2p-kad-dht v0.5.0
 	github.com/libp2p/go-libp2p-mplex v0.2.1
 	github.com/libp2p/go-libp2p-peerstore v0.1.4
 	github.com/libp2p/go-libp2p-pubsub v0.2.6
@@ -25,15 +23,16 @@ require (
 	github.com/libp2p/go-ws-transport v0.2.0
 	github.com/minio/sha256-simd v0.1.1
 	github.com/multiformats/go-multiaddr v0.2.0
+	github.com/protolambda/ask v0.0.1
 	github.com/protolambda/zrnt v0.11.1
 	github.com/protolambda/zssz v0.1.4
 	github.com/protolambda/ztyp v0.0.1
 	github.com/sirupsen/logrus v1.4.2
-	github.com/protolambda/ask v0.0.1
+	github.com/spf13/cobra v0.0.5
 )
 
 replace (
+	github.com/protolambda/ask => ../ask
 	github.com/protolambda/zrnt => ../zrnt
 	github.com/protolambda/ztyp => ../ztyp
-	github.com/protolambda/ask => ../ask
 )

@@ -48,4 +48,3 @@ func (c *Dv5Cmd) Help() string {
 }
 
 var NoDv5Err = errors.New("Must start discv5 first. Try 'dv5 start'")
-

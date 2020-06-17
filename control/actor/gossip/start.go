@@ -30,4 +30,3 @@ func (c *GossipStartCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.Info("Started GossipSub")
 	return nil
 }
-

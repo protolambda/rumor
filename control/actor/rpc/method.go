@@ -30,7 +30,6 @@ func (c *RpcMethodData) checkAndGetReq(reqKeyStr string) (key RequestKey, req *R
 	return key, req, nil
 }
 
-
 type RpcMethodCmd struct {
 	*base.Base
 	*RpcMethodData
@@ -40,7 +39,7 @@ func (c *RpcMethodCmd) Help() string {
 	return fmt.Sprintf("Manage %s RPC", c.Name)
 }
 
-func (c *RpcMethodCmd)  Cmd(route string) (cmd interface{}, err error) {
+func (c *RpcMethodCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "req":
 		cmd = &RpcMethodReqCmd{
@@ -49,11 +48,11 @@ func (c *RpcMethodCmd)  Cmd(route string) (cmd interface{}, err error) {
 	case "listen":
 		cmd = &RpcMethodListenCmd{
 			Base: c.Base, RpcMethodData: c.RpcMethodData,
-			Timeout:      10 * time.Second,
-			Compression:  flags.CompressionFlag{Compression: reqresp.SnappyCompression{}},
-			Raw:          false,
-			Drop:         c.Method.DefaultResponseChunkCount == 0,
-			Read:         true,
+			Timeout:     10 * time.Second,
+			Compression: flags.CompressionFlag{Compression: reqresp.SnappyCompression{}},
+			Raw:         false,
+			Drop:        c.Method.DefaultResponseChunkCount == 0,
+			Read:        true,
 		}
 	case "resp":
 		cmd = &RpcMethodRespCmd{

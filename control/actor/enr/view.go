@@ -14,8 +14,8 @@ import (
 
 type EnrViewCmd struct {
 	*base.Base
-	KvMode bool `ask:"--kv" help:"Print the full set of Key-Value pairs"`
-	Enr flags.EnrFlag `ask:"<enr>" help:"The ENR to view, url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix."`
+	KvMode bool          `ask:"--kv" help:"Print the full set of Key-Value pairs"`
+	Enr    flags.EnrFlag `ask:"<enr>" help:"The ENR to view, url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix."`
 }
 
 func (c *EnrViewCmd) Help() string {

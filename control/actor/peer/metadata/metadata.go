@@ -36,4 +36,3 @@ func (c *PeerMetadataCmd) Cmd(route string) (cmd interface{}, err error) {
 	*/
 	return nil, errors.New("not implemented yet")
 }
-

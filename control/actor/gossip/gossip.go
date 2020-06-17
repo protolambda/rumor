@@ -55,5 +55,3 @@ func (c *GossipCmd) Help() string {
 }
 
 var NoGossipErr = errors.New("Must start gossip-sub first. Try 'gossip start'")
-
-

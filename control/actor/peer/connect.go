@@ -10,9 +10,9 @@ import (
 
 type PeerConnectCmd struct {
 	*base.Base
-	Timeout  time.Duration    `ask:"--timeout" help:"connection timeout, 0 to disable"`
-	Addr     flags.FlexibleAddrFlag `ask:"<addr>" help:"ENR, enode or multi address to connect to"`
-	Tag      string           `ask:"[tag]" help:"Optionally tag the peer upon connection, e.g. tag 'bootnode'"`
+	Timeout time.Duration          `ask:"--timeout" help:"connection timeout, 0 to disable"`
+	Addr    flags.FlexibleAddrFlag `ask:"<addr>" help:"ENR, enode or multi address to connect to"`
+	Tag     string                 `ask:"[tag]" help:"Optionally tag the peer upon connection, e.g. tag 'bootnode'"`
 }
 
 func (c *PeerConnectCmd) Help() string {

@@ -9,7 +9,7 @@ import (
 
 type GossipListPeersCmd struct {
 	*base.Base
-	TopicName  string `ask:"<topic>" help:"The name of the topic to list peers of"`
+	TopicName string `ask:"<topic>" help:"The name of the topic to list peers of"`
 }
 
 func (c *GossipListPeersCmd) Help() string {

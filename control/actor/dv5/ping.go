@@ -26,4 +26,3 @@ func (c *Dv5PingCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.Infof("Successfully pinged")
 	return nil
 }
-

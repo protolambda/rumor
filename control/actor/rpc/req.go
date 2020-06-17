@@ -24,12 +24,12 @@ func (c *RpcMethodReqCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "raw":
 		cmd = &RpcMethodReqRawCmd{
-			Base: c.Base,
+			Base:          c.Base,
 			RpcMethodData: c.RpcMethodData,
-			Timeout:         10 * time.Second,
-			Compression:     flags.CompressionFlag{Compression: reqresp.SnappyCompression{}},
-			MaxChunks:       c.Method.DefaultResponseChunkCount,
-			Raw:             false,
+			Timeout:       10 * time.Second,
+			Compression:   flags.CompressionFlag{Compression: reqresp.SnappyCompression{}},
+			MaxChunks:     c.Method.DefaultResponseChunkCount,
+			Raw:           false,
 		}
 	default:
 		return nil, ask.UnrecognizedErr
@@ -45,12 +45,12 @@ func (c *RpcMethodReqCmd) Routes() []string {
 type RpcMethodReqRawCmd struct {
 	*base.Base
 	*RpcMethodData
-	Timeout          time.Duration   `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
-	Compression      flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
-	MaxChunks        uint64          `ask:"--max-chunks" help:"Max response chunk count, if 0, do not wait for a response at all."`
-	Raw              bool            `ask:"--raw" help:"If chunks should be logged as raw hex-encoded byte strings"`
-	PeerID           flags.PeerIDFlag      `ask:"<peer-id>" help:"libp2p Peer-ID to request"`
-	Data             flags.BytesHexFlag    `ask:"<data>" help:"Raw uncompressed hex-encoded request data"`
+	Timeout     time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
+	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	MaxChunks   uint64                `ask:"--max-chunks" help:"Max response chunk count, if 0, do not wait for a response at all."`
+	Raw         bool                  `ask:"--raw" help:"If chunks should be logged as raw hex-encoded byte strings"`
+	PeerID      flags.PeerIDFlag      `ask:"<peer-id>" help:"libp2p Peer-ID to request"`
+	Data        flags.BytesHexFlag    `ask:"<data>" help:"Raw uncompressed hex-encoded request data"`
 }
 
 func (c *RpcMethodReqRawCmd) Help() string {
@@ -116,4 +116,3 @@ func (c *RpcMethodReqRawCmd) Run(ctx context.Context, args ...string) error {
 			return nil
 		})
 }
-

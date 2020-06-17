@@ -12,8 +12,8 @@ import (
 
 type GossipPublishCmd struct {
 	*base.Base
-	TopicName  string       `ask:"<topic>" help:"The name of the topic to publish to"`
-	Message    flags.BytesHexFlag `ask:"<message>" help:"The uncompressed message bytes, hex-encoded"`
+	TopicName string             `ask:"<topic>" help:"The name of the topic to publish to"`
+	Message   flags.BytesHexFlag `ask:"<message>" help:"The uncompressed message bytes, hex-encoded"`
 }
 
 func (c *GossipPublishCmd) Help() string {
@@ -37,4 +37,3 @@ func (c *GossipPublishCmd) Run(ctx context.Context, args ...string) error {
 		return nil
 	}
 }
-

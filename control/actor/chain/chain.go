@@ -8,7 +8,6 @@ import (
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"github.com/protolambda/ztyp/tree"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"os"
 )
 
@@ -16,45 +15,47 @@ type ChainState struct {
 	CurrentChain chain.ChainID
 }
 
+// TODO, placeholder, fix
+type cobra = uint16
 
-func InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "chain",
-		Short: "Manage Eth2 chains, forkchoice too",
-	}
+func InitChainCmd(ctx context.Context, log logrus.FieldLogger) {
+	//cmd := &cobra.Command{
+	//	Use:   "chain",
+	//	Short: "Manage Eth2 chains, forkchoice too",
+	//}
 
 	/*
-	 TODO chain cmd
-	# TODO: new commands
-	  chain
-	    switch <chain name>  # Change actor to a different chain
-	    create <chain name> <genesis>
-	    copy <chain name>  # fork the chain by creating a copy of it
-	    hot
-	      view [anchor root]
-	    cold
-	      view <start> <stop>
+		 TODO chain cmd
+		# TODO: new commands
+		  chain
+		    switch <chain name>  # Change actor to a different chain
+		    create <chain name> <genesis>
+		    copy <chain name>  # fork the chain by creating a copy of it
+		    hot
+		      view [anchor root]
+		    cold
+		      view <start> <stop>
 
-	    block
-	      import <root>  # import block (reference to block db)
+		    block
+		      import <root>  # import block (reference to block db)
 
-	    attestation
-	      import   # import attestation
-	      gossip   # track gossip to import attestations
-	        subnet <index>
-	        global
+		    attestation
+		      import   # import attestation
+		      gossip   # track gossip to import attestations
+		        subnet <index>
+		        global
 
-	    votes ...     # get current latest votes
+		    votes ...     # get current latest votes
 
-	    head  # Manage current head of current chain
-	      get
-	      set <block-root>    # fixed point, don't change status otherways
-	      follow  # follow proto-array forkchoice of chain
+		    head  # Manage current head of current chain
+		      get
+		      set <block-root>    # fixed point, don't change status otherways
+		      follow  # follow proto-array forkchoice of chain
 
-	    serve  # Serve the current chain
-	      by-range
-	      by-root
-	 */
+		    serve  # Serve the current chain
+		      by-range
+		      by-root
+	*/
 	cmd.AddCommand(&cobra.Command{
 		Use:   "switch <chain-name>",
 		Short: "Switch to an existing chain",
@@ -191,11 +192,11 @@ func InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 					}
 
 					entries = append(entries, map[string]interface{}{
-						"slot": entry.Slot(),
-						"block_root": entry.BlockRoot(),
-						"state_root": entry.StateRoot(),
+						"slot":        entry.Slot(),
+						"block_root":  entry.BlockRoot(),
+						"state_root":  entry.StateRoot(),
 						"parent_root": entry.ParentRoot(),
-						"empty": entry.IsEmpty(),
+						"empty":       entry.IsEmpty(),
 					})
 					iter.NextSlot()
 				}

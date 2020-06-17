@@ -22,4 +22,3 @@ func (c *Dv5StopCmd) Run(ctx context.Context, args ...string) error {
 	log.Info("Stopped discv5")
 	return nil
 }
-

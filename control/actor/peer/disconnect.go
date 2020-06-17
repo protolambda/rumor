@@ -8,7 +8,7 @@ import (
 
 type PeerDisconnectCmd struct {
 	*base.Base
-	PeerID   flags.PeerIDFlag `ask:"<peer-id>" help:"The peer to close all connections of"`
+	PeerID flags.PeerIDFlag `ask:"<peer-id>" help:"The peer to close all connections of"`
 }
 
 func (c *PeerDisconnectCmd) Help() string {

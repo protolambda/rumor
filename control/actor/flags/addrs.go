@@ -164,7 +164,6 @@ func (f *NodeIDFlexibleFlag) Type() string {
 	return "Dv5 flexible ID"
 }
 
-
 type PeerIDFlag struct {
 	PeerID peer.ID
 }
@@ -188,4 +187,3 @@ func (f *PeerIDFlag) Set(v string) error {
 func (f *PeerIDFlag) Type() string {
 	return "Peer ID"
 }
-

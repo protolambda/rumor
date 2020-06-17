@@ -84,19 +84,18 @@ type UnfinalizedChain struct {
 	BlockSink BlockSink
 }
 
-
 type HotChainIter struct {
 	// ordered from head to 0
 	entries []*HotEntry
-	i int
-	err error
+	i       int
+	err     error
 }
 
 func (fi *HotChainIter) PrevSlot() (ok bool) {
 	if fi.err != nil {
 		return false
 	}
-	if fi.i + 1 >= len(fi.entries) {
+	if fi.i+1 >= len(fi.entries) {
 		return false
 	}
 	fi.i += 1
@@ -139,7 +138,7 @@ func (uc *UnfinalizedChain) Iter() ChainIter {
 		entries = append(entries, entry.(*HotEntry))
 		root = entry.ParentRoot()
 	}
-	return &HotChainIter{entries, len(entries)-1, nil}
+	return &HotChainIter{entries, len(entries) - 1, nil}
 }
 
 type BlockSink interface {

@@ -9,7 +9,7 @@ import (
 type RpcMethodCloseCmd struct {
 	*base.Base
 	*RpcMethodData
-	ReqId         string `ask:"<req-id>" help:"the ID of the request to close"`
+	ReqId string `ask:"<req-id>" help:"the ID of the request to close"`
 }
 
 func (c *RpcMethodCloseCmd) Help() string {
@@ -28,4 +28,3 @@ func (c *RpcMethodCloseCmd) Run(ctx context.Context, args ...string) error {
 	}).Infof("Closed request.")
 	return nil
 }
-

@@ -8,8 +8,8 @@ import (
 
 type PeerProtectCmd struct {
 	*base.Base
-	PeerID   flags.PeerIDFlag `ask:"<peer-id>" help:"The peer to protect with a tag"`
-	Tag      string     `ask:"<tag>" help:"Tag to give to the peer"`
+	PeerID flags.PeerIDFlag `ask:"<peer-id>" help:"The peer to protect with a tag"`
+	Tag    string           `ask:"<tag>" help:"Tag to give to the peer"`
 }
 
 func (c *PeerProtectCmd) Help() string {

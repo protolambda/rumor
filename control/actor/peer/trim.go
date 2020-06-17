@@ -8,7 +8,7 @@ import (
 
 type PeerTrimCmd struct {
 	*base.Base
-	Timeout  time.Duration `ask:"[which]" help:"Timeout for trimming."`
+	Timeout time.Duration `ask:"[which]" help:"Timeout for trimming."`
 }
 
 func (c *PeerTrimCmd) Help() string {

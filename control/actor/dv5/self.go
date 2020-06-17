@@ -20,4 +20,3 @@ func (c *Dv5SelfCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.WithField("enr", c.Dv5State.Dv5Node.Self()).Infof("local dv5 node")
 	return nil
 }
-

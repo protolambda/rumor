@@ -45,4 +45,3 @@ func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
 	log.Info("Started discv5")
 	return nil
 }
-

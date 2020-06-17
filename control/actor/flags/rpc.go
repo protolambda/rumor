@@ -34,4 +34,3 @@ func (f *CompressionFlag) Set(v string) error {
 func (f *CompressionFlag) Type() string {
 	return "RPC compression"
 }
-

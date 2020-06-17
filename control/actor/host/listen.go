@@ -14,7 +14,7 @@ type HostListenCmd struct {
 	*base.Base
 	WithSetEnr
 
-	IP     net.IP `ask:"--ip" help:"If no IP is specified, network interfaces are checked for one."`
+	IP net.IP `ask:"--ip" help:"If no IP is specified, network interfaces are checked for one."`
 
 	TcpPort uint16 `ask:"--tcp" help:"If no tcp port is specified, it defaults to 9000."`
 	UdpPort uint16 `ask:"--udp" help:"If no udp port is specified (= 0), UDP equals TCP."`

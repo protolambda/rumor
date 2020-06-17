@@ -13,7 +13,7 @@ import (
 
 type GossipLogCmd struct {
 	*base.Base
-	TopicName  string `ask:"<topic>" help:"The name of the topic to log messages of"`
+	TopicName string `ask:"<topic>" help:"The name of the topic to log messages of"`
 }
 
 func (c *GossipLogCmd) Help() string {

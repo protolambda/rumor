@@ -83,9 +83,9 @@ func NewFinalizedChain(anchorSlot Slot) *FinalizedChain {
 }
 
 type ColdChainIter struct {
-	Chain Chain
+	Chain      Chain
 	Start, End Slot
-	Slot Slot
+	Slot       Slot
 }
 
 func (fi *ColdChainIter) PrevSlot() (ok bool) {

@@ -10,9 +10,9 @@ import (
 
 type EnrMakeCmd struct {
 	*base.Base
-	IP net.IP `ask:"--ip" help:"IP address (v4 or v6). None if empty."`
-	TCP uint16 `ask:"--tcp" help:"TCP port. None if 0"`
-	UDP uint16 `ask:"--udp" help:"UDP port. None if 0"`
+	IP   net.IP               `ask:"--ip" help:"IP address (v4 or v6). None if empty."`
+	TCP  uint16               `ask:"--tcp" help:"TCP port. None if 0"`
+	UDP  uint16               `ask:"--udp" help:"UDP port. None if 0"`
 	Priv flags.P2pPrivKeyFlag `ask:"--priv" help:"Private key, in raw hex encoded format (32 bytes -> 64 hex chars with optional 0x prefix). None if empty, and also no signed ENR."`
 }
 

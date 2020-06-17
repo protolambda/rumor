@@ -9,7 +9,7 @@ import (
 
 type GossipLeaveCmd struct {
 	*base.Base
-	TopicName  string `ask:"<topic>" help:"The name of the topic to leave"`
+	TopicName string `ask:"<topic>" help:"The name of the topic to leave"`
 }
 
 func (c *GossipLeaveCmd) Help() string {

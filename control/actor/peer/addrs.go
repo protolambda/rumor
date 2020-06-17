@@ -8,7 +8,7 @@ import (
 
 type PeerAddrsCmd struct {
 	*base.Base
-	PeerID   flags.PeerIDFlag `ask:"[peer-id]" help:"The peer to view addresses of, or local peer if omitted."`
+	PeerID flags.PeerIDFlag `ask:"[peer-id]" help:"The peer to view addresses of, or local peer if omitted."`
 }
 
 func (c *PeerAddrsCmd) Help() string {

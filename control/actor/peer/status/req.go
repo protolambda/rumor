@@ -9,9 +9,9 @@ import (
 
 type PeerStatusReqCmd struct {
 	*base.Base
-	Timeout        time.Duration   `ask:"--timeout" help:"request timeout, 0 to disable"`
-	Compression    flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
-	PeerID         flags.PeerIDFlag      `ask:"<peer-id>" help:"Peer to fetch status from."`
+	Timeout     time.Duration         `ask:"--timeout" help:"request timeout, 0 to disable"`
+	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	PeerID      flags.PeerIDFlag      `ask:"<peer-id>" help:"Peer to fetch status from."`
 }
 
 func (c *PeerStatusReqCmd) Help() string {

@@ -14,11 +14,11 @@ import (
 type RpcMethodListenCmd struct {
 	*base.Base
 	*RpcMethodData
-	Timeout       time.Duration   `ask:"--timeout" help:"Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout"`
-	Compression   flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
-	Raw           bool            `ask:"--raw" help:"Do not decode the request, look at raw bytes"`
-	Drop          bool            `ask:"--drop" help:"Drop the requests, do not queue for a response."`
-	Read          bool            `ask:"--read" help:"Read the contents of the request."`
+	Timeout     time.Duration         `ask:"--timeout" help:"Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout"`
+	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	Raw         bool                  `ask:"--raw" help:"Do not decode the request, look at raw bytes"`
+	Drop        bool                  `ask:"--drop" help:"Drop the requests, do not queue for a response."`
+	Read        bool                  `ask:"--read" help:"Read the contents of the request."`
 }
 
 func (c *RpcMethodListenCmd) Help() string {

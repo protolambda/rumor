@@ -8,7 +8,7 @@ import (
 
 type EnrCmd struct {
 	*base.Base
-	log    logrus.FieldLogger
+	log logrus.FieldLogger
 }
 
 func (c *EnrCmd) Cmd(route string) (cmd interface{}, err error) {
@@ -29,12 +29,6 @@ func (c *EnrCmd) Routes() []string {
 	return []string{"view", "gen-key", "make"}
 }
 
-
 func (c *EnrCmd) Help() string {
 	return "Ethereum Name Record (ENR) utilities"
 }
-
-
-
-
-

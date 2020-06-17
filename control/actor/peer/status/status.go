@@ -102,6 +102,3 @@ func (c *PeerStatusCmd) Req() *PeerStatusReqCmd {
 		Compression:   flags.CompressionFlag{Compression: reqresp.SnappyCompression{}},
 	}
 }
-
-
-

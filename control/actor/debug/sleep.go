@@ -8,7 +8,7 @@ import (
 
 type DebugSleepCmd struct {
 	*base.Base
-	Time     time.Duration `ask:"<time>" help:"How long to sleep, e.g. 1s"`
+	Time time.Duration `ask:"<time>" help:"How long to sleep, e.g. 1s"`
 }
 
 func (c *DebugSleepCmd) Help() string {

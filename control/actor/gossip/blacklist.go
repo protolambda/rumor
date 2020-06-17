@@ -8,7 +8,7 @@ import (
 
 type GossipBlacklistCmd struct {
 	*base.Base
-	PeerID     flags.PeerIDFlag `ask:"<peer-id>" help:"The peer to blacklist"`
+	PeerID flags.PeerIDFlag `ask:"<peer-id>" help:"The peer to blacklist"`
 }
 
 func (c *GossipBlacklistCmd) Help() string {
@@ -23,4 +23,3 @@ func (c *GossipBlacklistCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.Infof("Blacklisted peer %s", c.PeerID.PeerID.Pretty())
 	return nil
 }
-
