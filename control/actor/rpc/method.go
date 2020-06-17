@@ -16,6 +16,21 @@ type RpcMethodData struct {
 	Method    *reqresp.RPCMethod
 }
 
+func (c *RpcMethodData) checkAndGetReq(reqKeyStr string) (key RequestKey, req *RequestEntry, err error) {
+	reqId, err := strconv.ParseUint(reqKeyStr, 0, 64)
+	if err != nil {
+		return 0, nil, fmt.Errorf("Could not parse request key '%s'", reqKeyStr)
+	}
+
+	key = RequestKey(reqId)
+	req = c.Responder.GetRequest(key)
+	if req == nil {
+		return 0, nil, fmt.Errorf("Could not find request corresponding to key '%s'", key)
+	}
+	return key, req, nil
+}
+
+
 type RpcMethodCmd struct {
 	*base.Base
 	*RpcMethodData
@@ -54,17 +69,6 @@ func (c *RpcMethodCmd)  Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
-func (c *RpcMethodData) checkAndGetReq(reqKeyStr string) (key RequestKey, req *RequestEntry, err error) {
-	reqId, err := strconv.ParseUint(reqKeyStr, 0, 64)
-	if err != nil {
-		return 0, nil, fmt.Errorf("Could not parse request key '%s'", reqKeyStr)
-	}
-
-	key = RequestKey(reqId)
-	req = c.Responder.GetRequest(key)
-	if req == nil {
-		return 0, nil, fmt.Errorf("Could not find request corresponding to key '%s'", key)
-	}
-	return key, req, nil
+func (c *RpcCmd) Routes() []string {
+	return []string{"req", "listen", "resp", "close"}
 }
-

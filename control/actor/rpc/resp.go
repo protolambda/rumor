@@ -21,27 +21,31 @@ func (c *RpcMethodRespCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "chunk":
 		cmd = &RpcMethodRespChunkCmd{
-			Base: c.Base,
+			Base:          c.Base,
 			RpcMethodData: c.RpcMethodData,
 		}
 	case "invalid-request":
 		cmd = &RpcMethodRespErrorCmd{
-			Base: c.Base,
+			Base:          c.Base,
 			RpcMethodData: c.RpcMethodData,
-			Done:             true,
-			ResultCode:       reqresp.InvalidReqCode,
+			Done:          true,
+			ResultCode:    reqresp.InvalidReqCode,
 		}
 	case "server-error":
 		cmd = &RpcMethodRespErrorCmd{
-			Base: c.Base,
+			Base:          c.Base,
 			RpcMethodData: c.RpcMethodData,
-			Done:             true,
-			ResultCode:       reqresp.ServerErrCode,
+			Done:          true,
+			ResultCode:    reqresp.ServerErrCode,
 		}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
 	return cmd, nil
+}
+
+func (c *RpcMethodRespCmd) Routes() []string {
+	return []string{"chunk", "invalid-request", "server-error"}
 }
 
 type RpcMethodRespChunkCmd struct {
@@ -57,7 +61,7 @@ func (c *RpcMethodRespChunkCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "raw":
 		cmd = &RpcMethodRespChunkRawCmd{
-			Base: c.Base,
+			Base:          c.Base,
 			RpcMethodData: c.RpcMethodData,
 			// if there is one normally only one response chunk, then close it right after by default.
 			Done:       c.Method.DefaultResponseChunkCount <= 1,
@@ -69,13 +73,17 @@ func (c *RpcMethodRespChunkCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
+func (c *RpcMethodRespChunkCmd) Routes() []string {
+	return []string{"raw"}
+}
+
 type RpcMethodRespChunkRawCmd struct {
 	*base.Base
 	*RpcMethodData
-	Done                   bool                 `ask:"--done" help:"After writing this chunk, close the response (no more chunks)."`
-	ResultCode             reqresp.ResponseCode `ask:"--result-code" help:"Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)"`
-	ReqId                  string               `ask:"<req-id>" help:"the ID of the request to respond to"`
-	Data                   flags.BytesHexFlag         `ask:"<data>" help:"chunk bytes (uncompressed, hex-encoded)"`
+	Done       bool                 `ask:"--done" help:"After writing this chunk, close the response (no more chunks)."`
+	ResultCode reqresp.ResponseCode `ask:"--result-code" help:"Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)"`
+	ReqId      string               `ask:"<req-id>" help:"the ID of the request to respond to"`
+	Data       flags.BytesHexFlag   `ask:"<data>" help:"chunk bytes (uncompressed, hex-encoded)"`
 }
 
 func (c *RpcMethodRespChunkRawCmd) Help() string {
@@ -99,10 +107,10 @@ func (c *RpcMethodRespChunkRawCmd) Run(ctx context.Context, args ...string) erro
 type RpcMethodRespErrorCmd struct {
 	*base.Base
 	*RpcMethodData
-	Done              bool                 `ask:"--done" help:"After writing this chunk, close the response (no more chunks)."`
-	ResultCode        reqresp.ResponseCode `ask:"--result-code" help:"Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)"`
-	ReqId             string               `ask:"<req-id>" help:"the ID of the request to respond to"`
-	Text              string               `ask:"<text>" help:"error text data"`
+	Done       bool                 `ask:"--done" help:"After writing this chunk, close the response (no more chunks)."`
+	ResultCode reqresp.ResponseCode `ask:"--result-code" help:"Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)"`
+	ReqId      string               `ask:"<req-id>" help:"the ID of the request to respond to"`
+	Text       string               `ask:"<text>" help:"error text data"`
 }
 
 func (c *RpcMethodRespErrorCmd) Help() string {

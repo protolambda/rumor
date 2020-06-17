@@ -37,6 +37,11 @@ func (c *RpcMethodReqCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
+// TODO: it may make sense to just collapse this command route, and only support raw requests.
+func (c *RpcMethodReqCmd) Routes() []string {
+	return []string{"raw"}
+}
+
 type RpcMethodReqRawCmd struct {
 	*base.Base
 	*RpcMethodData

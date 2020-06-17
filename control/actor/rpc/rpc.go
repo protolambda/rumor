@@ -8,6 +8,7 @@ import (
 )
 
 type RpcCmd struct {
+	*RPCState
 	*base.Base
 }
 
@@ -29,6 +30,10 @@ func (c *RpcCmd) Cmd(route string) (cmd interface{}, err error) {
 		return nil, ask.UnrecognizedErr
 	}
 	return cmd, nil
+}
+
+func (c *RpcCmd) Routes() []string {
+	return []string{"goodbye", "status", "ping", "metadata", "blocks-by-range", "blocks-by-root"}
 }
 
 func (c *RpcCmd) Help() string {

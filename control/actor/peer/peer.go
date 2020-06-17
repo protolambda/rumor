@@ -32,7 +32,7 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *PeerCmd) Routes() []string {
-	return []string{"start"}
+	return []string{"connect", "disconnect", "protect", "unprotect", "trim", "list", "addrs"}
 }
 
 func (c *PeerCmd) Help() string {
