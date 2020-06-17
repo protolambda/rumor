@@ -9,6 +9,7 @@ import (
 
 type PeerStatusSetCmd struct {
 	*base.Base
+	*PeerStatusState
 	ForkVersion    beacon.Version `ask:"--fork-version"`
 	HeadRoot       beacon.Root    `ask:"--head-root"`
 	HeadSlot       beacon.Slot    `ask:"--head-slot"`
@@ -23,11 +24,14 @@ func (c *PeerStatusSetCmd) Help() string {
 
 func (c *PeerStatusSetCmd) Run(ctx context.Context, args ...string) error {
 	// TODO: only change each of these if they were modified
-	c.PeerStatusState.Local.HeadForkVersion = c.ForkVersion
-	c.PeerStatusState.Local.HeadRoot = c.HeadRoot
-	c.PeerStatusState.Local.HeadSlot = c.HeadSlot
-	c.PeerStatusState.Local.FinalizedEpoch = c.FinalizedEpoch
-	c.PeerStatusState.Local.FinalizedRoot = c.FinalizedRoot
+	st := c.PeerStatusState.Local
+	st.HeadForkVersion = c.ForkVersion
+	st.HeadRoot = c.HeadRoot
+	st.HeadSlot = c.HeadSlot
+	st.FinalizedEpoch = c.FinalizedEpoch
+	st.FinalizedRoot = c.FinalizedRoot
+
+	c.PeerStatusState.Local = st
 	c.PeerStatusState.Following = c.Following
 
 	c.Log.WithFields(logrus.Fields{

@@ -35,7 +35,7 @@ func (c *RpcCmd) Help() string {
 	return "Manage Eth2 RPC"
 }
 
-func (c *RpcCmd) Method(name string, resp *base.Responder, method *reqresp.RPCMethod) *RpcMethodCmd {
+func (c *RpcCmd) Method(name string, resp *Responder, method *reqresp.RPCMethod) *RpcMethodCmd {
 	return &RpcMethodCmd{
 		Base: c.Base,
 		RpcMethodData: &RpcMethodData{

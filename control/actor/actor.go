@@ -17,6 +17,36 @@ import (
 )
 
 
+type Actor struct {
+
+
+	GlobalPeerInfos   track.PeerInfos
+	PeerStatusState   PeerStatusState
+	PeerMetadataState PeerMetadataState
+
+	GlobalChains chain.Chains
+	ChainState   ChainState
+
+	Dv5State    Dv5State
+	GossipState GossipState
+	RPCState    RPCState
+
+	ActorCtx    context.Context
+	actorCancel context.CancelFunc
+}
+
+func NewActor() *Actor {
+	ctxAll, cancelAll := context.WithCancel(context.Background())
+	return &Actor{
+		ActorCtx:    ctxAll,
+		actorCancel: cancelAll,
+	}
+}
+
+func (r *Actor) Close() {
+	r.actorCancel()
+}
+
 func InitRootCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rumor",

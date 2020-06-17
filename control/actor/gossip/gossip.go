@@ -1,10 +1,20 @@
 package gossip
 
 import (
+	"context"
 	"errors"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/p2p/gossip"
+	"sync"
 )
+
+type GossipState struct {
+	GsNode  gossip.GossipSub
+	CloseGS context.CancelFunc
+	// string -> *pubsub.Topic
+	Topics sync.Map
+}
 
 type GossipCmd struct {
 	*base.Base
@@ -34,6 +44,10 @@ func (c *GossipCmd) Cmd(route string) (cmd interface{}, err error) {
 		return nil, ask.UnrecognizedErr
 	}
 	return cmd, nil
+}
+
+func (c *GossipCmd) Routes() []string {
+	return []string{"start", "list", "join", "events", "list-peers", "blacklist", "leave", "log", "publish"}
 }
 
 func (c *GossipCmd) Help() string {

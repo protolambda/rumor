@@ -12,7 +12,7 @@ import (
 
 type RpcMethodData struct {
 	Name      string
-	Responder *base.Responder
+	Responder *Responder
 	Method    *reqresp.RPCMethod
 }
 
@@ -54,13 +54,13 @@ func (c *RpcMethodCmd)  Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
-func (c *RpcMethodData) checkAndGetReq(reqKeyStr string) (key base.RequestKey, req *base.RequestEntry, err error) {
+func (c *RpcMethodData) checkAndGetReq(reqKeyStr string) (key RequestKey, req *RequestEntry, err error) {
 	reqId, err := strconv.ParseUint(reqKeyStr, 0, 64)
 	if err != nil {
 		return 0, nil, fmt.Errorf("Could not parse request key '%s'", reqKeyStr)
 	}
 
-	key = base.RequestKey(reqId)
+	key = RequestKey(reqId)
 	req = c.Responder.GetRequest(key)
 	if req == nil {
 		return 0, nil, fmt.Errorf("Could not find request corresponding to key '%s'", key)

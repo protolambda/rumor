@@ -69,7 +69,7 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 			c.Log.WithField("req", req).Infof("Received request, dropping it!")
 		} else {
 			ctx, cancel := context.WithCancel(ctx)
-			reqId := c.Responder.AddRequest(&base.RequestEntry{
+			reqId := c.Responder.AddRequest(&RequestEntry{
 				From:    peerId,
 				Handler: handler,
 				Cancel:  cancel,

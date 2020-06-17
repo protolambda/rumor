@@ -25,6 +25,11 @@ func (c *EnrCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
+func (c *EnrCmd) Routes() []string {
+	return []string{"view", "gen-key", "make"}
+}
+
+
 func (c *EnrCmd) Help() string {
 	return "Ethereum Name Record (ENR) utilities"
 }

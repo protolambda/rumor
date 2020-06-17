@@ -1,28 +1,38 @@
 package host
 
 import (
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
+	"net"
 )
+
+type WithSetHost interface {
+	SetHost(h host.Host) error
+}
+
+type WithSetEnr interface {
+	SetIP(ip net.IP)
+	SetTCP(port uint16)
+	SetUDP(port uint16)
+}
 
 type HostCmd struct {
 	*base.Base
-}
-
-func (c *HostCmd) Help() string {
-	return "Manage the libp2p host"
+	WithSetHost
+	WithSetEnr
 }
 
 func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "start":
-		cmd = DefaultHostStartCmd(c.Base)
+		cmd = &HostStartCmd{Base: c.Base, WithSetHost: c.WithSetHost}
 	case "stop":
 		cmd = &HostStopCmd{c.Base}
 	case "view":
 		cmd = &HostViewCmd{c.Base}
 	case "listen":
-		cmd = DefaultHostListenCmd(c.Base)
+		cmd = &HostListenCmd{Base: c.Base, WithSetEnr: c.WithSetEnr}
 	case "event":
 		cmd = &HostEventCmd{c.Base}
 	default:
@@ -31,3 +41,10 @@ func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
+func (c *HostCmd) Routes() []string {
+	return []string{"start", "stop", "view", "listen", "event"}
+}
+
+func (c *HostCmd) Help() string {
+	return "Manage the libp2p host"
+}

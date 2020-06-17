@@ -15,6 +15,10 @@ func (c *DebugSleepCmd) Help() string {
 	return "Sleep for given amount of milliseconds"
 }
 
+func (c *DebugSleepCmd) Default() {
+	c.Time = time.Second
+}
+
 func (c *DebugSleepCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.Infoln("started sleeping for duration %s!", c.Time.String())
 	sleepCtx, _ := context.WithTimeout(ctx, c.Time)

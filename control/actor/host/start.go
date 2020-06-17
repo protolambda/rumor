@@ -23,30 +23,26 @@ import (
 
 type HostStartCmd struct {
 	*base.Base
-	PrivKeyStr       string   `ask:"--priv" help:"hex-encoded RSA private key for libp2p host. Random if none is specified."`
-	TransportsStrArr []string `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
-	MuxStrArr        []string `ask:"--mux" help:"Multiplexers to use"`
-	SecurityStr      string   `ask:"--security" help:"Security to use. Options: secio, none"`
-	RelayEnabled     bool     `ask:"--relay" help:"enable relayer functionality"`
-	LoPeers          int      `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
-	HiPeers          int      `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
-	GracePeriodMs    int      `ask:"--peer-grace-period" help:"Time in milliseconds to grace a peer from being trimmed"`
-	NatEnabled       bool     `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
+	WithSetHost
+	PrivKeyStr       string        `ask:"--priv" help:"hex-encoded RSA private key for libp2p host. Random if none is specified."`
+	TransportsStrArr []string      `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
+	MuxStrArr        []string      `ask:"--mux" help:"Multiplexers to use"`
+	SecurityStr      string        `ask:"--security" help:"Security to use. Options: secio, none"`
+	RelayEnabled     bool          `ask:"--relay" help:"enable relayer functionality"`
+	LoPeers          int           `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
+	HiPeers          int           `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
+	GracePeriod      time.Duration `ask:"--peer-grace-period" help:"Time to grace a peer from being trimmed"`
+	NatEnabled       bool          `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
 }
 
-func DefaultHostStartCmd(b *base.Base) *HostStartCmd {
-	return &HostStartCmd{
-		Base: b,
-		PrivKeyStr:       "",
-		TransportsStrArr: []string{"tcp"},
-		MuxStrArr:        []string{"yamux", "mplex"},
-		SecurityStr:      "secio",
-		RelayEnabled:     false,
-		LoPeers:          15,
-		HiPeers:          20,
-		GracePeriodMs:    20_000,
-		NatEnabled:       true,
-	}
+func (c *HostStartCmd) Default() {
+	c.TransportsStrArr = []string{"tcp"}
+	c.MuxStrArr = []string{"yamux", "mplex"}
+	c.SecurityStr = "secio"
+	c.LoPeers = 15
+	c.HiPeers = 20
+	c.GracePeriod = 20 * time.Second
+	c.NatEnabled = true
 }
 
 func (c *HostStartCmd) Help() string {
@@ -56,26 +52,27 @@ func (c *HostStartCmd) Help() string {
 func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	_, err := c.Host()
 	if err == nil {
-		return errors.New("Already have a host open.")
+		return errors.New("already have a host open")
 	}
+	var priv crypto.PrivKey
 	{
 		if c.PrivKeyStr == "" { // generate new private key if non was specified
 			var err error
-			c.PrivKey, _, err = crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
+			priv, _, err = crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
 			if err != nil {
 				return err
 			}
-			p, err := c.PrivKey.Raw()
+			p, err := priv.Raw()
 			if err != nil {
 				return err
 			}
 			c.Log.WithField("priv", hex.EncodeToString(p)).Info("Generated random Secp256k1 private key")
 		} else {
-			priv, err := addrutil.ParsePrivateKey(c.PrivKeyStr)
+			p, err := addrutil.ParsePrivateKey(c.PrivKeyStr)
 			if err != nil {
 				return err
 			}
-			c.PrivKey = (*crypto.Secp256k1PrivateKey)(priv)
+			priv = (*crypto.Secp256k1PrivateKey)(p)
 		}
 	}
 	hostOptions := make([]libp2p.Option, 0)
@@ -124,12 +121,12 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	}
 
 	hostOptions = append(hostOptions,
-		libp2p.Identity(c.PrivKey),
+		libp2p.Identity(priv),
 		libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
-		libp2p.ConnectionManager(connmgr.NewConnManager(c.LoPeers, c.HiPeers, time.Millisecond*time.Duration(c.GracePeriodMs))),
+		libp2p.ConnectionManager(connmgr.NewConnManager(c.LoPeers, c.HiPeers, c.GracePeriod)),
 	)
 	// Not the command ctx, we want the host to stay open after the command.
-	h, err := libp2p.New(c.ActorCtx, hostOptions...)
+	h, err := libp2p.New(c.BaseContext, hostOptions...)
 	if err != nil {
 		return err
 	}

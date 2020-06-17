@@ -12,18 +12,17 @@ import (
 
 type HostListenCmd struct {
 	*base.Base
+	WithSetEnr
+
 	IP     net.IP `ask:"--ip" help:"If no IP is specified, network interfaces are checked for one."`
 
 	TcpPort uint16 `ask:"--tcp" help:"If no tcp port is specified, it defaults to 9000."`
 	UdpPort uint16 `ask:"--udp" help:"If no udp port is specified (= 0), UDP equals TCP."`
 }
 
-func DefaultHostListenCmd(b *base.Base) *HostListenCmd {
-	return &HostListenCmd{
-		Base: b,
-		IP:      nil,
-		TcpPort: 9000,
-		UdpPort: 9000}
+func (c *HostListenCmd) Default() {
+	c.TcpPort = 9000
+	c.UdpPort = 9000
 }
 
 func (c *HostListenCmd) Help() string {
@@ -80,9 +79,9 @@ func (c *HostListenCmd) Run(ctx context.Context, args ...string) error {
 	if err := h.Network().Listen(mAddr); err != nil {
 		return err
 	}
-	c.Actor.IP = c.IP
-	c.Actor.TcpPort = c.TcpPort
-	c.Actor.UdpPort = c.UdpPort
+	c.WithSetEnr.SetIP(c.IP)
+	c.WithSetEnr.SetTCP(c.TcpPort)
+	c.WithSetEnr.SetUDP(c.UdpPort)
 	enr, err := addrutil.EnrToString(c.GetEnr())
 	if err != nil {
 		return err

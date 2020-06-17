@@ -4,7 +4,12 @@ import (
 	"errors"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/p2p/peering/dv5"
 )
+
+type Dv5State struct {
+	Dv5Node dv5.Discv5
+}
 
 type Dv5Cmd struct {
 	*base.Base

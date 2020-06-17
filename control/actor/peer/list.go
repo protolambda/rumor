@@ -24,6 +24,10 @@ func (c *PeerListCmd) Help() string {
 	return "Stop the host node."
 }
 
+func (c *PeerListCmd) Default() {
+	c.Which = "connected"
+}
+
 func (c *PeerListCmd) Run(ctx context.Context, args ...string) error {
 	h, err := c.Host()
 	if err != nil {

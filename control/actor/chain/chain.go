@@ -12,8 +12,12 @@ import (
 	"os"
 )
 
+type ChainState struct {
+	CurrentChain chain.ChainID
+}
 
-func (r *Actor) InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
+
+func InitChainCmd(ctx context.Context, log logrus.FieldLogger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "chain",
 		Short: "Manage Eth2 chains, forkchoice too",

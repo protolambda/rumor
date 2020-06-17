@@ -16,8 +16,14 @@ import (
 	"time"
 )
 
+type PeerStatusState struct {
+	Following bool
+	Local     methods.Status
+}
+
 type PeerStatusCmd struct {
 	*base.Base
+	*PeerStatusState
 }
 
 func (c *PeerStatusCmd) Help() string {

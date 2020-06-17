@@ -3,7 +3,6 @@ package debug
 import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
-	"time"
 )
 
 type DebugCmd struct {
@@ -13,11 +12,15 @@ type DebugCmd struct {
 func (c *DebugCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "sleep":
-		cmd = DebugSleepCmd{Base: c.Base, Time: time.Second}
+		cmd = DebugSleepCmd{Base: c.Base}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
 	return cmd, nil
+}
+
+func (c *DebugCmd) Routes() []string {
+	return []string{"sleep"}
 }
 
 func (c *DebugCmd) Help() string {
