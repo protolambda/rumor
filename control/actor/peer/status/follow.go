@@ -24,7 +24,7 @@ func (c *PeerStatusFollowCmd) Run(ctx context.Context, args ...string) error {
 	c.PeerStatusState.Following = c.Following
 
 	c.Log.WithFields(logrus.Fields{
-		"status":    c.PeerStatusState.Local.Data(),
-	}).Info("Status settings")
+		"following":    c.PeerStatusState.Following,
+	}).Info("Status follow settings")
 	return nil
 }
