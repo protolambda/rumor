@@ -53,16 +53,8 @@ func (c *PeerStatusState) Routes() []string {
 func (c *PeerStatusState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
 	resCode reqresp.ResponseCode, errMsg string, data *methods.Status, err error) {
 
-	m := methods.StatusRPCv1
-
-	var reqStatus methods.Status
-	if c.Following {
-		// TODO get status from chain
-	} else {
-		reqStatus = c.Local
-	}
-	err = m.RunRequest(ctx, sFn, peerID, comp,
-		reqresp.RequestSSZInput{Obj: &reqStatus}, 1,
+	err = methods.StatusRPCv1.RunRequest(ctx, sFn, peerID, comp,
+		reqresp.RequestSSZInput{Obj: &c.Local}, 1,
 		func(chunk reqresp.ChunkedResponseHandler) error {
 			resCode = chunk.ResultCode()
 			switch resCode {

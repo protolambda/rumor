@@ -51,13 +51,7 @@ func (c *PeerStatusServeCmd) Run(ctx context.Context, args ...string) error {
 			f["data"] = reqStatus
 			c.OnStatus(peerId, &reqStatus)
 
-			var resp methods.Status
-			if c.PeerStatusState.Following {
-				// TODO
-			} else {
-				resp = c.PeerStatusState.Local
-			}
-			if err := handler.WriteResponseChunk(reqresp.SuccessCode, &resp); err != nil {
+			if err := handler.WriteResponseChunk(reqresp.SuccessCode, &c.PeerStatusState.Local); err != nil {
 				c.Log.WithFields(f).Warnf("failed to respond to status request: %v", err)
 			} else {
 				c.Log.WithFields(f).Info("handled status request")

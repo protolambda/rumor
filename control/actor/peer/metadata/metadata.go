@@ -1,15 +1,20 @@
 package metadata
 
 import (
-	"errors"
+	"context"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
+	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 )
+
+type OnMetadata func(peerID peer.ID, status *methods.MetaData)
 
 type PeerMetadataState struct {
 	Following bool
 	Local     methods.MetaData
+	OnMetadata
 }
 
 type PeerMetadataCmd struct {
@@ -62,4 +67,30 @@ func (c *PeerMetadataCmd) Cmd(route string) (cmd interface{}, err error) {
 
 func (c *PeerMetadataCmd) Routes() []string {
 	return []string{"ping", "pong", "get", "set", "req", "poll", "serve", "follow"}
+}
+
+func (c *PeerMetadataState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
+	resCode reqresp.ResponseCode, errMsg string, data *methods.MetaData, err error) {
+
+	err = methods.MetaDataRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: nil}, 1,
+		func(chunk reqresp.ChunkedResponseHandler) error {
+			resCode = chunk.ResultCode()
+			switch resCode {
+			case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+				msg, err := chunk.ReadErrMsg()
+				if err != nil {
+					return err
+				}
+				errMsg = msg
+			case reqresp.SuccessCode:
+				var meta methods.MetaData
+				if err := chunk.ReadObj(&meta); err != nil {
+					return err
+				}
+				data = &meta
+				c.OnMetadata(peerID, &meta)
+			}
+			return nil
+		})
+	return
 }
