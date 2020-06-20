@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
@@ -73,6 +74,13 @@ func (c *RpcMethodReqRawCmd) Run(ctx context.Context, args ...string) error {
 	if c.Compression.Compression != nil {
 		protocolId += protocol.ID("_" + c.Compression.Compression.Name())
 	}
+	peers := h.Peerstore()
+	if protocols, err := peers.SupportsProtocols(c.PeerID.PeerID, string(protocolId)); err != nil {
+		return fmt.Errorf("failed to check protocol support of peer %s: %v", c.PeerID.PeerID.String(), err)
+	} else if len(protocols) == 0 {
+		return fmt.Errorf("peer %s does not support protocol %s", c.PeerID.PeerID.String(), protocolId)
+	}
+
 	return c.Method.RunRequest(reqCtx, sFn, c.PeerID.PeerID, c.Compression.Compression,
 		reqresp.RequestBytesInput(c.Data), c.MaxChunks,
 		func(chunk reqresp.ChunkedResponseHandler) error {
