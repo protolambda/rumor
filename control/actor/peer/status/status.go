@@ -2,23 +2,19 @@ package status
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
-	"github.com/protolambda/zrnt/eth2/beacon"
-	"github.com/sirupsen/logrus"
-	"sync"
-	"time"
 )
+
+type OnStatus func(peerID peer.ID, status *methods.Status)
 
 type PeerStatusState struct {
 	Following bool
 	Local     methods.Status
+	OnStatus
 }
 
 type PeerStatusCmd struct {
@@ -30,75 +26,61 @@ func (c *PeerStatusCmd) Help() string {
 	return "Manage and track peer status"
 }
 
-func (c *PeerStatusCmd) Get(ctx context.Context, args ...string) (cmd interface{}, remaining []string, err error) {
-	if len(args) == 0 {
-		return nil, nil, errors.New("no subcommand specified")
-	}
-	switch args[0] {
+func (c *PeerStatusCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
+	case "get":
+		cmd = &PeerStatusGetCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+	case "set":
+		cmd = &PeerStatusSetCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
 	case "req":
-		cmd = &PeerStatusReqCmd{
-			PeerStatusCmd: c,
-			Timeout:       10 * time.Second,
-			Compression:   flags.CompressionFlag{Compression: reqresp.SnappyCompression{}},
-		}
-	// TODO
+		cmd = &PeerStatusReqCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+	case "poll":
+		cmd = &PeerStatusPollCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+	case "serve":
+		cmd = &PeerStatusServeCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+	case "follow":
+		cmd = &PeerStatusFollowCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
 	default:
-		return nil, args, fmt.Errorf("unrecognized command: %v", args)
+		return nil, ask.UnrecognizedErr
 	}
-	return cmd, args[1:], nil
+	return cmd, nil
 }
 
-func (c *PeerStatusCmd) fetch(ctx context.Context, timeout time.Duration, peerID peer.ID, comp reqresp.Compression) error {
-	h, err := c.Host()
-	if err != nil {
-		return err
-	}
-	sFn := reqresp.NewStreamFn(h.NewStream)
-	reqCtx := ctx
-	if timeout != 0 {
-		reqCtx, _ = context.WithTimeout(reqCtx, timeout)
-	}
+func (c *PeerStatusState) Routes() []string {
+	return []string{"get", "set", "req", "poll", "serve", "follow"}
+}
+
+func (c *PeerStatusState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
+	resCode reqresp.ResponseCode, errMsg string, data *methods.Status, err error) {
+
 	m := methods.StatusRPCv1
 
 	var reqStatus methods.Status
-	if c.PeerStatusState.Following {
+	if c.Following {
 		// TODO get status from chain
 	} else {
-		reqStatus = c.PeerStatusState.Local
+		reqStatus = c.Local
 	}
-	return m.RunRequest(reqCtx, sFn, peerID, comp,
+	err = m.RunRequest(ctx, sFn, peerID, comp,
 		reqresp.RequestSSZInput{Obj: &reqStatus}, 1,
 		func(chunk reqresp.ChunkedResponseHandler) error {
-			resultCode := chunk.ResultCode()
-			f := map[string]interface{}{
-				"from":        peerID.String(),
-				"result_code": resultCode,
-			}
-			switch resultCode {
+			resCode = chunk.ResultCode()
+			switch resCode {
 			case reqresp.ServerErrCode, reqresp.InvalidReqCode:
 				msg, err := chunk.ReadErrMsg()
 				if err != nil {
 					return err
 				}
-				f["msg"] = msg
+				errMsg = msg
 			case reqresp.SuccessCode:
-				var data methods.Status
-				if err := chunk.ReadObj(&data); err != nil {
+				var stat methods.Status
+				if err := chunk.ReadObj(&stat); err != nil {
 					return err
 				}
-				f["data"] = data
-				inf, _ := c.GlobalPeerInfos.Find(peerID)
-				inf.RegisterStatus(data)
+				data = &stat
+				c.OnStatus(peerID, &stat)
 			}
-			c.Log.WithFields(f).Debug("got status response")
 			return nil
 		})
-}
-
-func (c *PeerStatusCmd) Req() *PeerStatusReqCmd {
-	return &PeerStatusReqCmd{
-		PeerStatusCmd: c,
-		Timeout:       10 * time.Second,
-		Compression:   flags.CompressionFlag{Compression: reqresp.SnappyCompression{}},
-	}
+	return
 }

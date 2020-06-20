@@ -42,6 +42,11 @@ func (r *Actor) Close() {
 }
 
 func InitRootCmd(ctx context.Context, log logrus.FieldLogger) {
+
+	// TODO
+	inf, _ := c.GlobalPeerInfos.Find(peerID)
+	inf.RegisterStatus(data)
+
 	//cmd := &Command{
 	//	Use:   "rumor",
 	//	Short: "A REPL for Eth2 networking.",
