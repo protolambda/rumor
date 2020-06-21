@@ -24,8 +24,8 @@ require (
 	github.com/minio/sha256-simd v0.1.1
 	github.com/multiformats/go-multiaddr v0.2.0
 	github.com/protolambda/ask v0.0.1
-	github.com/protolambda/zrnt v0.11.1
-	github.com/protolambda/zssz v0.1.4
+	github.com/protolambda/zrnt v0.12.2-alpha.0
+	github.com/protolambda/zssz v0.1.5
 	github.com/protolambda/ztyp v0.0.1
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
