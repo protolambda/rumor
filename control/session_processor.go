@@ -367,7 +367,7 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		if len(cmdArgs) == 1 && cmdArgs[0] == "kill" {
-			session.log.Infof("Killing rumor p2p actor %s", cmdArgs[0])
+			session.log.Infof("Killing rumor p2p actor %s", actorName)
 			sp.KillActor(actorName)
 			continue
 		}

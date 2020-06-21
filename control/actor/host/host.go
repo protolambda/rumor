@@ -38,8 +38,8 @@ func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &HostViewCmd{c.Base}
 	case "listen":
 		cmd = &HostListenCmd{Base: c.Base, WithSetEnr: c.WithSetEnr}
-	case "event":
-		cmd = &HostEventCmd{c.Base}
+	case "notify":
+		cmd = &HostNotifyCmd{c.Base}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

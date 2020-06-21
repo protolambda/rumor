@@ -13,7 +13,7 @@ type EnrFlag struct {
 }
 
 func (f *EnrFlag) String() string {
-	if f == nil {
+	if f == nil || f.ENR == nil {
 		return "nil ENR"
 	}
 	enrStr, err := addrutil.EnrToString(f.ENR)
@@ -41,7 +41,7 @@ type EnodeFlag struct {
 }
 
 func (f *EnodeFlag) String() string {
-	if f == nil {
+	if f == nil || f.Enode == nil {
 		return "nil enode"
 	}
 	return f.Enode.String()
@@ -65,7 +65,7 @@ type EnrOrEnodeFlag struct {
 }
 
 func (f *EnrOrEnodeFlag) String() string {
-	if f == nil {
+	if f == nil || f.Enode == nil {
 		return "nil enode"
 	}
 	return f.Enode.String()
@@ -89,7 +89,7 @@ type FlexibleAddrFlag struct {
 }
 
 func (f *FlexibleAddrFlag) String() string {
-	if f == nil {
+	if f == nil || f.MultiAddr == nil {
 		return "nil flex addr"
 	}
 	return f.MultiAddr.String()

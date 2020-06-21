@@ -10,15 +10,15 @@ import (
 	"strings"
 )
 
-type HostEventCmd struct {
+type HostNotifyCmd struct {
 	*base.Base
 }
 
-func (c *HostEventCmd) Help() string {
+func (c *HostNotifyCmd) Help() string {
 	return "Get notified of specific events, as long as the command runs."
 }
 
-func (c *HostEventCmd) HelpLong() string {
+func (c *HostNotifyCmd) HelpLong() string {
 	return `
 Args: <event-types>...
 
@@ -37,29 +37,29 @@ Notification logs will have keys: "event" - one of the above detailed event type
 `
 }
 
-func (c *HostEventCmd) listenF(net network.Network, addr ma.Multiaddr) {
+func (c *HostNotifyCmd) listenF(net network.Network, addr ma.Multiaddr) {
 	c.Log.WithFields(logrus.Fields{"event": "listen_open", "addr": addr.String()}).Debug("opened network listener")
 }
 
-func (c *HostEventCmd) listenCloseF(net network.Network, addr ma.Multiaddr) {
+func (c *HostNotifyCmd) listenCloseF(net network.Network, addr ma.Multiaddr) {
 	c.Log.WithFields(logrus.Fields{"event": "listen_close", "addr": addr.String()}).Debug("closed network listener")
 }
 
-func (c *HostEventCmd) connectedF(net network.Network, conn network.Conn) {
+func (c *HostNotifyCmd) connectedF(net network.Network, conn network.Conn) {
 	c.Log.WithFields(logrus.Fields{
 		"event": "connection_open", "peer": conn.RemotePeer().String(),
 		"direction": fmtDirection(conn.Stat().Direction),
 	}).Debug("new peer connection")
 }
 
-func (c *HostEventCmd) disconnectedF(net network.Network, conn network.Conn) {
+func (c *HostNotifyCmd) disconnectedF(net network.Network, conn network.Conn) {
 	c.Log.WithFields(logrus.Fields{
 		"event": "connection_close", "peer": conn.RemotePeer().String(),
 		"direction": fmtDirection(conn.Stat().Direction),
 	}).Debug("peer disconnected")
 }
 
-func (c *HostEventCmd) openedStreamF(net network.Network, str network.Stream) {
+func (c *HostNotifyCmd) openedStreamF(net network.Network, str network.Stream) {
 	c.Log.WithFields(logrus.Fields{
 		"event": "stream_open", "peer": str.Conn().RemotePeer().String(),
 		"direction": fmtDirection(str.Stat().Direction),
@@ -67,7 +67,7 @@ func (c *HostEventCmd) openedStreamF(net network.Network, str network.Stream) {
 	}).Debug("opened stream")
 }
 
-func (c *HostEventCmd) closedStreamF(net network.Network, str network.Stream) {
+func (c *HostNotifyCmd) closedStreamF(net network.Network, str network.Stream) {
 	c.Log.WithFields(logrus.Fields{
 		"event": "stream_close", "peer": str.Conn().RemotePeer().String(),
 		"direction": fmtDirection(str.Stat().Direction),
@@ -75,7 +75,7 @@ func (c *HostEventCmd) closedStreamF(net network.Network, str network.Stream) {
 	}).Debug("closed stream")
 }
 
-func (c *HostEventCmd) Run(ctx context.Context, args ...string) error {
+func (c *HostNotifyCmd) Run(ctx context.Context, args ...string) error {
 	h, err := c.Host()
 	if err != nil {
 		return err
@@ -120,7 +120,10 @@ func (c *HostEventCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 	h.Network().Notify(bundle)
-	<-ctx.Done()
+	select {
+		case <-ctx.Done():
+		case <-c.BaseContext.Done():
+	}
 	h.Network().StopNotify(bundle)
 	return nil
 }
