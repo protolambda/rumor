@@ -68,6 +68,6 @@ func (c *RpcMethodCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
-func (c *RpcCmd) Routes() []string {
+func (c *RpcMethodCmd) Routes() []string {
 	return []string{"req", "listen", "resp", "close"}
 }

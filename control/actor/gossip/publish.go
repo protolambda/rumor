@@ -6,15 +6,14 @@ import (
 	"github.com/golang/snappy"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/control/actor/flags"
 	"strings"
 )
 
 type GossipPublishCmd struct {
 	*base.Base
 	*GossipState
-	TopicName string             `ask:"<topic>" help:"The name of the topic to publish to"`
-	Message   flags.BytesHexFlag `ask:"<message>" help:"The uncompressed message bytes, hex-encoded"`
+	TopicName string `ask:"<topic>" help:"The name of the topic to publish to"`
+	Message   []byte `ask:"<message>" help:"The uncompressed message bytes, hex-encoded"`
 }
 
 func (c *GossipPublishCmd) Help() string {

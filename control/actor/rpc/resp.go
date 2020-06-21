@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 )
 
@@ -83,7 +82,7 @@ type RpcMethodRespChunkRawCmd struct {
 	Done       bool                 `ask:"--done" help:"After writing this chunk, close the response (no more chunks)."`
 	ResultCode reqresp.ResponseCode `ask:"--result-code" help:"Customize the chunk result code. (0 = success, 1 = invalid input, 2 = error, 3+ = undefined)"`
 	ReqId      string               `ask:"<req-id>" help:"the ID of the request to respond to"`
-	Data       flags.BytesHexFlag   `ask:"<data>" help:"chunk bytes (uncompressed, hex-encoded)"`
+	Data       []byte               `ask:"<data>" help:"chunk bytes (uncompressed, hex-encoded)"`
 }
 
 func (c *RpcMethodRespChunkRawCmd) Help() string {

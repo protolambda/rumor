@@ -51,7 +51,7 @@ type RpcMethodReqRawCmd struct {
 	MaxChunks   uint64                `ask:"--max-chunks" help:"Max response chunk count, if 0, do not wait for a response at all."`
 	Raw         bool                  `ask:"--raw" help:"If chunks should be logged as raw hex-encoded byte strings"`
 	PeerID      flags.PeerIDFlag      `ask:"<peer-id>" help:"libp2p Peer-ID to request"`
-	Data        flags.BytesHexFlag    `ask:"<data>" help:"Raw uncompressed hex-encoded request data"`
+	Data        []byte                `ask:"<data>" help:"Raw uncompressed hex-encoded request data"`
 }
 
 func (c *RpcMethodReqRawCmd) Help() string {
