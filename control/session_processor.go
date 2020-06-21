@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/google/shlex"
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
 	"strings"
@@ -165,7 +166,6 @@ type CallID string
 type CallSummary struct {
 	Owner     CallOwner `json:"owner"`
 	ActorName string    `json:"actor"`
-	Cmd       string    `json:"cmd"`
 }
 
 type CallOwner string
@@ -176,7 +176,6 @@ type Call struct {
 	logger    logrus.FieldLogger
 	owner     CallOwner
 	actorName string
-	cmd       string
 }
 
 func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
@@ -199,15 +198,6 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 	cmdCtx, cmdCancel := context.WithCancel(rep.ActorCtx)
 
 	cmdLogger := sp.log.WithField("actor", actorName).WithField("call_id", callID)
-	callCmd := rep.Cmd(cmdCtx, cmdLogger)
-
-	callCmd.SetOut(WriteableFn(func(msg string) {
-		cmdLogger.Info(msg)
-	}))
-	callCmd.SetErr(WriteableFn(func(msg string) {
-		cmdLogger.Error(msg)
-	}))
-	callCmd.SetArgs(cmdArgs)
 
 	call := &Call{
 		ctx:       cmdCtx,
@@ -215,17 +205,22 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 		logger:    cmdLogger,
 		owner:     owner,
 		actorName: actorName,
-		cmd:       strings.Join(cmdArgs, " "),
 	}
 
 	sp.jobs.Store(callID, call)
 
 	go func() {
-		if err := callCmd.Execute(); err != nil {
-			cmdLogger.Error(err) // TODO: cobra error output sometimes is written to std-out. Need it in std-err to detect it as error.
-			// For now, take the execute result, and use that instead. (probably better, but still need to throw std-err of cobra somewhere)
+		callCmd := rep.MakeCmd(cmdLogger)
+
+		loadedCmd, err := ask.Load(callCmd)
+		if err != nil {
+			cmdLogger.WithError(err).Error("failed to parse command")
 		} else {
-			cmdLogger.WithField("@success", "").Trace("completed call")
+			if err := loadedCmd.Run(cmdCtx, cmdArgs...); err != nil {
+				cmdLogger.WithError(err).Error("exited with error")
+			} else {
+				cmdLogger.WithField("@success", "").Trace("completed call")
+			}
 		}
 		sp.CloseCall(callID)
 		// Only remove interests when the call is done, not when the call is closed,
@@ -456,7 +451,6 @@ func (sp *SessionProcessor) runSession(session *Session) {
 					openJobs[key.(CallID)] = CallSummary{
 						Owner:     c.owner,
 						ActorName: c.actorName,
-						Cmd:       c.cmd,
 					}
 				}
 				return true
