@@ -16,7 +16,7 @@ import (
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/p2p/addrutil"
+	"github.com/protolambda/rumor/control/actor/flags"
 	"strings"
 	"time"
 )
@@ -24,15 +24,15 @@ import (
 type HostStartCmd struct {
 	*base.Base
 	WithSetHost
-	PrivKeyStr       string        `ask:"--priv" help:"hex-encoded RSA private key for libp2p host. Random if none is specified."`
-	TransportsStrArr []string      `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
-	MuxStrArr        []string      `ask:"--mux" help:"Multiplexers to use"`
-	SecurityStr      string        `ask:"--security" help:"Security to use. Options: secio, none"`
-	RelayEnabled     bool          `ask:"--relay" help:"enable relayer functionality"`
-	LoPeers          int           `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
-	HiPeers          int           `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
-	GracePeriod      time.Duration `ask:"--peer-grace-period" help:"Time to grace a peer from being trimmed"`
-	NatEnabled       bool          `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
+	PrivKey          flags.P2pPrivKeyFlag `ask:"--priv" help:"hex-encoded private key for libp2p host. Random if none is specified."`
+	TransportsStrArr []string             `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
+	MuxStrArr        []string             `ask:"--mux" help:"Multiplexers to use"`
+	SecurityStr      string               `ask:"--security" help:"Security to use. Options: secio, none"`
+	RelayEnabled     bool                 `ask:"--relay" help:"enable relayer functionality"`
+	LoPeers          int                  `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
+	HiPeers          int                  `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
+	GracePeriod      time.Duration        `ask:"--peer-grace-period" help:"Time to grace a peer from being trimmed"`
+	NatEnabled       bool                 `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
 }
 
 func (c *HostStartCmd) Default() {
@@ -56,7 +56,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	}
 	var priv crypto.PrivKey
 	{
-		if c.PrivKeyStr == "" { // generate new private key if non was specified
+		if c.PrivKey.Priv == nil { // generate new private key if non was specified
 			var err error
 			priv, _, err = crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
 			if err != nil {
@@ -68,11 +68,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 			}
 			c.Log.WithField("priv", hex.EncodeToString(p)).Info("Generated random Secp256k1 private key")
 		} else {
-			p, err := addrutil.ParsePrivateKey(c.PrivKeyStr)
-			if err != nil {
-				return err
-			}
-			priv = (*crypto.Secp256k1PrivateKey)(p)
+			priv = (*crypto.Secp256k1PrivateKey)(c.PrivKey.Priv)
 		}
 	}
 	hostOptions := make([]libp2p.Option, 0)

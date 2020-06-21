@@ -14,7 +14,7 @@ type P2pPrivKeyFlag struct {
 
 func (f P2pPrivKeyFlag) String() string {
 	if f.Priv == nil {
-		return "? (no private key)"
+		return "? (no private key data)"
 	}
 	secpKey := (*crypto.Secp256k1PrivateKey)(f.Priv)
 	keyBytes, err := secpKey.Raw()
@@ -25,6 +25,11 @@ func (f P2pPrivKeyFlag) String() string {
 }
 
 func (f *P2pPrivKeyFlag) Set(value string) error {
+	// No private key if no data
+	if value == "" {
+		f.Priv = nil
+		return nil
+	}
 	var priv *ecdsa.PrivateKey
 	var err error
 	priv, err = addrutil.ParsePrivateKey(value)

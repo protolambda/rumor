@@ -216,9 +216,13 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 		if err != nil {
 			cmdLogger.WithError(err).Error("failed to parse command")
 		} else {
-			if err := loadedCmd.Run(cmdCtx, cmdArgs...); err != nil {
+			fCmd, isHelp, err := loadedCmd.Execute(cmdCtx, cmdArgs...)
+			if err != nil {
 				cmdLogger.WithError(err).Error("exited with error")
 			} else {
+				if isHelp {
+					cmdLogger.Info(fCmd.Usage())
+				}
 				cmdLogger.WithField("@success", "").Trace("completed call")
 			}
 		}

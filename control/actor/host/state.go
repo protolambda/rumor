@@ -16,8 +16,6 @@ type HostState struct {
 	hLock   sync.Mutex
 	p2pHost host.Host
 
-	PrivKey crypto.PrivKey
-
 	IP      net.IP
 	TcpPort uint16
 	UdpPort uint16
@@ -27,7 +25,7 @@ type HostState struct {
 func (s *HostState) Host() (h host.Host, err error) {
 	h = s.p2pHost
 	if h == nil {
-		return nil, errors.New("REPL must have initialized Libp2p host. Try 'host start'")
+		return nil, errors.New("Must first initialize Libp2p host. Try 'host start'")
 	}
 	return h, nil
 }
@@ -57,12 +55,18 @@ func (s *HostState) CloseHost() error {
 }
 
 func (s *HostState) GetEnr() *enr.Record {
-	priv := (*ecdsa.PrivateKey)(s.PrivKey.(*crypto.Secp256k1PrivateKey))
+	privIfc := s.GetPriv()
+	if privIfc == nil {
+		return addrutil.MakeENR(s.IP, s.TcpPort, s.UdpPort, nil)
+	}
+	priv := (*ecdsa.PrivateKey)(privIfc.(*crypto.Secp256k1PrivateKey))
 	return addrutil.MakeENR(s.IP, s.TcpPort, s.UdpPort, priv)
 }
 
 func (s *HostState) GetPriv() crypto.PrivKey {
-	return s.PrivKey
+	s.hLock.Lock()
+	defer s.hLock.Unlock()
+	return s.p2pHost.Peerstore().PrivKey(s.p2pHost.ID())
 }
 
 // TODO: can we make these changes effective without restarting the host?
