@@ -14,14 +14,17 @@ import (
 type PeerStatusServeCmd struct {
 	*base.Base
 	*PeerStatusState
-
-	// TODO set default
 	Timeout     time.Duration         `ask:"--timeout" help:"Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout"`
 	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 }
 
 func (c *PeerStatusServeCmd) Help() string {
 	return "Serve incoming status requests"
+}
+
+func (c *PeerStatusServeCmd) Default() {
+	c.Timeout = 10 * time.Second
+	c.Compression = flags.CompressionFlag{Compression: reqresp.SnappyCompression{}}
 }
 
 func (c *PeerStatusServeCmd) Run(ctx context.Context, args ...string) error {
