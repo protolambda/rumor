@@ -43,6 +43,8 @@ func (r *Actor) Close() {
 
 func InitRootCmd(ctx context.Context, log logrus.FieldLogger) {
 
+	// TODO set logger ErrorKey
+
 	// TODO
 	inf, _ := c.GlobalPeerInfos.Find(peerID)
 	inf.RegisterStatus(data)
