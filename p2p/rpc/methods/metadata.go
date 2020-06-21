@@ -16,7 +16,7 @@ func (ab *AttnetBits) BitLen() uint64 {
 }
 
 type MetaData struct {
-	SeqNumber uint64
+	SeqNumber SeqNr
 	Attnets   AttnetBits
 }
 

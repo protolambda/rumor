@@ -5,13 +5,19 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 )
 
-type Ping uint64
+type SeqNr uint64
+
+func (r SeqNr) String() string {
+	return fmt.Sprintf("SeqNr(%d)", r)
+}
+
+type Ping SeqNr
 
 func (r Ping) String() string {
 	return fmt.Sprintf("Ping(%d)", r)
 }
 
-type Pong uint64
+type Pong SeqNr
 
 func (r Pong) String() string {
 	return fmt.Sprintf("Pong(%d)", r)

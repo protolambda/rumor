@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"context"
+	"fmt"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
@@ -37,7 +38,7 @@ func (c *PeerMetadataReqCmd) Run(ctx context.Context, args ...string) error {
 	}
 	code, msg, metadata, err := c.fetch(h.NewStream, reqCtx, c.PeerID.PeerID, c.Compression.Compression)
 	if err != nil {
-		c.Log.Warn(err)
+		return fmt.Errorf("failed to fetch metadata: %v", err)
 	} else {
 		if code == reqresp.SuccessCode {
 			c.Log.WithFields(logrus.Fields{

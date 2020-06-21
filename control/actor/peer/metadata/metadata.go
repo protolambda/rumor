@@ -11,10 +11,14 @@ import (
 
 type OnMetadata func(peerID peer.ID, status *methods.MetaData)
 
+// Returns true if the peer has not been seen, or if the seq nr is newer than we currently know for the peer
+type IsUnseen func(peerID peer.ID, seqNr methods.SeqNr) bool
+
 type PeerMetadataState struct {
 	Following bool
 	Local     methods.MetaData
 	OnMetadata
+	IsUnseen
 }
 
 type PeerMetadataCmd struct {
@@ -89,6 +93,32 @@ func (c *PeerMetadataState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, 
 				}
 				data = &meta
 				c.OnMetadata(peerID, &meta)
+			}
+			return nil
+		})
+	return
+}
+
+func (c *PeerMetadataState) ping(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
+	resCode reqresp.ResponseCode, errMsg string, data methods.Pong, err error) {
+
+	p := methods.Ping(c.Local.SeqNumber)
+	err = methods.PingRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: &p}, 1,
+		func(chunk reqresp.ChunkedResponseHandler) error {
+			resCode = chunk.ResultCode()
+			switch resCode {
+			case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+				msg, err := chunk.ReadErrMsg()
+				if err != nil {
+					return err
+				}
+				errMsg = msg
+			case reqresp.SuccessCode:
+				var pong methods.Pong
+				if err := chunk.ReadObj(&pong); err != nil {
+					return err
+				}
+				data = pong
 			}
 			return nil
 		})
