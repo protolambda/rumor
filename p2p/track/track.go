@@ -3,18 +3,18 @@ package track
 import (
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
-	methods2 "github.com/protolambda/rumor/p2p/rpc/methods"
+	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"sync"
 )
 
-type MetaData = methods2.MetaData
-type Status = methods2.Status
+type MetaData = methods.MetaData
+type Status = methods.Status
 
 type PeerInfo struct {
 	// Track metadata with highest sequence number
 	md MetaData
 	// highest claimed seq nr, we may not have the actual corresponding metadata yet.
-	claimedSeq uint64
+	claimedSeq methods.SeqNr
 	// Track latest status
 	status Status
 	// Track how many times we have tried to ask them for metadata without getting an answer
@@ -27,7 +27,7 @@ func (pi *PeerInfo) Metadata() MetaData {
 	return pi.md
 }
 
-func (pi *PeerInfo) ClaimedSeq() uint64 {
+func (pi *PeerInfo) ClaimedSeq() methods.SeqNr {
 	return pi.claimedSeq
 }
 
@@ -41,7 +41,7 @@ func (pi *PeerInfo) String() string {
 }
 
 // RegisterSeqClaim updates the latest supposed seq nr of the peer
-func (pi *PeerInfo) RegisterSeqClaim(seq uint64) (newer bool) {
+func (pi *PeerInfo) RegisterSeqClaim(seq methods.SeqNr) (newer bool) {
 	pi.Lock()
 	defer pi.Unlock()
 	newer = pi.claimedSeq < seq
@@ -104,7 +104,7 @@ type PeerInfoData struct {
 	// Track metadata with highest sequence number
 	MetaData MetaData `json:"metadata"`
 	// highest claimed seq nr, we may not have the actual corresponding metadata yet.
-	ClaimedSeq uint64 `json:"claimed_seq"`
+	ClaimedSeq methods.SeqNr `json:"claimed_seq"`
 	// Track latest status
 	Status Status `json:"status"`
 	// Track how many times we have tried to ask them for metadata without getting an answer

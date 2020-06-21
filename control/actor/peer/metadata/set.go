@@ -10,7 +10,7 @@ import (
 type PeerMetadataSetCmd struct {
 	*base.Base
 	*PeerMetadataState
-	SeqNumber uint64             `ask:"--seq-number" help:"Seq Number of metadata"`
+	SeqNumber methods.SeqNr      `ask:"--seq-number" help:"Seq Number of metadata"`
 	Attnets   methods.AttnetBits `ask:"--attnets" help:"Attestation nets bitfield as bytes"`
 	Merge     bool               `ask:"--merge" help:"If true, only apply non-zero options to state"`
 }
@@ -39,7 +39,7 @@ func (c *PeerMetadataSetCmd) Run(ctx context.Context, args ...string) error {
 
 	c.Log.WithFields(logrus.Fields{
 		"following": c.PeerMetadataState.Following,
-		"metadata":    c.PeerMetadataState.Local.Data(),
+		"metadata":  c.PeerMetadataState.Local.Data(),
 	}).Info("Metadata settings")
 	return nil
 }

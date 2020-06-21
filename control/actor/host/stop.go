@@ -7,6 +7,7 @@ import (
 
 type HostStopCmd struct {
 	*base.Base
+	WithCloseHost
 }
 
 func (c *HostStopCmd) Help() string {

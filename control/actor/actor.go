@@ -52,7 +52,7 @@ func (r *Actor) Close() {
 func (r *Actor) MakeCmd(log logrus.FieldLogger) *ActorCmd {
 	return &ActorCmd{
 		Actor: r,
-		Log: log,
+		Log:   log,
 	}
 }
 
@@ -70,14 +70,20 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "host":
 		cmd = &host.HostCmd{
-			Base:        b,
-			WithSetHost: &c.HostState,
-			WithSetEnr:  &c.HostState,
+			Base:          b,
+			WithSetHost:   &c.HostState,
+			WithSetEnr:    &c.HostState,
+			WithCloseHost: &c.HostState,
 		}
 	case "enr":
 		cmd = &enr.EnrCmd{Base: b}
 	case "peer":
-		cmd = &peer.PeerCmd{Base: b, PeerStatusState: &c.PeerStatusState, PeerMetadataState: &c.PeerMetadataState}
+		cmd = &peer.PeerCmd{
+			Base:              b,
+			PeerStatusState:   &c.PeerStatusState,
+			PeerMetadataState: &c.PeerMetadataState,
+			WithPeerInfos:     &c.GlobalPeerInfos,
+		}
 	case "dv5":
 		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState}
 	case "gossip":

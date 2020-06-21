@@ -9,6 +9,7 @@ import (
 
 type PeerListCmd struct {
 	*base.Base
+	WithPeerInfos
 
 	Which string `ask:"[which]" help:"Which peers to list, possible values: 'all', 'connected'."`
 
@@ -63,7 +64,7 @@ func (c *PeerListCmd) Run(ctx context.Context, args ...string) error {
 			}
 		}
 		if c.ListStatus || c.ListMetadata || c.ListClaimSeq {
-			pInfoData, ok := c.GlobalPeerInfos.Find(p)
+			pInfoData, ok := c.WithPeerInfos.Find(p)
 			if ok {
 				if c.ListStatus {
 					v["status"] = pInfoData.Status()

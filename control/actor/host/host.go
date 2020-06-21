@@ -11,6 +11,10 @@ type WithSetHost interface {
 	SetHost(h host.Host) error
 }
 
+type WithCloseHost interface {
+	CloseHost() error
+}
+
 type WithSetEnr interface {
 	SetIP(ip net.IP)
 	SetTCP(port uint16)
@@ -21,6 +25,7 @@ type HostCmd struct {
 	*base.Base
 	WithSetHost
 	WithSetEnr
+	WithCloseHost
 }
 
 func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
@@ -28,7 +33,7 @@ func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "start":
 		cmd = &HostStartCmd{Base: c.Base, WithSetHost: c.WithSetHost}
 	case "stop":
-		cmd = &HostStopCmd{c.Base}
+		cmd = &HostStopCmd{Base: c.Base, WithCloseHost: c.WithCloseHost}
 	case "view":
 		cmd = &HostViewCmd{c.Base}
 	case "listen":
