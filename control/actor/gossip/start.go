@@ -9,6 +9,7 @@ import (
 
 type GossipStartCmd struct {
 	*base.Base
+	*GossipState
 }
 
 func (c *GossipStartCmd) Help() string {
@@ -23,7 +24,7 @@ func (c *GossipStartCmd) Run(ctx context.Context, args ...string) error {
 	if c.GossipState.GsNode != nil {
 		return errors.New("Already started GossipSub")
 	}
-	c.GossipState.GsNode, err = gossip.NewGossipSub(c.ActorCtx, h)
+	c.GossipState.GsNode, err = gossip.NewGossipSub(c.BaseContext, h)
 	if err != nil {
 		return err
 	}

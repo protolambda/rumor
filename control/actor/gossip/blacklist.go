@@ -8,6 +8,7 @@ import (
 
 type GossipBlacklistCmd struct {
 	*base.Base
+	*GossipState
 	PeerID flags.PeerIDFlag `ask:"<peer-id>" help:"The peer to blacklist"`
 }
 

@@ -8,6 +8,7 @@ import (
 
 type Dv5RequestCmd struct {
 	*base.Base
+	*Dv5State
 	Target *flags.EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
 }
 

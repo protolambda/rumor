@@ -1,6 +1,7 @@
 package dv5
 
 import (
+	"context"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
@@ -8,6 +9,7 @@ import (
 
 type Dv5LookupCmd struct {
 	*base.Base
+	*Dv5State
 	Target *flags.NodeIDFlexibleFlag `ask:"<target>" help:"Target ENR/enode/node-id"`
 }
 

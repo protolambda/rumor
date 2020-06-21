@@ -3,12 +3,10 @@ package enr
 import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/sirupsen/logrus"
 )
 
 type EnrCmd struct {
 	*base.Base
-	log logrus.FieldLogger
 }
 
 func (c *EnrCmd) Cmd(route string) (cmd interface{}, err error) {

@@ -8,6 +8,7 @@ import (
 
 type Dv5RandomCmd struct {
 	*base.Base
+	*Dv5State
 }
 
 func (c *Dv5RandomCmd) Help() string {

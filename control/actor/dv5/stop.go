@@ -1,12 +1,14 @@
 package dv5
 
 import (
+	"context"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/protolambda/rumor/control/actor/base"
 )
 
 type Dv5StopCmd struct {
 	*base.Base
+	*Dv5State
 }
 
 func (c *Dv5StopCmd) Help() string {

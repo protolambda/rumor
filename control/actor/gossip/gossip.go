@@ -18,28 +18,29 @@ type GossipState struct {
 
 type GossipCmd struct {
 	*base.Base
+	*GossipState
 }
 
 func (c *GossipCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "start":
-		cmd = &GossipStartCmd{Base: c.Base}
+		cmd = &GossipStartCmd{Base: c.Base, GossipState: c.GossipState}
 	case "list":
-		cmd = &GossipListCmd{Base: c.Base}
+		cmd = &GossipListCmd{Base: c.Base, GossipState: c.GossipState}
 	case "join":
-		cmd = &GossipJoinCmd{Base: c.Base}
+		cmd = &GossipJoinCmd{Base: c.Base, GossipState: c.GossipState}
 	case "events":
-		cmd = &GossipEventsCmd{Base: c.Base}
+		cmd = &GossipEventsCmd{Base: c.Base, GossipState: c.GossipState}
 	case "list-peers":
-		cmd = &GossipListPeersCmd{Base: c.Base}
+		cmd = &GossipListPeersCmd{Base: c.Base, GossipState: c.GossipState}
 	case "blacklist":
-		cmd = &GossipBlacklistCmd{Base: c.Base}
+		cmd = &GossipBlacklistCmd{Base: c.Base, GossipState: c.GossipState}
 	case "leave":
-		cmd = &GossipLeaveCmd{Base: c.Base}
+		cmd = &GossipLeaveCmd{Base: c.Base, GossipState: c.GossipState}
 	case "log":
-		cmd = &GossipLogCmd{Base: c.Base}
+		cmd = &GossipLogCmd{Base: c.Base, GossipState: c.GossipState}
 	case "publish":
-		cmd = &GossipPublishCmd{Base: c.Base}
+		cmd = &GossipPublishCmd{Base: c.Base, GossipState: c.GossipState}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

@@ -7,6 +7,7 @@ import (
 
 type Dv5SelfCmd struct {
 	*base.Base
+	*Dv5State
 }
 
 func (c *Dv5SelfCmd) Help() string {

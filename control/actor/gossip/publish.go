@@ -12,6 +12,7 @@ import (
 
 type GossipPublishCmd struct {
 	*base.Base
+	*GossipState
 	TopicName string             `ask:"<topic>" help:"The name of the topic to publish to"`
 	Message   flags.BytesHexFlag `ask:"<message>" help:"The uncompressed message bytes, hex-encoded"`
 }

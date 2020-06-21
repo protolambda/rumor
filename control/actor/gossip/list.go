@@ -7,6 +7,7 @@ import (
 
 type GossipListCmd struct {
 	*base.Base
+	*GossipState
 }
 
 func (c *GossipListCmd) Help() string {

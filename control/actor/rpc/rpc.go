@@ -8,8 +8,8 @@ import (
 )
 
 type RpcCmd struct {
-	*RPCState
 	*base.Base
+	*RPCState
 }
 
 func (c *RpcCmd) Cmd(route string) (cmd interface{}, err error) {

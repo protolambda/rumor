@@ -13,6 +13,8 @@ import (
 
 type Dv5StartCmd struct {
 	*base.Base
+	*Dv5State
+	WithPriv
 }
 
 func (c *Dv5StartCmd) Help() string {
@@ -24,7 +26,11 @@ func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	if c.IP == nil {
+	ip := c.GetIP()
+	udpPort := c.GetUDP()
+	priv := c.GetPriv()
+
+	if ip == nil {
 		return errors.New("Host has no IP yet. Get with 'host listen'")
 	}
 	if c.Dv5State.Dv5Node != nil {
@@ -38,7 +44,7 @@ func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
 		}
 		bootNodes = append(bootNodes, dv5Addr)
 	}
-	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.Log, c.IP, c.UdpPort, c.PrivKey, bootNodes)
+	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.Log, ip, udpPort, priv, bootNodes)
 	if err != nil {
 		return err
 	}

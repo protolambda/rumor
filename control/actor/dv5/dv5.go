@@ -2,10 +2,15 @@ package dv5
 
 import (
 	"errors"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
 )
+
+type WithPriv interface {
+	GetPriv() crypto.PrivKey
+}
 
 type Dv5State struct {
 	Dv5Node dv5.Discv5
@@ -13,26 +18,28 @@ type Dv5State struct {
 
 type Dv5Cmd struct {
 	*base.Base
+	*Dv5State
+	WithPriv
 }
 
 func (c *Dv5Cmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "start":
-		cmd = &Dv5StartCmd{Base: c.Base}
+		cmd = &Dv5StartCmd{Base: c.Base, Dv5State: c.Dv5State, WithPriv: c.WithPriv}
 	case "stop":
-		cmd = &Dv5StopCmd{Base: c.Base}
+		cmd = &Dv5StopCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "ping":
-		cmd = &Dv5PingCmd{Base: c.Base}
+		cmd = &Dv5PingCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "resolve":
-		cmd = &Dv5ResolveCmd{Base: c.Base}
+		cmd = &Dv5ResolveCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "request":
-		cmd = &Dv5RequestCmd{Base: c.Base}
+		cmd = &Dv5RequestCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "lookup":
-		cmd = &Dv5LookupCmd{Base: c.Base}
+		cmd = &Dv5LookupCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "random":
-		cmd = &Dv5RandomCmd{Base: c.Base}
+		cmd = &Dv5RandomCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "self":
-		cmd = &Dv5SelfCmd{Base: c.Base}
+		cmd = &Dv5SelfCmd{Base: c.Base, Dv5State: c.Dv5State}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

@@ -2,10 +2,16 @@ package actor
 
 import (
 	"context"
+	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
+	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/chain"
+	"github.com/protolambda/rumor/control/actor/debug"
 	"github.com/protolambda/rumor/control/actor/dv5"
+	"github.com/protolambda/rumor/control/actor/enr"
 	"github.com/protolambda/rumor/control/actor/gossip"
+	"github.com/protolambda/rumor/control/actor/host"
+	"github.com/protolambda/rumor/control/actor/peer"
 	"github.com/protolambda/rumor/control/actor/peer/metadata"
 	"github.com/protolambda/rumor/control/actor/peer/status"
 	"github.com/protolambda/rumor/control/actor/rpc"
@@ -25,6 +31,8 @@ type Actor struct {
 	GossipState gossip.GossipState
 	RPCState    rpc.RPCState
 
+	HostState host.HostState
+
 	ActorCtx    context.Context
 	actorCancel context.CancelFunc
 }
@@ -41,32 +49,53 @@ func (r *Actor) Close() {
 	r.actorCancel()
 }
 
-func InitRootCmd(ctx context.Context, log logrus.FieldLogger) {
+func (r *Actor) MakeCmd(log logrus.FieldLogger) *ActorCmd {
+	return &ActorCmd{
+		Actor: r,
+		Log: log,
+	}
+}
 
-	// TODO set logger ErrorKey
+type ActorCmd struct {
+	*Actor
+	Log logrus.FieldLogger
+}
 
-	// TODO
-	inf, _ := c.GlobalPeerInfos.Find(peerID)
-	inf.RegisterStatus(data)
+func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
+	b := &base.Base{
+		WithHost:    &c.HostState,
+		BaseContext: c.ActorCtx,
+		Log:         c.Log,
+	}
+	switch route {
+	case "host":
+		cmd = &host.HostCmd{
+			Base:        b,
+			WithSetHost: &c.HostState,
+			WithSetEnr:  &c.HostState,
+		}
+	case "enr":
+		cmd = &enr.EnrCmd{Base: b}
+	case "peer":
+		cmd = &peer.PeerCmd{Base: b, PeerStatusState: &c.PeerStatusState, PeerMetadataState: &c.PeerMetadataState}
+	case "dv5":
+		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState}
+	case "gossip":
+		cmd = &gossip.GossipCmd{Base: b, GossipState: &c.GossipState}
+	case "rpc":
+		cmd = &rpc.RpcCmd{Base: b, RPCState: &c.RPCState}
+	case "debug":
+		cmd = &debug.DebugCmd{Base: b}
+	default:
+		return nil, ask.UnrecognizedErr
+	}
+	return cmd, nil
+}
 
-	//cmd := &Command{
-	//	Use:   "rumor",
-	//	Short: "A REPL for Eth2 networking.",
-	//	Long:  `A REPL for Eth2 networking. For debugging and interacting with Eth2 network components.`,
-	//	Run: func(cmd *cobra.Command, args []string) {
-	//		_ = cmd.Help()
-	//	},
-	//}
-	// TODO: if too slow to initialize all commands, we could initialize just the called command.
-	//cmd.AddCommand(
-	//	r.IniDebugCmd(ctx, log),
-	//	r.InitHostCmd(ctx, log),
-	//	r.InitEnrCmd(ctx, log),
-	//	r.InitPeerCmd(ctx, log),
-	//	r.InitDv5Cmd(ctx, log),
-	//	r.InitKadCmd(ctx, log),
-	//	r.InitGossipCmd(ctx, log),
-	//	r.InitRpcCmd(ctx, log),
-	//)
-	//return cmd
+func (c *ActorCmd) Routes() []string {
+	return []string{"host", "enr", "peer", "dv5", "gossip", "rpc", "debug"}
+}
+
+func (c *ActorCmd) Help() string {
+	return "Interact with any p2p component in Eth2"
 }

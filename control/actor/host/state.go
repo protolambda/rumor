@@ -53,9 +53,40 @@ func (s *HostState) CloseHost() error {
 		return err
 	}
 	s.p2pHost = nil
+	return nil
 }
 
 func (s *HostState) GetEnr() *enr.Record {
 	priv := (*ecdsa.PrivateKey)(s.PrivKey.(*crypto.Secp256k1PrivateKey))
 	return addrutil.MakeENR(s.IP, s.TcpPort, s.UdpPort, priv)
+}
+
+func (s *HostState) GetPriv() crypto.PrivKey {
+	return s.PrivKey
+}
+
+// TODO: can we make these changes effective without restarting the host?
+
+func (s *HostState) GetIP() net.IP {
+	return s.IP
+}
+
+func (s *HostState) SetIP(ip net.IP) {
+	s.IP = ip
+}
+
+func (s *HostState) GetTCP() uint16 {
+	return s.TcpPort
+}
+
+func (s *HostState) SetTCP(port uint16) {
+	s.TcpPort = port
+}
+
+func (s *HostState) GetUDP() uint16 {
+	return s.UdpPort
+}
+
+func (s *HostState) SetUDP(port uint16) {
+	s.UdpPort = port
 }

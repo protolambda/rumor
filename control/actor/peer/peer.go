@@ -3,10 +3,14 @@ package peer
 import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/control/actor/peer/metadata"
+	"github.com/protolambda/rumor/control/actor/peer/status"
 )
 
 type PeerCmd struct {
 	*base.Base
+	*status.PeerStatusState
+	*metadata.PeerMetadataState
 }
 
 func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
@@ -25,6 +29,10 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &PeerListCmd{Base: c.Base}
 	case "addrs":
 		cmd = &PeerAddrsCmd{Base: c.Base}
+	case "status":
+		cmd = &status.PeerStatusCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+	case "metadata":
+		cmd = &metadata.PeerMetadataCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
@@ -32,9 +40,9 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *PeerCmd) Routes() []string {
-	return []string{"connect", "disconnect", "protect", "unprotect", "trim", "list", "addrs"}
+	return []string{"connect", "disconnect", "protect", "unprotect", "trim", "list", "addrs", "status", "metadata"}
 }
 
 func (c *PeerCmd) Help() string {
-	return "Manage the libp2p peerstore"
+	return "Manage peers"
 }

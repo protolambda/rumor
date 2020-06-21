@@ -21,7 +21,7 @@ func (c *EnrMakeCmd) Help() string {
 }
 
 func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
-	rec := addrutil.MakeENR(c.IP, c.TCP, c.UdpPort, c.Priv.Priv)
+	rec := addrutil.MakeENR(c.IP, c.TCP, c.UDP, c.Priv.Priv)
 	enrStr, err := addrutil.EnrToString(rec)
 	if err != nil {
 		return err

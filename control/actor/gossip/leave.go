@@ -9,6 +9,7 @@ import (
 
 type GossipLeaveCmd struct {
 	*base.Base
+	*GossipState
 	TopicName string `ask:"<topic>" help:"The name of the topic to leave"`
 }
 
