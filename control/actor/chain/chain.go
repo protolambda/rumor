@@ -1,23 +1,14 @@
 package chain
 
 import (
-	"bytes"
-	"context"
-	"encoding/hex"
 	"github.com/protolambda/rumor/chain"
-	"github.com/protolambda/zrnt/eth2/beacon"
-	"github.com/protolambda/ztyp/tree"
-	"github.com/sirupsen/logrus"
-	"os"
 )
 
 type ChainState struct {
 	CurrentChain chain.ChainID
 }
 
-// TODO, placeholder, fix
-type cobra = uint16
-
+/*
 func InitChainCmd(ctx context.Context, log logrus.FieldLogger) {
 	//cmd := &cobra.Command{
 	//	Use:   "chain",
@@ -179,3 +170,4 @@ func InitChainCmd(ctx context.Context, log logrus.FieldLogger) {
 
 	return cmd
 }
+ */

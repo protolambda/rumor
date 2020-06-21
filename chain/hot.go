@@ -319,14 +319,14 @@ func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.Si
 
 	// Process empty slots
 	for slot := pre.Slot() + 1; slot < block.Slot; {
-		if err := state.ProcessSlot(); err != nil {
+		if err := state.ProcessSlot(ctx); err != nil {
 			return err
 		}
 		// Per-epoch transition happens at the start of the first slot of every epoch.
 		// (with the slot still at the end of the last epoch)
 		isEpochEnd := (slot + 1).ToEpoch() != slot.ToEpoch()
 		if isEpochEnd {
-			if err := state.ProcessEpoch(epc); err != nil {
+			if err := state.ProcessEpoch(ctx, epc); err != nil {
 				return err
 			}
 		}
@@ -356,11 +356,11 @@ func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.Si
 		epc = epc.Clone()
 	}
 
-	if err := state.StateTransition(epc, signedBlock, true); err != nil {
+	if err := state.StateTransition(ctx, epc, signedBlock, true); err != nil {
 		return err
 	}
 	// And seal the state, need the header and block/state roots to update.
-	if err := state.ProcessSlot(); err != nil {
+	if err := state.ProcessSlot(ctx); err != nil {
 		return err
 	}
 
