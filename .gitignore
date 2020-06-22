@@ -14,7 +14,5 @@
 data
 logs
 
-# Rumor-script files
-*.rumor
 
 *.sock

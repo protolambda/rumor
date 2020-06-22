@@ -1,0 +1,41 @@
+alice: host start --priv=4fbdc938929d6286339ff996c7d5d374bb11b3d624ee2761af10a4c74002fcea
+bob: host start
+charlie: host start
+
+alice: bg host notify all
+bob: bg host notify all
+charlie: bg host notify all
+
+alice: host view
+
+# UDP copies TCP port by default
+alice: host listen --ip=127.0.0.1 --tcp=9001
+bob: host listen --ip=127.0.0.1 --tcp=9002
+charlie: host listen --ip=127.0.0.1 --tcp=9003
+
+# Start discv5
+alice: dv5 start
+bob: dv5 start
+charlie: dv5 start
+
+alice_view> alice: host view
+
+# TODO: no variables in rumor scripting yet. Can use python (Pyrum) instead, or maybe worth the change here?
+
+# Connect Bob and Charlie to Alice (bootnode)
+bob: peer connect $alice_view.enr
+charlie: peer connect $alice_view.enr
+
+# Ping alice both, make sure Alice is aware of Bob and Charlie
+bob: dv5 ping $alice_view.enr
+charlie: dv5 ping $alice_view.enr
+
+# TODO: need syntax + implementation for explicit waiting for a log event
+# Let's see if Bob can find Charlie through Alice
+find_nodes> bob: bg dv5 random
+
+find_nodes.nodes>> timeout 10s
+
+alice: kill
+bob: kill
+charlie: kill

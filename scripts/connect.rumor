@@ -1,0 +1,16 @@
+alice: host start --priv=4fbdc938929d6286339ff996c7d5d374bb11b3d624ee2761af10a4c74002fcea
+bob: host start
+alice: bg host notify all
+bob: bg host notify all
+
+alice: host view
+
+alice: host listen --ip=127.0.0.1 --tcp=9001
+bob: host listen --ip=127.0.0.1 --tcp=9002
+
+bob: peer connect /ip4/127.0.0.1/tcp/9001/p2p/16Uiu2HAm9jTVTnbEp1mXDvcd6eUGAtV9ARPUgkxDVysZtBzQUgnN
+bob: peer list
+bob: peer disconnect 16Uiu2HAm9jTVTnbEp1mXDvcd6eUGAtV9ARPUgkxDVysZtBzQUgnN
+
+alice: kill
+bob: kill

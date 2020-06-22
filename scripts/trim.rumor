@@ -1,0 +1,33 @@
+# TODO: implement syntax and storage for variables of past commands, to use in next commands
+
+alice: host start --lo-peers=2
+
+# start 3 other hosts
+bob: host start
+charlie: host start
+dave: host start
+
+alice: host listen --ip=127.0.0.1 --tcp=9001
+bob: host listen --ip=127.0.0.1 --tcp=9002
+charlie: host listen --ip=127.0.0.1 --tcp=9003
+dave: host listen --ip=127.0.0.1 --tcp=9004
+
+alice_view> alice: host view
+bob_view> bob: host view
+
+bob: peer connect $alice_view.enr
+charlie: peer connect $alice_view.enr
+dave: peer connect $alice_view.enr
+
+alice: peer protect $bob_view.peer_id
+
+alice: peer trim
+
+# TODO: assert bob is still connected, and alice has 2 peers left?
+alice_peers> alice: peer list
+
+
+alice: kill
+bob: kill
+charlie: kill
+dave: kill

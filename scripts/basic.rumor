@@ -1,0 +1,5 @@
+host start
+host listen
+host view
+peer list
+kill
