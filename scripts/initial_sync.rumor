@@ -35,14 +35,17 @@ bob: peer metadata follow
 bob: peer metadata serve
 
 # Make Bob look to sync
-bob_sync> bob: chain sync
+bob: chain sync
 
 # Make Alice connect to Bob
 bob_view> bob: host view
-alice: peer connect $bob.enr
+alice: peer connect $bob_view.enr
 
 # Wait for Bob to report a synced status
-stat> alice: peer status poll $bob.peer_id
+stat> alice: peer status poll $bob_view.peer_id
 
 # TODO: syntax for assertions is difficult, maybe embed some existing DSL-base/language?
 stat.slot==3 >> timeout 10s
+
+bob: kill
+alice: kill
