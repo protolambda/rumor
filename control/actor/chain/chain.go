@@ -1,12 +1,49 @@
 package chain
 
 import (
+	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/chain"
+	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/control/actor/chain/on"
 )
 
 type ChainState struct {
 	CurrentChain chain.ChainID
 }
+
+type ChainCmd struct {
+	*base.Base
+}
+
+// TODO: more chain command ideas:
+//  - genesis from eth1
+
+func (c *ChainCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
+	case "create":
+		cmd = &ChainCreateCmd{Base: c.Base}
+	case "copy":
+		cmd = &ChainCopyCmd{Base: c.Base}
+	case "switch":
+		cmd = &ChainSwitchCmd{Base: c.Base}
+	case "rm":
+		cmd = &ChainRemoveCmd{Base: c.Base}
+	case "on":
+		cmd = &on.ChainOnCmd{Base: c.Base}
+	default:
+		return nil, ask.UnrecognizedErr
+	}
+	return cmd, nil
+}
+
+func (c *ChainCmd) Routes() []string {
+	return []string{"create", "copy", "switch", "rm", "on"}
+}
+
+func (c *ChainCmd) Help() string {
+	return "Manage eth2 chains"
+}
+
 
 /*
 func InitChainCmd(ctx context.Context, log logrus.FieldLogger) {

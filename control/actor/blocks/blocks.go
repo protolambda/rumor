@@ -13,6 +13,7 @@ type BlocksCmd struct {
 //  - download from http source
 //  - prune based on chain
 //  - automatic upload/export to some place
+//  - query blocks by attribute (slot, state root, parent root, eth1 data, etc.)
 
 func (c *BlocksCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {

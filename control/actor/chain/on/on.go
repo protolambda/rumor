@@ -1,0 +1,44 @@
+package on
+
+import (
+	"github.com/protolambda/ask"
+	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/control/actor/chain/on/cold"
+	"github.com/protolambda/rumor/control/actor/chain/on/head"
+	"github.com/protolambda/rumor/control/actor/chain/on/hot"
+	"github.com/protolambda/rumor/control/actor/chain/on/serve"
+)
+
+type ChainOnCmd struct {
+	*base.Base
+}
+
+func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
+	switch route {
+	case "attestation":
+		cmd = &AttestationCmd{Base: c.Base}
+	case "block":
+		cmd = &BlockCmd{Base: c.Base}
+	case "hot":
+		cmd = &hot.HotCmd{Base: c.Base}
+	case "cold":
+		cmd = &cold.ColdCmd{Base: c.Base}
+	case "head":
+		cmd = &head.HeadCmd{Base: c.Base}
+	case "serve":
+		cmd = &serve.ServeCmd{Base: c.Base}
+	case "votes":
+		cmd = &VotesCmd{Base: c.Base}
+	default:
+		return nil, ask.UnrecognizedErr
+	}
+	return cmd, nil
+}
+
+func (c *ChainOnCmd) Routes() []string {
+	return []string{"attestation", "block", "hot", "cold", "head", "serve", "votes"}
+}
+
+func (c *ChainOnCmd) Help() string {
+	return "Manage things on a beacon chain (hot part may have forks)"
+}

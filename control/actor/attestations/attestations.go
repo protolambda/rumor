@@ -1,10 +1,10 @@
-package chain
+package attestations
 
 /*
 TODO
 	attestation
 	  import   # import attestation
 	  gossip   # track gossip to import attestations
-		subnet <index>
-		global
+		subnet <index>  --validate
+		global  --validate
  */
