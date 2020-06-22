@@ -20,8 +20,8 @@ func (c *HostViewCmd) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	c.Log.WithField("peer_id", h.ID()).Info("Peer ID")
-	for _, a := range h.Addrs() {
-		c.Log.Infof("Listening on: %s", a.String())
+	for i, a := range h.Addrs() {
+		c.Log.WithField("multi_addr", a.String()).Infof("Listening address %d", i)
 	}
 	enr, err := addrutil.EnrToString(c.GetEnr())
 	if err != nil {

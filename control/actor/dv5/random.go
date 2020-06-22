@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/sirupsen/logrus"
 )
 
 type Dv5RandomCmd struct {
@@ -31,7 +32,7 @@ func (c *Dv5RandomCmd) Run(ctx context.Context, args ...string) error {
 			break
 		}
 		res := randomNodes.Node()
-		c.Log.WithField("node", res.String()).Infof("Got random node")
+		c.Log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Infof("Got random node")
 	}
 	log.Info("Stopped looking for random nodes")
 	return nil
