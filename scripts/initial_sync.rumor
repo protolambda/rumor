@@ -44,4 +44,5 @@ alice: peer connect $bob.enr
 # Wait for Bob to report a synced status
 stat> alice: peer status poll $bob.peer_id
 
-stat.slot==0>> timeout 10s
+# TODO: syntax for assertions is difficult, maybe embed some existing DSL-base/language?
+stat.slot==3 >> timeout 10s
