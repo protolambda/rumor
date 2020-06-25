@@ -24,13 +24,13 @@ type DBStats struct {
 type DB interface {
 	// Store, only for trusted blocks, to persist a block in the DB.
 	// The block is stored in serialized form, so the original instance may be mutated after storing it.
-	// This is an efficient convenience method for using ImportBlock.
+	// This is an efficient convenience method for using Import.
 	// Returns exists=true if the block exists (previously), false otherwise. If error, it may not be accurate.
 	Store(ctx context.Context, block *BlockWithRoot) (exists bool, err error)
 	// Import inserts a SignedBeaconBlock, read directly from the reader stream.
 	// Returns exists=true if the block exists (previously), false otherwise. If error, it may not be accurate.
 	Import(root beacon.Root, r io.Reader) (exists bool, err error)
-	// Get, an efficient convenience method for getting a block through ExportBlock. The block is safe to modify.
+	// Get, an efficient convenience method for getting a block through Export. The block is safe to modify.
 	// The data at the pointer is mutated to the new block.
 	// Returns exists=true if the block exists, false otherwise. If error, it may not be accurate.
 	Get(root beacon.Root, dest *beacon.SignedBeaconBlock) (exists bool, err error)
