@@ -23,7 +23,7 @@ type MetaData struct {
 func (m *MetaData) Data() map[string]interface{} {
 	return map[string]interface{}{
 		"seq_number": m.SeqNumber,
-		"attnets": hex.EncodeToString(m.Attnets[:]),
+		"attnets":    hex.EncodeToString(m.Attnets[:]),
 	}
 }
 

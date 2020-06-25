@@ -8,7 +8,7 @@ import (
 
 type ChainCopyCmd struct {
 	*base.Base
-	Src chain.ChainID `ask:"<source>" help:"The source, the chain to copy. Must exist."`
+	Src  chain.ChainID `ask:"<source>" help:"The source, the chain to copy. Must exist."`
 	Dest chain.ChainID `ask:"<dest>" help:"The destination, the name of the copy. Must not exist yet."`
 }
 

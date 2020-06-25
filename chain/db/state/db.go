@@ -9,7 +9,7 @@ import (
 )
 
 type DBStats struct {
-	Count int64
+	Count     int64
 	LastWrite beacon.Root
 }
 
@@ -30,11 +30,10 @@ type DB interface {
 
 type MemDB struct {
 	// beacon.Root -> tree.Node (backing of BeaconStateView)
-	data sync.Map
+	data        sync.Map
 	removalLock sync.Mutex
-	stats DBStats
+	stats       DBStats
 }
-
 
 func (db *MemDB) Store(ctx context.Context, state *beacon.BeaconStateView) (exists bool, err error) {
 	// Released when the block is removed from the DB

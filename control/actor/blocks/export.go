@@ -8,7 +8,7 @@ import (
 
 type BlocksExportCmd struct {
 	*base.Base
-	Output string `ask:"--output" help:"A file path to export the block too as ssz file. If empty, output to log."`
+	Output    string      `ask:"--output" help:"A file path to export the block too as ssz file. If empty, output to log."`
 	BlockRoot beacon.Root `ask:"<root>" help:"Root of the block to get"`
 }
 

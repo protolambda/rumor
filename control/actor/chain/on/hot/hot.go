@@ -26,4 +26,3 @@ func (c *HotCmd) Routes() []string {
 func (c *HotCmd) Help() string {
 	return "Manage the hot part of the chain"
 }
-

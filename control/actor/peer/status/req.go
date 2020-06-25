@@ -42,13 +42,13 @@ func (c *PeerStatusReqCmd) Run(ctx context.Context, args ...string) error {
 	} else {
 		if code == reqresp.SuccessCode {
 			c.Log.WithFields(logrus.Fields{
-				"code": code,
+				"code":   code,
 				"status": stat.Data(),
 			}).Debug("status request success")
 		} else {
 			c.Log.WithFields(logrus.Fields{
 				"code": code,
-				"msg": msg,
+				"msg":  msg,
 			}).Debug("status request non-success")
 		}
 	}

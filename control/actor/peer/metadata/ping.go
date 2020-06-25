@@ -60,7 +60,7 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	if  c.ForceUpdate || c.Update {
+	if c.ForceUpdate || c.Update {
 		if c.ForceUpdate || c.PeerMetadataState.IsUnseen(peerID, methods.SeqNr(pong)) {
 			c.Log.WithField("pong", pong).Debug("Got pong, following up with metadata request")
 			updateCtx := ctx

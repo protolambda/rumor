@@ -18,7 +18,7 @@ func (c *PeerMetadataGetCmd) Help() string {
 func (c *PeerMetadataGetCmd) Run(ctx context.Context, args ...string) error {
 	c.Log.WithFields(logrus.Fields{
 		"following": c.PeerMetadataState.Following,
-		"metadata":    c.PeerMetadataState.Local.Data(),
+		"metadata":  c.PeerMetadataState.Local.Data(),
 	}).Info("Metadata settings")
 	return nil
 }

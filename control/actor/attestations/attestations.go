@@ -7,4 +7,4 @@ TODO
 	  gossip   # track gossip to import attestations
 		subnet <index>  --validate
 		global  --validate
- */
+*/

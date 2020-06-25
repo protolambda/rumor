@@ -12,12 +12,12 @@ import (
 )
 
 type BlockWithRoot struct {
-	Root beacon.Root
+	Root  beacon.Root
 	Block *beacon.SignedBeaconBlock
 }
 
 type DBStats struct {
-	Count int64
+	Count     int64
 	LastWrite beacon.Root
 }
 
@@ -49,9 +49,9 @@ type DB interface {
 
 type MemDB struct {
 	// beacon.Root -> []byte (serialized SignedBeaconBlock)
-	data sync.Map
+	data        sync.Map
 	removalLock sync.Mutex
-	stats DBStats
+	stats       DBStats
 }
 
 var maxBlockSize = beacon.SignedBeaconBlockSSZ.MaxLen()
@@ -86,7 +86,7 @@ func (db *MemDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool, 
 	return loaded, nil
 }
 
-func (db *MemDB) Import(root beacon.Root, r io.Reader) (exists bool, err error){
+func (db *MemDB) Import(root beacon.Root, r io.Reader) (exists bool, err error) {
 	buf := getPoolBlockBuf()
 	if _, err := buf.ReadFrom(r); err != nil {
 		dbBlockPool.Put(buf) // put it back, we didn't use it

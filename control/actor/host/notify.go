@@ -121,8 +121,8 @@ func (c *HostNotifyCmd) Run(ctx context.Context, args ...string) error {
 	}
 	h.Network().Notify(bundle)
 	select {
-		case <-ctx.Done():
-		case <-c.BaseContext.Done():
+	case <-ctx.Done():
+	case <-c.BaseContext.Done():
 	}
 	h.Network().StopNotify(bundle)
 	return nil

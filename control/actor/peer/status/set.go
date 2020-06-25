@@ -12,11 +12,11 @@ type PeerStatusSetCmd struct {
 	*base.Base
 	*PeerStatusState
 	ForkDigest     beacon.ForkDigest `ask:"--fork-digest" help:"Fork digest"`
-	HeadRoot       beacon.Root    `ask:"--head-root" help:"Head root"`
-	HeadSlot       beacon.Slot    `ask:"--head-slot" help:"Head slot"`
-	FinalizedRoot  beacon.Root    `ask:"--finalized-root" help:"Finalized root"`
-	FinalizedEpoch beacon.Epoch   `ask:"--finalized-epoch" help:"Finalized epoch"`
-	Merge          bool           `ask:"--merge" help:"If true, only apply non-zero options to state"`
+	HeadRoot       beacon.Root       `ask:"--head-root" help:"Head root"`
+	HeadSlot       beacon.Slot       `ask:"--head-slot" help:"Head slot"`
+	FinalizedRoot  beacon.Root       `ask:"--finalized-root" help:"Finalized root"`
+	FinalizedEpoch beacon.Epoch      `ask:"--finalized-epoch" help:"Finalized epoch"`
+	Merge          bool              `ask:"--merge" help:"If true, only apply non-zero options to state"`
 }
 
 func (c *PeerStatusSetCmd) Default() {

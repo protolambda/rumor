@@ -44,7 +44,6 @@ func (c *ChainCmd) Help() string {
 	return "Manage eth2 chains"
 }
 
-
 /*
 func InitChainCmd(ctx context.Context, log logrus.FieldLogger) {
 	//cmd := &cobra.Command{
@@ -207,4 +206,4 @@ func InitChainCmd(ctx context.Context, log logrus.FieldLogger) {
 
 	return cmd
 }
- */
+*/

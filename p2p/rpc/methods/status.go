@@ -7,20 +7,20 @@ import (
 )
 
 type Status struct {
-	ForkDigest      ForkDigest
-	FinalizedRoot   Root
-	FinalizedEpoch  Epoch
-	HeadRoot        Root
-	HeadSlot        Slot
+	ForkDigest     ForkDigest
+	FinalizedRoot  Root
+	FinalizedEpoch Epoch
+	HeadRoot       Root
+	HeadSlot       Slot
 }
 
 func (s *Status) Data() map[string]interface{} {
 	return map[string]interface{}{
-		"fork_digest": hex.EncodeToString(s.ForkDigest[:]),
-		"finalized_root": hex.EncodeToString(s.FinalizedRoot[:]),
+		"fork_digest":     hex.EncodeToString(s.ForkDigest[:]),
+		"finalized_root":  hex.EncodeToString(s.FinalizedRoot[:]),
 		"finalized_epoch": s.FinalizedEpoch,
-		"head_root": hex.EncodeToString(s.HeadRoot[:]),
-		"head_slot": s.HeadSlot,
+		"head_root":       hex.EncodeToString(s.HeadRoot[:]),
+		"head_slot":       s.HeadSlot,
 	}
 }
 

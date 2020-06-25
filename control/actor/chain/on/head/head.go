@@ -30,4 +30,3 @@ func (c *HeadCmd) Routes() []string {
 func (c *HeadCmd) Help() string {
 	return "Manage the head of the chain, either manually or with forkchoice"
 }
-

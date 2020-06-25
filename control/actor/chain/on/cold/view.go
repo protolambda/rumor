@@ -9,7 +9,7 @@ import (
 type ViewCmd struct {
 	*base.Base
 	Start beacon.Slot `ask:"--start" help:"Starting point (inclusive)"`
-	End beacon.Slot `ask:"--end" help:"End point (exclusive)"`
+	End   beacon.Slot `ask:"--end" help:"End point (exclusive)"`
 }
 
 func (c *ViewCmd) Help() string {

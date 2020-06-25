@@ -13,9 +13,9 @@ import (
 
 type ChainCreateCmd struct {
 	*base.Base
-	Name chain.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
-	StateInput string `ask:"--state-file" help:"State input file"`
-	StateData []byte `ask:"--state-data" help:"Alternative to state input, read state from bytes directly"`
+	Name       chain.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
+	StateInput string        `ask:"--state-file" help:"State input file"`
+	StateData  []byte        `ask:"--state-data" help:"Alternative to state input, read state from bytes directly"`
 }
 
 func (c *ChainCreateCmd) Help() string {

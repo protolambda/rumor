@@ -44,11 +44,11 @@ func (c *PeerStatusPollCmd) Run(ctx context.Context, args ...string) error {
 			wg.Add(1)
 			go func(peerID peer.ID) {
 				pingCmd := &PeerStatusReqCmd{
-					Base:              c.Base,
+					Base:            c.Base,
 					PeerStatusState: c.PeerStatusState,
-					Timeout:           c.Timeout,
-					Compression:       c.Compression,
-					PeerID:            flags.PeerIDFlag{PeerID: peerID},
+					Timeout:         c.Timeout,
+					Compression:     c.Compression,
+					PeerID:          flags.PeerIDFlag{PeerID: peerID},
 				}
 				if err := pingCmd.Run(reqCtx); err != nil {
 					c.Log.WithField("peer", peerID.String()).WithError(err).Warn("failed to poll peer")

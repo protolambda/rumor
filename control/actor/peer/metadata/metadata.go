@@ -30,20 +30,20 @@ func (c *PeerMetadataCmd) Help() string {
 	return "Manage and track peer metadata"
 }
 
-	/* TODO
-		  ping <peer id>  --update # request peer for pong, update metadata maybe
-		  pong --update   # serve others with pongs, and if ping is new enough, request them for metadata if --update=true
+/* TODO
+ping <peer id>  --update # request peer for pong, update metadata maybe
+pong --update   # serve others with pongs, and if ping is new enough, request them for metadata if --update=true
 
-		  fetch <peer id>  # get metadata of peer
+fetch <peer id>  # get metadata of peer
 
-		  poll <interval>  # poll connected peers for metadata by pinging them on interval
+poll <interval>  # poll connected peers for metadata by pinging them on interval
 
-		  get
-		  set
-		  follow
+get
+set
+follow
 
-		  serve   # serve meta data
-	*/
+serve   # serve meta data
+*/
 
 func (c *PeerMetadataCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {

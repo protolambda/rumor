@@ -42,13 +42,13 @@ func (c *PeerMetadataReqCmd) Run(ctx context.Context, args ...string) error {
 	} else {
 		if code == reqresp.SuccessCode {
 			c.Log.WithFields(logrus.Fields{
-				"code": code,
+				"code":     code,
 				"metadata": metadata.Data(),
 			}).Debug("metadata request success")
 		} else {
 			c.Log.WithFields(logrus.Fields{
 				"code": code,
-				"msg": msg,
+				"msg":  msg,
 			}).Debug("metadata request non-success")
 		}
 	}
