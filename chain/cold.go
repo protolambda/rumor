@@ -84,43 +84,33 @@ func NewFinalizedChain(anchorSlot Slot) *FinalizedChain {
 
 type ColdChainIter struct {
 	Chain      Chain
-	Start, End Slot
-	Slot       Slot
+	StartSlot, EndSlot Slot
 }
 
-func (fi *ColdChainIter) PrevSlot() (ok bool) {
-	if fi.Slot <= fi.Start {
-		return false
-	}
-	fi.Slot -= 1
-	return true
+func (fi *ColdChainIter) Start() Slot {
+	return fi.StartSlot
 }
 
-func (fi *ColdChainIter) NextSlot() (ok bool) {
-	if fi.Slot >= fi.End {
-		return false
-	}
-	fi.Slot += 1
-	return true
+func (fi *ColdChainIter) End() Slot {
+	return fi.EndSlot
 }
 
-func (fi *ColdChainIter) ThisEntry() (entry ChainEntry, ok bool, err error) {
-	if fi.Slot <= fi.Start || fi.Slot >= fi.End {
-		return nil, false, nil
+func (fi *ColdChainIter) Entry(slot Slot) (entry ChainEntry, err error) {
+	if slot < fi.StartSlot || slot >= fi.EndSlot {
+		return nil, fmt.Errorf("out of range slot: %d, range: [%d, %d)", slot, fi.StartSlot, fi.EndSlot)
 	}
-	entry, err = fi.Chain.BySlot(fi.Slot)
-	ok = true
+	entry, err = fi.Chain.BySlot(slot)
 	return
 }
 
-func (f *FinalizedChain) Iter() ChainIter {
+func (f *FinalizedChain) Iter() (ChainIter, error) {
 	start := f.Start()
+	end := f.End()
 	return &ColdChainIter{
 		Chain: f,
-		Start: start,
-		End:   f.End(),
-		Slot:  start,
-	}
+		StartSlot: start,
+		EndSlot:   end,
+	}, nil
 }
 
 func (f *FinalizedChain) Start() Slot {

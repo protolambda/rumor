@@ -86,47 +86,29 @@ type UnfinalizedChain struct {
 
 type HotChainIter struct {
 	// ordered from head to 0
-	entries []*HotEntry
-	i       int
-	err     error
+	entries  []*HotEntry
+	headSlot Slot
 }
 
-func (fi *HotChainIter) PrevSlot() (ok bool) {
-	if fi.err != nil {
-		return false
-	}
-	if fi.i+1 >= len(fi.entries) {
-		return false
-	}
-	fi.i += 1
-	return true
+func (fi *HotChainIter) Start() Slot {
+	return fi.headSlot + 1 - Slot(len(fi.entries))
 }
 
-func (fi *HotChainIter) NextSlot() (ok bool) {
-	if fi.err != nil {
-		return false
-	}
-	if fi.i <= 0 {
-		return false
-	}
-	fi.i -= 1
-	return true
+func (fi *HotChainIter) End() Slot {
+	return fi.headSlot + 1
 }
 
-func (fi *HotChainIter) ThisEntry() (entry ChainEntry, ok bool, err error) {
-	if fi.err != nil {
-		return nil, false, fi.err
+func (fi *HotChainIter) Entry(slot Slot) (entry ChainEntry, err error) {
+	if slot < fi.Start() || slot >= fi.End() {
+		return nil, fmt.Errorf("out of range slot: %d, range: [%d, %d)", slot, fi.Start(), fi.End())
 	}
-	if fi.i <= len(fi.entries) {
-		return nil, false, nil
-	}
-	return fi.entries[fi.i], true, nil
+	return fi.entries[slot - fi.headSlot], nil
 }
 
-func (uc *UnfinalizedChain) Iter() ChainIter {
+func (uc *UnfinalizedChain) Iter() (ChainIter, error) {
 	headRef, err := uc.ForkChoice.FindHead()
 	if err != nil {
-		return &HotChainIter{nil, 0, err}
+		return nil, err
 	}
 	entries := make([]*HotEntry, 0)
 	root := headRef.Root
@@ -138,7 +120,7 @@ func (uc *UnfinalizedChain) Iter() ChainIter {
 		entries = append(entries, entry.(*HotEntry))
 		root = entry.ParentRoot()
 	}
-	return &HotChainIter{entries, len(entries) - 1, nil}
+	return &HotChainIter{entries, headRef.Slot}, nil
 }
 
 type BlockSink interface {
