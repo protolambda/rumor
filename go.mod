@@ -34,5 +34,4 @@ require (
 replace (
 	github.com/protolambda/ask => ../ask
 	github.com/protolambda/zrnt => ../zrnt
-	github.com/protolambda/ztyp => ../ztyp
 )
