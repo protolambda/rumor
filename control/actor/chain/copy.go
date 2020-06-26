@@ -2,6 +2,7 @@ package chain
 
 import (
 	"context"
+	"errors"
 	"github.com/protolambda/rumor/chain"
 	"github.com/protolambda/rumor/control/actor/base"
 )
@@ -17,6 +18,5 @@ func (c *ChainCopyCmd) Help() string {
 }
 
 func (c *ChainCopyCmd) Run(ctx context.Context, args ...string) error {
-	// TODO
-	return nil
+	return errors.New("chain copying not implemented yet")  // TODO
 }

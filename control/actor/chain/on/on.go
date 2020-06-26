@@ -2,6 +2,7 @@ package on
 
 import (
 	"github.com/protolambda/ask"
+	"github.com/protolambda/rumor/chain"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/chain/on/cold"
 	"github.com/protolambda/rumor/control/actor/chain/on/head"
@@ -11,6 +12,7 @@ import (
 
 type ChainOnCmd struct {
 	*base.Base
+	*chain.FullChain
 }
 
 func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
