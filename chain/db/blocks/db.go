@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/zrnt/eth2/util/ssz"
 	"github.com/protolambda/zssz"
 	"io"
 	"sync"
@@ -12,8 +13,18 @@ import (
 )
 
 type BlockWithRoot struct {
+	// Root of the Block.Message
 	Root  beacon.Root
+	// Block, with signature
 	Block *beacon.SignedBeaconBlock
+}
+
+func WithRoot(block *beacon.SignedBeaconBlock) *BlockWithRoot {
+	root := beacon.Root(ssz.HashTreeRoot(&block.Message, beacon.BeaconBlockSSZ))
+	return &BlockWithRoot{
+		Root:  root,
+		Block: block,
+	}
 }
 
 type DBStats struct {
@@ -26,10 +37,12 @@ type DB interface {
 	// The block is stored in serialized form, so the original instance may be mutated after storing it.
 	// This is an efficient convenience method for using Import.
 	// Returns exists=true if the block exists (previously), false otherwise. If error, it may not be accurate.
+	// Returns slashable=true if exists=true, but the signatures are different. The existing block is kept.
 	Store(ctx context.Context, block *BlockWithRoot) (exists bool, err error)
 	// Import inserts a SignedBeaconBlock, read directly from the reader stream.
 	// Returns exists=true if the block exists (previously), false otherwise. If error, it may not be accurate.
-	Import(root beacon.Root, r io.Reader) (exists bool, err error)
+	// Returns slashable=true if exists=true, but the signatures are different. The existing block is kept.
+	Import(r io.Reader) (exists bool, err error)
 	// Get, an efficient convenience method for getting a block through Export. The block is safe to modify.
 	// The data at the pointer is mutated to the new block.
 	// Returns exists=true if the block exists, false otherwise. If error, it may not be accurate.
@@ -76,9 +89,15 @@ func (db *MemDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool, 
 	if err != nil {
 		return false, fmt.Errorf("failed to store block %x: %v", block.Root, err)
 	}
-	_, loaded := db.data.LoadOrStore(block.Root, buf.Bytes())
+	existing, loaded := db.data.LoadOrStore(block.Root, buf.Bytes())
 	if loaded {
+		existingBlock := existing.(*beacon.SignedBeaconBlock)
+		sigDifference := existingBlock.Signature != block.Block.Signature
 		dbBlockPool.Put(buf) // put it back, we didn't store it
+		if sigDifference {
+			return true, fmt.Errorf("block %x already exists, but its signature %x does not match new signature %x",
+				block.Root[:], existingBlock.Signature[:], block.Block.Signature[:])
+		}
 	} else {
 		atomic.AddInt64(&db.stats.Count, 1)
 		db.stats.LastWrite = block.Root
@@ -86,15 +105,28 @@ func (db *MemDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool, 
 	return loaded, nil
 }
 
-func (db *MemDB) Import(root beacon.Root, r io.Reader) (exists bool, err error) {
+func (db *MemDB) Import(r io.Reader) (exists bool, err error) {
 	buf := getPoolBlockBuf()
 	if _, err := buf.ReadFrom(r); err != nil {
 		dbBlockPool.Put(buf) // put it back, we didn't use it
 		return false, err
 	}
-	_, loaded := db.data.LoadOrStore(root, buf.Bytes())
+	var dest beacon.SignedBeaconBlock
+	err = zssz.Decode(buf, uint64(len(buf.Bytes())), &dest, beacon.SignedBeaconBlockSSZ)
+	if err != nil {
+		return false, fmt.Errorf("failed to decode block, nee valid block to get block root. Err: %v", err)
+	}
+	// Take the hash-tree-root of the BeaconBlock, ignore the signature.
+	root := beacon.Root(ssz.HashTreeRoot(&dest.Message, beacon.BeaconBlockSSZ))
+	existing, loaded := db.data.LoadOrStore(root, buf.Bytes())
 	if loaded {
+		existingBlock := existing.(*beacon.SignedBeaconBlock)
+		sigDifference := existingBlock.Signature != dest.Signature
 		dbBlockPool.Put(buf) // put it back, we didn't store it
+		if sigDifference {
+			return true, fmt.Errorf("block %x already exists, but its signature %x does not match new signature %x",
+				root[:], existingBlock.Signature[:], dest.Signature[:])
+		}
 	} else {
 		atomic.AddInt64(&db.stats.Count, 1)
 		db.stats.LastWrite = root

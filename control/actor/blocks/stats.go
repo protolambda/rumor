@@ -2,11 +2,15 @@ package blocks
 
 import (
 	"context"
+	"encoding/hex"
+	bdb "github.com/protolambda/rumor/chain/db/blocks"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/sirupsen/logrus"
 )
 
 type BlocksStatsCmd struct {
 	*base.Base
+	bdb.DB
 }
 
 func (c *BlocksStatsCmd) Help() string {
@@ -14,6 +18,7 @@ func (c *BlocksStatsCmd) Help() string {
 }
 
 func (c *BlocksStatsCmd) Run(ctx context.Context, args ...string) error {
-	// TODO
+	stats := c.DB.Stats()
+	c.Log.WithFields(logrus.Fields{"count": stats.Count, "last": hex.EncodeToString(stats.LastWrite[:])}).Info("blocks DB stats")
 	return nil
 }

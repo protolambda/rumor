@@ -4,6 +4,8 @@ import (
 	"context"
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
+	"github.com/protolambda/rumor/chain/db/blocks"
+	"github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/chain"
 	"github.com/protolambda/rumor/control/actor/debug"
@@ -26,6 +28,8 @@ type Actor struct {
 
 	GlobalChains chaindata.Chains
 	ChainState   chain.ChainState
+	Blocks       blocks.DB
+	States       states.DB
 
 	Dv5State    dv5.Dv5State
 	GossipState gossip.GossipState

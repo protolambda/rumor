@@ -1,4 +1,4 @@
-package blocks
+package states
 
 import (
 	"context"
