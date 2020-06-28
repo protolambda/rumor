@@ -10,8 +10,10 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/network"
 	mplex "github.com/libp2p/go-libp2p-mplex"
+	noise "github.com/libp2p/go-libp2p-noise"
 	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
 	secio "github.com/libp2p/go-libp2p-secio"
+	tls "github.com/libp2p/go-libp2p-tls"
 	yamux "github.com/libp2p/go-libp2p-yamux"
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
@@ -32,7 +34,7 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 	var privKeyStr string
 	var transportsStrArr []string
 	var muxStrArr []string
-	var securityStr string
+	var securityArr []string
 	var relayEnabled bool
 	var loPeers, hiPeers int
 	var gracePeriodMs int
@@ -100,14 +102,18 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 				}
 			}
 
-			{
-				switch securityStr {
+			for _, secOpt := range securityArr {
+				switch secOpt {
 				case "none":
 					// no security, for debugging etc.
 				case "secio":
 					hostOptions = append(hostOptions, libp2p.Security(secio.ID, secio.New))
+				case "noise":
+					hostOptions = append(hostOptions, libp2p.Security(noise.ID, noise.New))
+				case "tls":
+					hostOptions = append(hostOptions, libp2p.Security(tls.ID, tls.New))
 				default:
-					log.Errorf("could not recognize security %s", securityStr)
+					log.Errorf("could not recognize security %s", secOpt)
 					return
 				}
 			}
@@ -136,8 +142,8 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 	}
 	startCmd.Flags().StringVar(&privKeyStr, "priv-key", "", "hex-encoded RSA private key for libp2p host. Random if none is specified.")
 	startCmd.Flags().StringArrayVar(&muxStrArr, "mux", []string{"yamux", "mplex"}, "Multiplexers to use")
-	startCmd.Flags().StringArrayVar(&transportsStrArr, "transports", []string{"tcp"}, "Transports to use. Options: tcp, ws")
-	startCmd.Flags().StringVar(&securityStr, "security", "secio", "Security to use. Options: secio, none")
+	startCmd.Flags().StringArrayVar(&transportsStrArr, "transports", []string{"tcp"}, "Transports to use, multiple possible. Options: tcp, ws")
+	startCmd.Flags().StringArrayVar(&securityArr, "security", []string{"noise"}, "Security to use, multiple possible. Options: secio, tls, noise, none")
 	startCmd.Flags().BoolVar(&relayEnabled, "relay", false, "enable relayer functionality")
 	startCmd.Flags().BoolVar(&natEnabled, "nat", true, "enable nat address discovery (upnp/pmp)")
 	startCmd.Flags().IntVar(&loPeers, "lo-peers", 15, "low-water for connection manager to trim peer count to")
@@ -264,11 +270,12 @@ func (r *Actor) InitHostCmd(ctx context.Context, log logrus.FieldLogger) *cobra.
 			for _, a := range h.Addrs() {
 				log.Infof("Listening on: %s", a.String())
 			}
-			log.Infof("Security: %s,  Mux: %s,  Transports: %s,  Relay: %v",
-				strings.ToLower(securityStr),
-				strings.ToLower(strings.Join(muxStrArr, ", ")),
-				strings.ToLower(strings.Join(transportsStrArr, ", ")),
-				relayEnabled)
+			// TODO; bugged, to be fixed in new refactor branch
+			//log.Infof("Security: %s,  Mux: %s,  Transports: %s,  Relay: %v",
+			//	strings.ToLower(strings.Join(securityArr, ", "))),
+			//	strings.ToLower(strings.Join(muxStrArr, ", ")),
+			//	strings.ToLower(strings.Join(transportsStrArr, ", ")),
+			//	relayEnabled)
 
 			printEnr(cmd)
 		},
