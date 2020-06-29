@@ -2,11 +2,13 @@ package serve
 
 import (
 	"github.com/protolambda/ask"
+	bdb "github.com/protolambda/rumor/chain/db/blocks"
 	"github.com/protolambda/rumor/control/actor/base"
 )
 
 type ServeCmd struct {
 	*base.Base
+	Blocks bdb.DB
 }
 
 func (c *ServeCmd) Cmd(route string) (cmd interface{}, err error) {

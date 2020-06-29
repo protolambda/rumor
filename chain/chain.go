@@ -69,15 +69,21 @@ func NewBlockSlotKey(block Root, slot Slot) (out BlockSlotKey) {
 	return
 }
 
-type FullChain struct {
+type FullChain interface {
+	Chain
 	HotChain
 	ColdChain
 }
 
-func (fc *FullChain) ByStateRoot(root Root) (ChainEntry, error) {
-	hotEntry, hotErr := fc.HotChain.ByStateRoot(root)
+type HotColdChain struct {
+	HotChain
+	ColdChain
+}
+
+func (hc *HotColdChain) ByStateRoot(root Root) (ChainEntry, error) {
+	hotEntry, hotErr := hc.HotChain.ByStateRoot(root)
 	if hotErr != nil {
-		coldEntry, coldErr := fc.ColdChain.ByStateRoot(root)
+		coldEntry, coldErr := hc.ColdChain.ByStateRoot(root)
 		if coldErr != nil {
 			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
 				"Hot: %v, Cold: %v", hotErr, coldErr)
@@ -87,10 +93,10 @@ func (fc *FullChain) ByStateRoot(root Root) (ChainEntry, error) {
 	return hotEntry, nil
 }
 
-func (fc *FullChain) ByBlockRoot(root Root) (ChainEntry, error) {
-	hotEntry, hotErr := fc.HotChain.ByBlockRoot(root)
+func (hc *HotColdChain) ByBlockRoot(root Root) (ChainEntry, error) {
+	hotEntry, hotErr := hc.HotChain.ByBlockRoot(root)
 	if hotErr != nil {
-		coldEntry, coldErr := fc.ColdChain.ByBlockRoot(root)
+		coldEntry, coldErr := hc.ColdChain.ByBlockRoot(root)
 		if coldErr != nil {
 			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
 				"Hot: %v, Cold: %v", hotErr, coldErr)
@@ -100,10 +106,10 @@ func (fc *FullChain) ByBlockRoot(root Root) (ChainEntry, error) {
 	return hotEntry, nil
 }
 
-func (fc *FullChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainEntry, error) {
-	hotEntry, hotErr := fc.HotChain.ClosestFrom(fromBlockRoot, toSlot)
+func (hc *HotColdChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainEntry, error) {
+	hotEntry, hotErr := hc.HotChain.ClosestFrom(fromBlockRoot, toSlot)
 	if hotErr != nil {
-		coldEntry, coldErr := fc.ColdChain.ClosestFrom(fromBlockRoot, toSlot)
+		coldEntry, coldErr := hc.ColdChain.ClosestFrom(fromBlockRoot, toSlot)
 		if coldErr != nil {
 			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
 				"Hot: %v, Cold: %v", hotErr, coldErr)
@@ -113,10 +119,10 @@ func (fc *FullChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainEntry, e
 	return hotEntry, nil
 }
 
-func (fc *FullChain) BySlot(slot Slot) (ChainEntry, error) {
-	hotEntry, hotErr := fc.HotChain.BySlot(slot)
+func (hc *HotColdChain) BySlot(slot Slot) (ChainEntry, error) {
+	hotEntry, hotErr := hc.HotChain.BySlot(slot)
 	if hotErr != nil {
-		coldEntry, coldErr := fc.ColdChain.BySlot(slot)
+		coldEntry, coldErr := hc.ColdChain.BySlot(slot)
 		if coldErr != nil {
 			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
 				"Hot: %v, Cold: %v", hotErr, coldErr)
@@ -126,12 +132,12 @@ func (fc *FullChain) BySlot(slot Slot) (ChainEntry, error) {
 	return hotEntry, nil
 }
 
-func (fc *FullChain) Iter() (ChainIter, error) {
-	hotIt, err := fc.HotChain.Iter()
+func (hc *HotColdChain) Iter() (ChainIter, error) {
+	hotIt, err := hc.HotChain.Iter()
 	if err != nil {
 		return nil, fmt.Errorf("cannot iter hot part: %v", err)
 	}
-	coldIt, err := fc.ColdChain.Iter()
+	coldIt, err := hc.ColdChain.Iter()
 	if err != nil {
 		return nil, fmt.Errorf("cannot iter cold part: %v", err)
 	}
@@ -165,16 +171,16 @@ func (fi *FullChainIter) Entry(slot Slot) (entry ChainEntry, err error) {
 type ChainID string
 
 type Chains struct {
-	// ChainID -> *FullChain
+	// ChainID -> FullChain
 	chains sync.Map
 }
 
-func (cs *Chains) Find(id ChainID) (pi *FullChain, ok bool) {
+func (cs *Chains) Find(id ChainID) (pi FullChain, ok bool) {
 	pii, ok := cs.chains.Load(id)
-	return pii.(*FullChain), ok
+	return pii.(FullChain), ok
 }
 
-func (cs *Chains) Create(id ChainID, anchor *HotEntry) (pi *FullChain, err error) {
+func (cs *Chains) Create(id ChainID, anchor *HotEntry) (pi FullChain, err error) {
 	coldCh := NewFinalizedChain(anchor.slot)
 	hotCh, err := NewUnfinalizedChain(anchor,
 		BlockSinkFn(func(entry *HotEntry, canonical bool) error {
@@ -188,7 +194,7 @@ func (cs *Chains) Create(id ChainID, anchor *HotEntry) (pi *FullChain, err error
 		return nil, err
 	}
 
-	c := &FullChain{
+	c := &HotColdChain{
 		HotChain:  hotCh,
 		ColdChain: coldCh,
 	}

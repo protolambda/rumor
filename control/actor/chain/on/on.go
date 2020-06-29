@@ -3,6 +3,8 @@ package on
 import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/chain"
+	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/chain/on/cold"
 	"github.com/protolambda/rumor/control/actor/chain/on/head"
@@ -12,7 +14,9 @@ import (
 
 type ChainOnCmd struct {
 	*base.Base
-	*chain.FullChain
+	chain.FullChain
+	Blocks bdb.DB
+	States sdb.DB
 }
 
 func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
