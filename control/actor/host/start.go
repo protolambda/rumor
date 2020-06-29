@@ -35,6 +35,7 @@ type HostStartCmd struct {
 	HiPeers          int                  `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
 	GracePeriod      time.Duration        `ask:"--peer-grace-period" help:"Time to grace a peer from being trimmed"`
 	NatEnabled       bool                 `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
+	UserAgent        string               `ask:"--agent" help:"user agent string to use in libp2p identify protocol"`
 }
 
 func (c *HostStartCmd) Default() {
@@ -45,6 +46,7 @@ func (c *HostStartCmd) Default() {
 	c.HiPeers = 20
 	c.GracePeriod = 20 * time.Second
 	c.NatEnabled = true
+	c.UserAgent = "Rumor"
 }
 
 func (c *HostStartCmd) Help() string {
@@ -126,6 +128,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 		libp2p.Identity(priv),
 		libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
 		libp2p.ConnectionManager(connmgr.NewConnManager(c.LoPeers, c.HiPeers, c.GracePeriod)),
+		libp2p.UserAgent(c.UserAgent),
 	)
 	// Not the command ctx, we want the host to stay open after the command.
 	h, err := libp2p.New(c.BaseContext, hostOptions...)
