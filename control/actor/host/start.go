@@ -10,8 +10,10 @@ import (
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	mplex "github.com/libp2p/go-libp2p-mplex"
+	noise "github.com/libp2p/go-libp2p-noise"
 	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
 	secio "github.com/libp2p/go-libp2p-secio"
+	tls "github.com/libp2p/go-libp2p-tls"
 	yamux "github.com/libp2p/go-libp2p-yamux"
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
@@ -27,7 +29,7 @@ type HostStartCmd struct {
 	PrivKey          flags.P2pPrivKeyFlag `ask:"--priv" help:"hex-encoded private key for libp2p host. Random if none is specified."`
 	TransportsStrArr []string             `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
 	MuxStrArr        []string             `ask:"--mux" help:"Multiplexers to use"`
-	SecurityStr      string               `ask:"--security" help:"Security to use. Options: secio, none"`
+	SecurityArr      []string             `ask:"--security" help:"Security to use. Multiple can be selected, order matters. Options: secio, noise, tls, none"`
 	RelayEnabled     bool                 `ask:"--relay" help:"enable relayer functionality"`
 	LoPeers          int                  `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
 	HiPeers          int                  `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
@@ -38,7 +40,7 @@ type HostStartCmd struct {
 func (c *HostStartCmd) Default() {
 	c.TransportsStrArr = []string{"tcp"}
 	c.MuxStrArr = []string{"yamux", "mplex"}
-	c.SecurityStr = "secio"
+	c.SecurityArr = []string{"noise", "secio"}
 	c.LoPeers = 15
 	c.HiPeers = 20
 	c.GracePeriod = 20 * time.Second
@@ -97,14 +99,18 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	{
-		switch c.SecurityStr {
+	for _, secOpt := range c.SecurityArr {
+		switch secOpt {
 		case "none":
 			// no security, for debugging etc.
 		case "secio":
 			hostOptions = append(hostOptions, libp2p.Security(secio.ID, secio.New))
+		case "noise":
+			hostOptions = append(hostOptions, libp2p.Security(noise.ID, noise.New))
+		case "tls":
+			hostOptions = append(hostOptions, libp2p.Security(tls.ID, tls.New))
 		default:
-			return fmt.Errorf("could not recognize security %s", c.SecurityStr)
+			return fmt.Errorf("could not recognize security %s", secOpt)
 		}
 	}
 
