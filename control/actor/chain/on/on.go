@@ -14,7 +14,7 @@ import (
 
 type ChainOnCmd struct {
 	*base.Base
-	chain.FullChain
+	Chain chain.FullChain
 	Blocks bdb.DB
 	States sdb.DB
 }
@@ -24,7 +24,7 @@ func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "attestation":
 		cmd = &AttestationCmd{Base: c.Base}
 	case "block":
-		cmd = &BlockCmd{Base: c.Base}
+		cmd = &BlockCmd{Base: c.Base, Chain: c.Chain, Blocks: c.Blocks}
 	case "hot":
 		cmd = &hot.HotCmd{Base: c.Base}
 	case "cold":

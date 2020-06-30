@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/chain"
+	bdb "github.com/protolambda/rumor/chain/db/blocks"
 	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/chain/on"
@@ -17,6 +18,7 @@ type ChainCmd struct {
 	*base.Base
 	*chain.Chains
 	*ChainState
+	Blocks bdb.DB
 	States sdb.DB
 }
 
@@ -38,7 +40,7 @@ func (c *ChainCmd) Cmd(route string) (cmd interface{}, err error) {
 		if !ok {
 			return nil, fmt.Errorf("current chain was not found. Use 'chain create' to create chains")
 		}
-		cmd = &on.ChainOnCmd{Base: c.Base, FullChain: currentChain}
+		cmd = &on.ChainOnCmd{Base: c.Base, Chain: currentChain, Blocks: c.Blocks, States: c.States}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
