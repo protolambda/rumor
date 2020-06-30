@@ -12,7 +12,7 @@ import (
 type Dv5RandomCmd struct {
 	*base.Base
 	*Dv5State
-	HandleENR // embed ENR handling command options
+	HandleENR `ask:"."` // embed ENR handling command options
 }
 
 func (c *Dv5RandomCmd) Default() {
