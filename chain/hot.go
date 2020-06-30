@@ -63,7 +63,9 @@ type HotChain interface {
 	Justified() Checkpoint
 	Finalized() Checkpoint
 	Head() (ChainEntry, error)
+	// Process a block. If there is an error, the chain is not mutated, and can be continued to use.
 	AddBlock(ctx context.Context, signedBlock *beacon.SignedBeaconBlock) error
+	// Process an attestation. If there is an error, the chain is not mutated, and can be continued to use.
 	AddAttestation(att *beacon.Attestation) error
 }
 

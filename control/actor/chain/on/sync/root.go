@@ -27,6 +27,7 @@ type ByRootCmd struct {
 	Roots []beacon.Root `ask:"--roots" help:"Block roots to request"`
 
 	Timeout     time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
+	ProcessTimeout time.Duration         `ask:"--process-timeout" help:"Timeout for parallel processing of blocks. 0 to disable."`
 	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 	Store       bool                  `ask:"--store" help:"If the blocks should be stored in the blocks DB"`
 	Process     bool                  `ask:"--process" help:"If the blocks should be added to the current chain view, ignored otherwise"`
@@ -34,6 +35,7 @@ type ByRootCmd struct {
 
 func (c *ByRootCmd) Default() {
 	c.Timeout = 20 * time.Second
+	c.ProcessTimeout = 20 * time.Second
 	c.Compression.Compression = reqresp.SnappyCompression{}
 	c.Store = true
 	c.Process = true
@@ -75,51 +77,53 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 		c.Log.Warn("Running blocks-by-root request with too many block roots. Max is %d, got %d",
 			MAX_REQUEST_BLOCKS, len(req))
 	}
-	var block beacon.SignedBeaconBlock
-	return method.RunRequest(reqCtx, sFn, peerId, c.Compression.Compression, reqresp.RequestSSZInput{Obj: &req}, uint64(len(req)),
-		func(chunk reqresp.ChunkedResponseHandler) error {
-			resultCode := chunk.ResultCode()
-			f := map[string]interface{}{
-				"from":        peerId.String(),
-				"chunk_index": chunk.ChunkIndex(),
-				"chunk_size":  chunk.ChunkSize(),
-				"result_code": resultCode,
-			}
-			switch resultCode {
-			case reqresp.ServerErrCode, reqresp.InvalidReqCode:
-				msg, err := chunk.ReadErrMsg()
-				if err != nil {
-					return err
+
+	procCtx := ctx
+	if c.ProcessTimeout != 0 {
+		procCtx, _ = context.WithTimeout(procCtx, c.ProcessTimeout)
+	}
+
+	return handleSync{
+		Log:     c.Log,
+		Blocks:  c.Blocks,
+		Chain:   c.Chain,
+		Store:   c.Store,
+		Process: c.Process,
+	}.handle(procCtx, func(blocksCh chan<- *beacon.SignedBeaconBlock) error {
+		return method.RunRequest(reqCtx, sFn, peerId, c.Compression.Compression, reqresp.RequestSSZInput{Obj: &req}, uint64(len(req)),
+			func(chunk reqresp.ChunkedResponseHandler) error {
+				resultCode := chunk.ResultCode()
+				f := map[string]interface{}{
+					"from":        peerId.String(),
+					"chunk_index": chunk.ChunkIndex(),
+					"chunk_size":  chunk.ChunkSize(),
+					"result_code": resultCode,
 				}
-				f["msg"] = msg
-				c.Log.WithField("chunk", f).Warn("Received error response")
-				return fmt.Errorf("got error response %d on chunk %d: %s", resultCode, chunk.ChunkIndex(), msg)
-			case reqresp.SuccessCode:
-				// re-use the allocated block for each chunk.
-				if err := chunk.ReadObj(&block); err != nil {
-					return err
-				}
-				withRoot := bdb.WithRoot(&block)
-				expectedRoot := req[chunk.ChunkIndex()]
-				if withRoot.Root != expectedRoot {
-					return fmt.Errorf("bad block, expected root %x, got %x", withRoot.Root, expectedRoot)
-				}
-				if c.Store {
-					exists, err := c.Blocks.Store(ctx, withRoot)
+				switch resultCode {
+				case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+					msg, err := chunk.ReadErrMsg()
 					if err != nil {
-						return fmt.Errorf("failed to store block: %v", err)
+						return err
 					}
-					f["known"] = exists
-				}
-				if c.Process {
-					if err := c.Chain.AddBlock(ctx, &block); err != nil {
-						return fmt.Errorf("failed to process block: %v", err)
+					f["msg"] = msg
+					c.Log.WithField("chunk", f).Warn("Received error response")
+					return fmt.Errorf("got error response %d on chunk %d: %s", resultCode, chunk.ChunkIndex(), msg)
+				case reqresp.SuccessCode:
+					var block beacon.SignedBeaconBlock
+					if err := chunk.ReadObj(&block); err != nil {
+						return err
 					}
+					withRoot := bdb.WithRoot(&block)
+					expectedRoot := req[chunk.ChunkIndex()]
+					if withRoot.Root != expectedRoot {
+						return fmt.Errorf("bad block, expected root %x, got %x", withRoot.Root, expectedRoot)
+					}
+					c.Log.WithField("chunk", f).Debug("Received block")
+					blocksCh <- &block
+					return nil
+				default:
+					return fmt.Errorf("received chunk (index %d, size %d) with unknown result code %d", chunk.ChunkIndex(), chunk.ChunkSize(), resultCode)
 				}
-				c.Log.WithField("chunk", f).Debug("Received block")
-				return nil
-			default:
-				return fmt.Errorf("received chunk (index %d, size %d) with unknown result code %d", chunk.ChunkIndex(), chunk.ChunkSize(), resultCode)
-			}
-		})
+			})
+	})
 }
