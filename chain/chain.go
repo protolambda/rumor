@@ -69,10 +69,23 @@ func NewBlockSlotKey(block Root, slot Slot) (out BlockSlotKey) {
 	return
 }
 
+// TODO: in Go 1.15 this can be overlapping embedded interfaces
 type FullChain interface {
 	Chain
-	HotChain
-	ColdChain
+
+	// hot
+
+	Justified() Checkpoint
+	Finalized() Checkpoint
+	Head() (ChainEntry, error)
+	AddBlock(ctx context.Context, signedBlock *beacon.SignedBeaconBlock) error
+	AddAttestation(att *beacon.Attestation) error
+
+	// cold
+
+	Start() Slot
+	End() Slot
+	OnFinalizedEntry(entry *HotEntry) error
 }
 
 type HotColdChain struct {
@@ -85,7 +98,7 @@ func (hc *HotColdChain) ByStateRoot(root Root) (ChainEntry, error) {
 	if hotErr != nil {
 		coldEntry, coldErr := hc.ColdChain.ByStateRoot(root)
 		if coldErr != nil {
-			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
+			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. "+
 				"Hot: %v, Cold: %v", hotErr, coldErr)
 		}
 		return coldEntry, nil
@@ -98,7 +111,7 @@ func (hc *HotColdChain) ByBlockRoot(root Root) (ChainEntry, error) {
 	if hotErr != nil {
 		coldEntry, coldErr := hc.ColdChain.ByBlockRoot(root)
 		if coldErr != nil {
-			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
+			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. "+
 				"Hot: %v, Cold: %v", hotErr, coldErr)
 		}
 		return coldEntry, nil
@@ -111,7 +124,7 @@ func (hc *HotColdChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainEntry
 	if hotErr != nil {
 		coldEntry, coldErr := hc.ColdChain.ClosestFrom(fromBlockRoot, toSlot)
 		if coldErr != nil {
-			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
+			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. "+
 				"Hot: %v, Cold: %v", hotErr, coldErr)
 		}
 		return coldEntry, nil
@@ -124,7 +137,7 @@ func (hc *HotColdChain) BySlot(slot Slot) (ChainEntry, error) {
 	if hotErr != nil {
 		coldEntry, coldErr := hc.ColdChain.BySlot(slot)
 		if coldErr != nil {
-			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. " +
+			return nil, fmt.Errorf("could not find chain entry in hot or cold chain. "+
 				"Hot: %v, Cold: %v", hotErr, coldErr)
 		}
 		return coldEntry, nil
@@ -148,7 +161,7 @@ func (hc *HotColdChain) Iter() (ChainIter, error) {
 }
 
 type FullChainIter struct {
-	HotIter ChainIter
+	HotIter  ChainIter
 	ColdIter ChainIter
 }
 

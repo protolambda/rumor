@@ -2,8 +2,11 @@ package track
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
+	"github.com/protolambda/rumor/p2p/types"
 	"sync"
 )
 
@@ -17,10 +20,59 @@ type PeerInfo struct {
 	claimedSeq methods.SeqNr
 	// Track latest status
 	status Status
+	// Latest ENR eth2 data
+	enrEth2 *types.Eth2Data
+	// Latest ENR attnets data
+	enrAttnets types.AttnetBits
 	// Track how many times we have tried to ask them for metadata without getting an answer
 	ongoingMetaFetches uint64
+	// Track ENR
+	n *enode.Node
 	// Lock to avoid concurrent modifications from creating inconsistencies
 	sync.Mutex
+}
+
+// Update the record tracking of the peer,
+// return updated=true if the node is new, or it overrides a previously seen node (by higher seq nr).
+// and return eth2 and attnet data, if any.
+func (pi *PeerInfo) UpdateMaybe(n *enode.Node) (updated bool, data *types.Eth2Data, attnetbits *types.AttnetBits, err error) {
+	pi.Lock()
+	defer pi.Unlock()
+	if pi.n != nil {
+		if pi.n.Seq() >= n.Seq() {
+			return false, nil, nil, nil
+		}
+	}
+	pi.n = n
+	data, attnets, err := handleNewEnr(n)
+	return true, data, attnets, err
+}
+
+// Latest fetches the latest ENR of the peer, nil if we have none. The returned ENR may not be mutated.
+func (pi *PeerInfo) Latest() (n *enode.Node) {
+	return pi.n
+}
+
+func handleNewEnr(n *enode.Node) (data *types.Eth2Data, attnetbits *types.AttnetBits, err error) {
+	var eth2 addrutil.Eth2ENREntry
+	if err := n.Load(&eth2); err == nil {
+		dat, err := eth2.Eth2Data()
+		if err == nil {
+			data = dat
+		} else {
+			return nil, nil, err
+		}
+	}
+	var attnets addrutil.AttnetsENREntry
+	if err := n.Load(&attnets); err == nil {
+		dat, err := attnets.AttnetBits()
+		if err == nil {
+			attnetbits = &dat
+		} else {
+			return nil, nil, err
+		}
+	}
+	return
 }
 
 func (pi *PeerInfo) Metadata() MetaData {
@@ -111,13 +163,17 @@ type PeerInfoData struct {
 	OngoingMetaFetches uint64 `json:"ongoing_fetches"`
 }
 
+type PeerInfoFinder interface {
+	Find(id peer.ID) (pi *PeerInfo, loaded bool)
+}
+
 type PeerInfos struct {
 	// peer.ID -> *PeerInfo
 	infos sync.Map
 }
 
 // Find looks for a peer info, and creates a new peer info if necessary
-func (ps *PeerInfos) Find(id peer.ID) (pi *PeerInfo, ok bool) {
+func (ps *PeerInfos) Find(id peer.ID) (pi *PeerInfo, loaded bool) {
 	pii, loaded := ps.infos.LoadOrStore(id, &PeerInfo{})
 	return pii.(*PeerInfo), loaded
 }

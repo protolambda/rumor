@@ -26,10 +26,10 @@ func (c *BlocksGetCmd) Run(ctx context.Context, args ...string) error {
 	}
 	if exists {
 		c.Log.WithField("block", map[string]interface{}{
-			"slot": block.Message.Slot,
-			"proposer": block.Message.ProposerIndex,
-			"parent": hex.EncodeToString(block.Message.ParentRoot[:]),
-			"state": hex.EncodeToString(block.Message.StateRoot[:]),
+			"slot":      block.Message.Slot,
+			"proposer":  block.Message.ProposerIndex,
+			"parent":    hex.EncodeToString(block.Message.ParentRoot[:]),
+			"state":     hex.EncodeToString(block.Message.StateRoot[:]),
 			"signature": hex.EncodeToString(block.Signature[:]),
 		}).Info("got block")
 	} else {

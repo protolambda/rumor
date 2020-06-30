@@ -102,7 +102,7 @@ func (fi *HotChainIter) Entry(slot Slot) (entry ChainEntry, err error) {
 	if slot < fi.Start() || slot >= fi.End() {
 		return nil, fmt.Errorf("out of range slot: %d, range: [%d, %d)", slot, fi.Start(), fi.End())
 	}
-	return fi.entries[slot - fi.headSlot], nil
+	return fi.entries[slot-fi.headSlot], nil
 }
 
 func (uc *UnfinalizedChain) Iter() (ChainIter, error) {

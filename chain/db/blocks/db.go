@@ -14,7 +14,7 @@ import (
 
 type BlockWithRoot struct {
 	// Root of the Block.Message
-	Root  beacon.Root
+	Root beacon.Root
 	// Block, with signature
 	Block *beacon.SignedBeaconBlock
 }

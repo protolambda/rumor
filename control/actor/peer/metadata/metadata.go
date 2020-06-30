@@ -9,7 +9,7 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 )
 
-type OnMetadata func(peerID peer.ID, status *methods.MetaData)
+type OnMetadata func(peerID peer.ID, meta *methods.MetaData)
 
 // Returns true if the peer has not been seen, or if the seq nr is newer than we currently know for the peer
 type IsUnseen func(peerID peer.ID, seqNr methods.SeqNr) bool
@@ -29,21 +29,6 @@ type PeerMetadataCmd struct {
 func (c *PeerMetadataCmd) Help() string {
 	return "Manage and track peer metadata"
 }
-
-/* TODO
-ping <peer id>  --update # request peer for pong, update metadata maybe
-pong --update   # serve others with pongs, and if ping is new enough, request them for metadata if --update=true
-
-fetch <peer id>  # get metadata of peer
-
-poll <interval>  # poll connected peers for metadata by pinging them on interval
-
-get
-set
-follow
-
-serve   # serve meta data
-*/
 
 func (c *PeerMetadataCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {

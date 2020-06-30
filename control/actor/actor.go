@@ -2,6 +2,7 @@ package actor
 
 import (
 	"context"
+	libpeer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
 	"github.com/protolambda/rumor/chain/db/blocks"
@@ -17,6 +18,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/peer/metadata"
 	"github.com/protolambda/rumor/control/actor/peer/status"
 	"github.com/protolambda/rumor/control/actor/rpc"
+	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 )
@@ -31,7 +33,8 @@ type Actor struct {
 	Blocks       blocks.DB
 	States       states.DB
 
-	Dv5State    dv5.Dv5State
+	Dv5State dv5.Dv5State
+
 	GossipState gossip.GossipState
 	RPCState    rpc.RPCState
 
@@ -43,10 +46,23 @@ type Actor struct {
 
 func NewActor() *Actor {
 	ctxAll, cancelAll := context.WithCancel(context.Background())
-	return &Actor{
+	act := &Actor{
 		ActorCtx:    ctxAll,
 		actorCancel: cancelAll,
 	}
+	act.PeerStatusState.OnStatus = func(peerID libpeer.ID, status *methods.Status) {
+		inf, _ := act.GlobalPeerInfos.Find(peerID)
+		inf.RegisterStatus(*status)
+	}
+	act.PeerMetadataState.OnMetadata = func(peerID libpeer.ID, meta *methods.MetaData) {
+		inf, _ := act.GlobalPeerInfos.Find(peerID)
+		inf.RegisterMetadata(*meta)
+	}
+	act.PeerMetadataState.IsUnseen = func(peerID libpeer.ID, seqNr methods.SeqNr) bool {
+		inf, _ := act.GlobalPeerInfos.Find(peerID)
+		return inf.ClaimedSeq() < seqNr
+	}
+	return act
 }
 
 func (r *Actor) Close() {
@@ -89,7 +105,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 			WithPeerInfos:     &c.GlobalPeerInfos,
 		}
 	case "dv5":
-		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState}
+		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState, PeerInfoFinder: &c.GlobalPeerInfos}
 	case "gossip":
 		cmd = &gossip.GossipCmd{Base: b, GossipState: &c.GossipState}
 	case "rpc":

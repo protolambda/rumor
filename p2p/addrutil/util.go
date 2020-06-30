@@ -13,6 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
+	"github.com/protolambda/rumor/p2p/types"
+	"github.com/protolambda/zssz"
 	"net"
 	"strings"
 )
@@ -23,8 +25,38 @@ func (eee Eth2ENREntry) ENRKey() string {
 	return "eth2"
 }
 
+func (eee Eth2ENREntry) Eth2Data() (*types.Eth2Data, error) {
+	var dat types.Eth2Data
+	if err := zssz.Decode(bytes.NewReader(eee), uint64(len(eee)), &dat, types.Eth2DataSSZ); err != nil {
+		return nil, err
+	}
+	return &dat, nil
+}
+
 func (eee Eth2ENREntry) String() string {
-	return hex.EncodeToString(eee) // TODO: eth2 ENR, parse based on future spec
+	dat, err := eee.Eth2Data()
+	if err != nil {
+		return fmt.Sprintf("invalid eth2 data! Raw: %x", eee[:])
+	}
+	return fmt.Sprintf("digest: %x, next fork version: %x, next fork epoch: %d", dat.ForkDigest, dat.NextForkVersion, dat.NextForkEpoch)
+}
+
+type AttnetsENREntry []byte
+
+func (aee AttnetsENREntry) ENRKey() string {
+	return "attnets"
+}
+
+func (aee AttnetsENREntry) AttnetBits() (types.AttnetBits, error) {
+	var dat types.AttnetBits
+	if err := zssz.Decode(bytes.NewReader(aee), uint64(len(aee)), &dat, types.AttnetBitsSSZ); err != nil {
+		return types.AttnetBits{}, err
+	}
+	return dat, nil
+}
+
+func (aee AttnetsENREntry) String() string {
+	return hex.EncodeToString(aee)
 }
 
 var EnrEntries = map[string]func() (enr.Entry, func() string){
@@ -85,6 +117,12 @@ var EnrEntries = map[string]func() (enr.Entry, func() string){
 			return res.String()
 		}
 	},
+	"attnets": func() (enr.Entry, func() string) {
+		res := new(AttnetsENREntry)
+		return res, func() string {
+			return res.String()
+		}
+	},
 }
 
 func ParseEnrBytes(v string) ([]byte, error) {
@@ -126,7 +164,6 @@ func ParseEnrOrEnode(v string) (*enode.Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		// TODO: warn if no "eth2" key in ENR record.
 		enodeAddr, err := EnrToEnode(enrAddr, true)
 		if err != nil {
 			return nil, err

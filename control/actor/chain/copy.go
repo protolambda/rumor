@@ -18,5 +18,5 @@ func (c *ChainCopyCmd) Help() string {
 }
 
 func (c *ChainCopyCmd) Run(ctx context.Context, args ...string) error {
-	return errors.New("chain copying not implemented yet")  // TODO
+	return errors.New("chain copying not implemented yet") // TODO
 }

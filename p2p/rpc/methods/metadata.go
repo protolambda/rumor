@@ -4,20 +4,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/types"
 )
-
-// Switch ResponseChunkCodec codec out if you need non-standard attestation subnet count
-const ATTESTATION_SUBNET_COUNT = 64
-
-type AttnetBits [(ATTESTATION_SUBNET_COUNT + 7) / 8]byte
-
-func (ab *AttnetBits) BitLen() uint64 {
-	return ATTESTATION_SUBNET_COUNT
-}
 
 type MetaData struct {
 	SeqNumber SeqNr
-	Attnets   AttnetBits
+	Attnets   types.AttnetBits
 }
 
 func (m *MetaData) Data() map[string]interface{} {

@@ -67,5 +67,6 @@ func (c *PeerMetadataServeCmd) Run(ctx context.Context, args ...string) error {
 	h.SetStreamHandler(prot, streamHandler)
 	c.Log.WithField("started", true).Info("Opened listener")
 	<-ctx.Done()
+	h.RemoveStreamHandler(prot)
 	return nil
 }
