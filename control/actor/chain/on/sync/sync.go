@@ -20,7 +20,7 @@ func (c *SyncCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "by-range":
 		cmd = &ByRangeCmd{Base: c.Base, Chain: c.Chain, Blocks: c.Blocks}
 	case "by-root":
-		cmd = &ByRootCmd{Base: c.Base}
+		cmd = &ByRootCmd{Base: c.Base, Chain: c.Chain, Blocks: c.Blocks}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
