@@ -11,9 +11,9 @@ import (
 type PeerMetadataSetCmd struct {
 	*base.Base
 	*PeerMetadataState
-	SeqNumber methods.SeqNr      `ask:"--seq-number" help:"Seq Number of metadata"`
+	SeqNumber methods.SeqNr    `ask:"--seq-number" help:"Seq Number of metadata"`
 	Attnets   types.AttnetBits `ask:"--attnets" help:"Attestation nets bitfield as bytes"`
-	Merge     bool               `ask:"--merge" help:"If true, only apply non-zero options to state"`
+	Merge     bool             `ask:"--merge" help:"If true, only apply non-zero options to state"`
 }
 
 func (c *PeerMetadataSetCmd) Default() {

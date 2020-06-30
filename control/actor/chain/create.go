@@ -62,11 +62,11 @@ func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	stateRoot, err := latestHeader.StateRoot()
+	headerStateRoot, err := latestHeader.StateRoot()
 	if err != nil {
 		return err
 	}
-	if stateRoot == (beacon.Root{}) {
+	if headerStateRoot == (beacon.Root{}) {
 		if err := latestHeader.SetStateRoot(state.HashTreeRoot(tree.GetHashFn())); err != nil {
 			return err
 		}

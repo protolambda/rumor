@@ -5,9 +5,10 @@ import (
 	libpeer "github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
-	"github.com/protolambda/rumor/chain/db/blocks"
-	"github.com/protolambda/rumor/chain/db/states"
+	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/control/actor/blocks"
 	"github.com/protolambda/rumor/control/actor/chain"
 	"github.com/protolambda/rumor/control/actor/debug"
 	"github.com/protolambda/rumor/control/actor/dv5"
@@ -18,6 +19,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/peer/metadata"
 	"github.com/protolambda/rumor/control/actor/peer/status"
 	"github.com/protolambda/rumor/control/actor/rpc"
+	"github.com/protolambda/rumor/control/actor/states"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
@@ -30,8 +32,10 @@ type Actor struct {
 
 	GlobalChains chaindata.Chains
 	ChainState   chain.ChainState
-	Blocks       blocks.DB
-	States       states.DB
+
+	// TODO init databases
+	Blocks bdb.DB
+	States sdb.DB
 
 	Dv5State dv5.Dv5State
 
@@ -49,6 +53,8 @@ func NewActor() *Actor {
 	act := &Actor{
 		ActorCtx:    ctxAll,
 		actorCancel: cancelAll,
+		Blocks:      &bdb.MemDB{},
+		States:      &sdb.MemDB{},
 	}
 	act.PeerStatusState.OnStatus = func(peerID libpeer.ID, status *methods.Status) {
 		inf, _ := act.GlobalPeerInfos.Find(peerID)
@@ -112,6 +118,12 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &rpc.RpcCmd{Base: b, RPCState: &c.RPCState}
 	case "debug":
 		cmd = &debug.DebugCmd{Base: b}
+	case "blocks":
+		cmd = &blocks.BlocksCmd{Base: b, DB: c.Blocks}
+	case "states":
+		cmd = &states.StatesCmd{Base: b, DB: c.States}
+	case "chain":
+		cmd = &chain.ChainCmd{Base: b, Chains: &c.GlobalChains, ChainState: &c.ChainState}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
