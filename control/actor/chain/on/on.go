@@ -10,6 +10,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/chain/on/head"
 	"github.com/protolambda/rumor/control/actor/chain/on/hot"
 	"github.com/protolambda/rumor/control/actor/chain/on/serve"
+	"github.com/protolambda/rumor/control/actor/chain/on/sync"
 )
 
 type ChainOnCmd struct {
@@ -33,6 +34,8 @@ func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &head.HeadCmd{Base: c.Base}
 	case "serve":
 		cmd = &serve.ServeCmd{Base: c.Base}
+	case "sync":
+		cmd = &sync.SyncCmd{Base: c.Base, Chain: c.Chain, Blocks: c.Blocks}
 	case "votes":
 		cmd = &VotesCmd{Base: c.Base}
 	default:
