@@ -21,6 +21,9 @@ type ByRangeCmd struct {
 	Chain  chain.FullChain
 
 	PeerID      flags.PeerIDFlag      `ask:"--peer" help:"Peers to make blocks-by-range request to."`
+	StartSlot   beacon.Slot           `ask:"--start" help:"Start slot of request"`
+	Count       uint64                `ask:"--count" help:"Count of blocks of request"`
+	Step        uint64                `ask:"--step" help:"Step between slots of blocks of request"`
 	Timeout     time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
 	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 	Store       bool                  `ask:"--store" help:"If the blocks should be stored in the blocks DB"`
@@ -66,9 +69,9 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 	}
 
 	req := methods.BlocksByRangeReqV1{
-		StartSlot: 0,
-		Count:     0,
-		Step:      0,
+		StartSlot: c.StartSlot,
+		Count:     c.Count,
+		Step:      c.Step,
 	}
 	var block beacon.SignedBeaconBlock
 	return method.RunRequest(reqCtx, sFn, peerId, c.Compression.Compression, reqresp.RequestSSZInput{Obj: &req}, req.Count,
@@ -94,7 +97,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 				if err := chunk.ReadObj(&block); err != nil {
 					return err
 				}
-				expectedSlot := beacon.Slot(chunk.ChunkIndex() * req.Step) + req.StartSlot
+				expectedSlot := beacon.Slot(chunk.ChunkIndex()*req.Step) + req.StartSlot
 				if block.Message.Slot != expectedSlot {
 					return fmt.Errorf("bad block, expected slot %d, got %d", expectedSlot, block.Message.Slot)
 				}
