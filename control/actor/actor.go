@@ -123,7 +123,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "states":
 		cmd = &states.StatesCmd{Base: b, DB: c.States}
 	case "chain":
-		cmd = &chain.ChainCmd{Base: b, Chains: &c.GlobalChains, ChainState: &c.ChainState}
+		cmd = &chain.ChainCmd{Base: b, Chains: &c.GlobalChains, ChainState: &c.ChainState, States: c.States}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/chain"
+	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/chain/on"
 )
@@ -16,6 +17,7 @@ type ChainCmd struct {
 	*base.Base
 	*chain.Chains
 	*ChainState
+	States sdb.DB
 }
 
 // TODO: more chain command ideas:
@@ -24,7 +26,7 @@ type ChainCmd struct {
 func (c *ChainCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "create":
-		cmd = &ChainCreateCmd{Base: c.Base, Chains: c.Chains}
+		cmd = &ChainCreateCmd{Base: c.Base, Chains: c.Chains, States: c.States}
 	case "copy":
 		cmd = &ChainCopyCmd{Base: c.Base}
 	case "switch":
