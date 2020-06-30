@@ -92,8 +92,8 @@ const (
 	ServerErrCode               = 2
 )
 
-// 8 KB max error size
-const MAX_ERR_SIZE = 1 << 15
+// 256 bytes max error size
+const MAX_ERR_SIZE = 256
 
 type OnResponseListener func(chunk ChunkedResponseHandler) error
 
@@ -195,7 +195,7 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 	// TODO: make compression optional, depending on if the other peer supports it.
 	// Pass multiple protocol ids, then check the protocol of the stream, and pick the suitable compression.
 
-	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, MAX_ERR_SIZE, comp)
+	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, comp)
 
 	// Runs the request in sync, which processes responses,
 	// and then finally closes the channel through the earlier deferred close.
@@ -268,6 +268,10 @@ func (h *chReqHandler) WriteRawResponseChunk(code ResponseCode, chunk []byte) er
 }
 
 func (h *chReqHandler) WriteErrorChunk(code ResponseCode, msg string) error {
+	if len(msg) > MAX_ERR_SIZE {
+		msg = msg[:MAX_ERR_SIZE-3]
+		msg += "..."
+	}
 	return EncodeChunk(code, bytes.NewReader([]byte(msg)), h.w, h.comp)
 }
 

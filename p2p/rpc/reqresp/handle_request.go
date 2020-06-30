@@ -9,6 +9,8 @@ import (
 	"io"
 )
 
+const requestBufferSize = 2048
+
 // RequestPayloadHandler processes a request (decompressed if previously compressed), read from r.
 // The handler can respond by writing to w. After returning the writer will automatically be closed.
 // If the input is already known to be invalid, e.g. the request size is invalid, then `invalidInputErr != nil`, and r will not read anything more.
@@ -30,7 +32,8 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 
 		var invalidInputErr error
 
-		blr := NewBufLimitReader(stream, 1024, 0)
+		// TODO: pool this
+		blr := NewBufLimitReader(stream, requestBufferSize, 0)
 		blr.N = 10 // var ints should be small
 		reqLen, err := binary.ReadUvarint(blr)
 		if err != nil {
