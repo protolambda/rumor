@@ -28,13 +28,16 @@ import (
 type PeerStore struct {
 
 }
+
 func (ps *PeerStore) Agent() {
 	// TODO
 
 }
 
 type Actor struct {
-	GlobalPeerInfos   track.PeerInfos
+	GlobalPeerstores   track.Peerstores
+	CurrentPeerstore  track.PeerstoreID
+
 	PeerStatusState   status.PeerStatusState
 	PeerMetadataState metadata.PeerMetadataState
 
@@ -72,7 +75,7 @@ func NewActor() *Actor {
 		inf, _ := act.GlobalPeerInfos.Find(peerID)
 		inf.RegisterMetadata(*meta)
 	}
-	act.PeerMetadataState.IsUnseen = func(peerID libpeer.ID, seqNr methods.SeqNr) bool {
+	act.PeerMetadataState.IsInteresting = func(peerID libpeer.ID, seqNr methods.SeqNr, maxTries uint64) bool {
 		inf, _ := act.GlobalPeerInfos.Find(peerID)
 		return inf.ClaimedSeq() < seqNr
 	}

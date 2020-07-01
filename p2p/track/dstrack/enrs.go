@@ -1,21 +1,16 @@
-package track
+package dstrack
 
 import (
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	ds "github.com/ipfs/go-datastore"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/rumor/p2p/addrutil"
+	"github.com/protolambda/rumor/p2p/track"
 	"github.com/protolambda/rumor/p2p/types"
-	"io"
 )
 
-type ENRBook interface {
-	io.Closer
-	Flush() error
-
-	UpdateENRMaybe(n *enode.Node) (updated bool, data *types.Eth2Data, attnetbits *types.AttnetBits, err error)
-	LatestENR() (n *enode.Node)
-}
-
 type dsENRBook struct {
+	ds ds.Datastore
 
 	// Latest ENR eth2 data
 	enrEth2 *types.Eth2Data
@@ -26,7 +21,11 @@ type dsENRBook struct {
 	n *enode.Node
 }
 
-var _ ENRBook = (*dsENRBook)(nil)
+var _ track.ENRBook = (*dsENRBook)(nil)
+
+func NewENRBook(store ds.Datastore) (*dsENRBook, error) {
+	return &dsENRBook{ds: store}, nil
+}
 
 // Update the record tracking of the peer,
 // return updated=true if the node is new, or it overrides a previously seen node (by higher seq nr).
@@ -47,6 +46,25 @@ func (eb *dsENRBook) UpdateENRMaybe(n *enode.Node) (updated bool, data *types.Et
 // Latest fetches the latest ENR of the peer, nil if we have none. The returned ENR may not be mutated.
 func (eb *dsENRBook) LatestENR() (n *enode.Node) {
 	return pi.n
+}
+
+func (eb *dsENRBook) flush() error {
+	var clErr error
+	// store all statuses to datastore before exiting
+	eb.data.Range(func(key, value interface{}) bool {
+		id := key.(peer.ID)
+		st := value.(*Status)
+		if err := sb.storeStatus(id, st); err != nil {
+			clErr = err
+			return false
+		}
+		return true
+	})
+	return clErr
+}
+
+func (eb *dsENRBook) Close() error {
+	return eb.flush()
 }
 
 func handleNewEnr(n *enode.Node) (data *types.Eth2Data, attnetbits *types.AttnetBits, err error) {

@@ -12,13 +12,14 @@ import (
 type OnMetadata func(peerID peer.ID, meta *methods.MetaData)
 
 // Returns true if the peer has not been seen, or if the seq nr is newer than we currently know for the peer
-type IsUnseen func(peerID peer.ID, seqNr methods.SeqNr) bool
+// Returns false otherwise, or if the peer has already attempted too many fetches.
+type IsInteresting func(peerID peer.ID, seqNr methods.SeqNr, maxTries uint64) bool
 
 type PeerMetadataState struct {
 	Following bool
 	Local     methods.MetaData
 	OnMetadata
-	IsUnseen
+	IsInteresting
 }
 
 type PeerMetadataCmd struct {

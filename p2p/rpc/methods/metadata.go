@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/rumor/p2p/types"
+	"github.com/protolambda/zssz"
 )
 
 type MetaData struct {
-	SeqNumber SeqNr `json:"seq_number"`
+	SeqNumber SeqNr            `json:"seq_number"`
 	Attnets   types.AttnetBits `json:"attnets"`
 }
+
+var MetaDataSSZ = zssz.GetSSZ((*MetaData)(nil))
 
 func (m *MetaData) Data() map[string]interface{} {
 	return map[string]interface{}{

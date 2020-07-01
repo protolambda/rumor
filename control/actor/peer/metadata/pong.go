@@ -19,6 +19,7 @@ type PeerMetadataPongCmd struct {
 	Update        bool                  `ask:"--update" help:"If the seq nr ping is higher than known, request metadata"`
 	ForceUpdate   bool                  `ask:"--force-update" help:"Force a metadata request, even if the ping is an already past seq nr"`
 	UpdateTimeout time.Duration         `ask:"--update-timeout" help:"If updating, use this timeout for the update request, 0 to disable. Independent of the ping handling timeout."`
+	MaxTries      uint64                `ask:"--max-tries" help:"How many times an update should be attempted after learning about a ping"`
 }
 
 func (c *PeerMetadataPongCmd) Help() string {
@@ -62,7 +63,7 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 			} else {
 				c.Log.WithFields(f).Info("handled ping request")
 			}
-			if c.ForceUpdate || (c.Update && c.PeerMetadataState.IsUnseen(peerId, methods.SeqNr(ping))) {
+			if c.ForceUpdate || (c.Update && c.PeerMetadataState.IsInteresting(peerId, methods.SeqNr(ping), c.MaxTries)) {
 				req := &PeerMetadataReqCmd{
 					Base:              c.Base,
 					PeerMetadataState: c.PeerMetadataState,

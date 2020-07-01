@@ -8,11 +8,11 @@ import (
 )
 
 type Status struct {
-	ForkDigest     ForkDigest
-	FinalizedRoot  Root
-	FinalizedEpoch Epoch
-	HeadRoot       Root
-	HeadSlot       Slot
+	ForkDigest     ForkDigest `json:"fork_digest"`
+	FinalizedRoot  Root       `json:"finalized_root"`
+	FinalizedEpoch Epoch      `json:"finalized_epoch"`
+	HeadRoot       Root       `json:"head_root"`
+	HeadSlot       Slot       `json:"head_slot"`
 }
 
 var StatusSSZ = zssz.GetSSZ((*Status)(nil))
