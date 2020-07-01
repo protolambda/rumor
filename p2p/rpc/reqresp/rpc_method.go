@@ -212,9 +212,11 @@ type RequestReader interface {
 	ReadRequest(dest interface{}) error
 	RawRequest() ([]byte, error)
 }
+
 type RequestResponder interface {
 	WriteResponseChunk(code ResponseCode, data interface{}) error
 	WriteRawResponseChunk(code ResponseCode, chunk []byte) error
+	StreamResponseChunk(code ResponseCode, size uint64, r io.Reader) error
 	WriteErrorChunk(code ResponseCode, msg string) error
 }
 
@@ -260,11 +262,16 @@ func (h *chReqHandler) WriteResponseChunk(code ResponseCode, data interface{}) e
 	if err := h.m.ResponseChunkCodec.Encode(&h.respBuf, data); err != nil {
 		return err
 	}
-	return EncodeChunk(code, bytes.NewReader(h.respBuf.Bytes()), h.w, h.comp)
+	b := h.respBuf.Bytes()
+	return StreamChunk(code, uint64(len(b)), bytes.NewReader(b), h.w, h.comp)
 }
 
 func (h *chReqHandler) WriteRawResponseChunk(code ResponseCode, chunk []byte) error {
-	return EncodeChunk(code, bytes.NewReader(chunk), h.w, h.comp)
+	return StreamChunk(code, uint64(len(chunk)), bytes.NewReader(chunk), h.w, h.comp)
+}
+
+func (h *chReqHandler) StreamResponseChunk(code ResponseCode, size uint64, r io.Reader) error {
+	return StreamChunk(code, size, r, h.w, h.comp)
 }
 
 func (h *chReqHandler) WriteErrorChunk(code ResponseCode, msg string) error {
@@ -272,7 +279,8 @@ func (h *chReqHandler) WriteErrorChunk(code ResponseCode, msg string) error {
 		msg = msg[:MAX_ERR_SIZE-3]
 		msg += "..."
 	}
-	return EncodeChunk(code, bytes.NewReader([]byte(msg)), h.w, h.comp)
+	b := []byte(msg)
+	return StreamChunk(code, uint64(len(b)), bytes.NewReader(b), h.w, h.comp)
 }
 
 type OnRequestListener func(ctx context.Context, peerId peer.ID, handler ChunkedRequestHandler)

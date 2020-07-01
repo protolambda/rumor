@@ -17,7 +17,7 @@ func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, prot
 		return err
 	}
 	var buf bytes.Buffer
-	if err := EncodePayload(r, &buf, comp); err != nil {
+	if err := EncodeHeaderAndPayload(r, &buf, comp); err != nil {
 		return err
 	}
 	if _, err := stream.Write(buf.Bytes()); err != nil {

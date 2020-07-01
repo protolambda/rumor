@@ -3,6 +3,7 @@ package reqresp
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 )
 
@@ -40,9 +41,9 @@ func (nw noCloseWriter) Close() error {
 	return nil
 }
 
-// EncodePayload reads a payload, buffers (and optionally compresses) the payload,
+// EncodeHeaderAndPayload reads a payload, buffers (and optionally compresses) the payload,
 // then computes the header-data (varint of byte size). And then writes header and payload.
-func EncodePayload(r io.Reader, w io.Writer, comp Compression) error {
+func EncodeHeaderAndPayload(r io.Reader, w io.Writer, comp Compression) error {
 	var buf payloadBuffer
 	if _, err := io.Copy(&buf, r); err != nil {
 		return err
@@ -64,6 +65,30 @@ func EncodePayload(r io.Reader, w io.Writer, comp Compression) error {
 	return nil
 }
 
+// StreamHeaderAndPayload reads a payload and streams (and optionally compresses) it to the writer.
+// To do so, it requires the (uncompressed) payload length to be known in advance.
+func StreamHeaderAndPayload(size uint64, r io.Reader, w io.Writer, comp Compression) error {
+	sizeBytes := [binary.MaxVarintLen64]byte{}
+	sizeByteLen := binary.PutUvarint(sizeBytes[:], size)
+	_, err := w.Write(sizeBytes[:sizeByteLen])
+	if err != nil {
+		return fmt.Errorf("failed to write size bytes: %v", err)
+	}
+	if comp != nil {
+		compressedWriter := comp.Compress(noCloseWriter{w: w})
+		defer compressedWriter.Close()
+		if _, err := io.Copy(compressedWriter, r); err != nil {
+			return fmt.Errorf("failed to write payload through compressed writer: %v", err)
+		}
+		return nil
+	} else {
+		if _, err := io.Copy(w, r); err != nil {
+			return fmt.Errorf("failed to write payload: %v", err)
+		}
+		return nil
+	}
+}
+
 // EncodeResult writes the result code to the output writer.
 func EncodeResult(result ResponseCode, w io.Writer) error {
 	_, err := w.Write([]byte{uint8(result)})
@@ -76,5 +101,14 @@ func EncodeChunk(result ResponseCode, r io.Reader, w io.Writer, comp Compression
 	if err := EncodeResult(result, w); err != nil {
 		return err
 	}
-	return EncodePayload(r, w, comp)
+	return EncodeHeaderAndPayload(r, w, comp)
+}
+
+// EncodeChunk reads (decompressed) response message from the msg io.Reader,
+// and writes it as a chunk with given result code to the output writer. The compression is optional and may be nil.
+func StreamChunk(result ResponseCode, size uint64, r io.Reader, w io.Writer, comp Compression) error {
+	if err := EncodeResult(result, w); err != nil {
+		return err
+	}
+	return StreamHeaderAndPayload(size, r, w, comp)
 }

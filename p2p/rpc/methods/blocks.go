@@ -33,6 +33,14 @@ type BlocksByRangeReqV1 struct {
 	Step      uint64
 }
 
+func (r *BlocksByRangeReqV1) Data() map[string]interface{} {
+	return map[string]interface{}{
+		"start_slot": r.StartSlot,
+		"count": r.Count,
+		"step": r.Step,
+	}
+}
+
 func (r *BlocksByRangeReqV1) String() string {
 	return fmt.Sprintf("%v", *r)
 }

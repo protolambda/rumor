@@ -37,14 +37,14 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 		reqCtx, _ := context.WithTimeout(ctx, c.Timeout)
 		return reqCtx
 	}
-	protocolId := c.Method.Protocol
+	prot := c.Method.Protocol
 	if c.Compression.Compression != nil {
-		protocolId += protocol.ID("_" + c.Compression.Compression.Name())
+		prot += protocol.ID("_" + c.Compression.Compression.Name())
 	}
 	listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
 		req := map[string]interface{}{
 			"from":     peerId.String(),
-			"protocol": protocolId,
+			"protocol": prot,
 		}
 		if c.Read {
 			if c.Raw {
@@ -83,10 +83,6 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 	streamHandler := c.Method.MakeStreamHandler(sCtxFn, c.Compression.Compression, listenReq)
-	prot := c.Method.Protocol
-	if c.Compression.Compression != nil {
-		prot += protocol.ID("_" + c.Compression.Compression.Name())
-	}
 	h.SetStreamHandler(prot, streamHandler)
 	c.Log.WithField("started", true).Infof("Opened listener")
 	<-ctx.Done()

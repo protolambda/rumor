@@ -53,6 +53,8 @@ type DB interface {
 	// Export outputs the requested SignedBeaconBlock to the writer in SSZ.
 	// Returns exists=true if the block exists, false otherwise. If error, it may not be accurate.
 	Export(root beacon.Root, w io.Writer) (exists bool, err error)
+	// Stream is used to stream the contents by getting a reader and total size to read
+	Stream(root beacon.Root) (r io.Reader, size uint64, exists bool, err error)
 	// Remove removes a block from the DB. Removing a block that does not exist is safe.
 	// Returns exists=true if the block exists (previously), false otherwise. If error, it may not be accurate.
 	Remove(root beacon.Root) (exists bool, err error)
@@ -161,6 +163,15 @@ func (db *MemDB) Export(root beacon.Root, w io.Writer) (exists bool, err error) 
 	buf := dat.(*bytes.Buffer)
 	_, err = buf.WriteTo(w)
 	return true, err
+}
+
+func (db *MemDB) Stream(root beacon.Root) (r io.Reader, size uint64, exists bool, err error) {
+	dat, ok := db.data.Load(root)
+	if !ok {
+		return nil, 0, false,nil
+	}
+	buf := dat.(*bytes.Buffer)
+	return buf, uint64(buf.Len()), true, nil
 }
 
 func (db *MemDB) Remove(root beacon.Root) (exists bool, err error) {
