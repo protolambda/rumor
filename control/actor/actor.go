@@ -18,6 +18,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/peer"
 	"github.com/protolambda/rumor/control/actor/peer/metadata"
 	"github.com/protolambda/rumor/control/actor/peer/status"
+	"github.com/protolambda/rumor/control/actor/peerstore"
 	"github.com/protolambda/rumor/control/actor/rpc"
 	"github.com/protolambda/rumor/control/actor/states"
 	"github.com/protolambda/rumor/p2p/track"
@@ -57,13 +58,16 @@ type Actor struct {
 
 	HostState host.HostState
 
+	GlobalCtx context.Context
+
 	ActorCtx    context.Context
 	actorCancel context.CancelFunc
 }
 
-func NewActor(id ActorID) *Actor {
-	ctxAll, cancelAll := context.WithCancel(context.Background())
+func NewActor(globalCtx context.Context, id ActorID) *Actor {
+	ctxAll, cancelAll := context.WithCancel(globalCtx)
 	act := &Actor{
+		GlobalCtx:        globalCtx,
 		ID:               id,
 		ActorCtx:         ctxAll,
 		actorCancel:      cancelAll,
@@ -92,9 +96,10 @@ type ActorCmd struct {
 
 func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	b := &base.Base{
-		WithHost:    &c.HostState,
-		BaseContext: c.ActorCtx,
-		Log:         c.Log,
+		WithHost:      &c.HostState,
+		GlobalContext: c.GlobalCtx,
+		BaseContext:   c.ActorCtx,
+		Log:           c.Log,
 	}
 	switch route {
 	case "host":
@@ -118,6 +123,12 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 			PeerStatusState:   &c.PeerStatusState,
 			PeerMetadataState: &c.PeerMetadataState,
 			Store:             store,
+		}
+	case "peerstore":
+		cmd = &peerstore.PeerstoreCmd{
+			Base:             b,
+			GlobalPeerstores: &c.GlobalPeerstores,
+			CurrentPeerstore: c.CurrentPeerstore,
 		}
 	case "dv5":
 		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState, Store: c.CurrentPeerstore}

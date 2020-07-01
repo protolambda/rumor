@@ -70,6 +70,9 @@ type SessionProcessor struct {
 	sessions         map[*Session]struct{}
 	sessionIdCounter uint64
 
+	globalActorCtx    context.Context
+	globalActorCancel context.CancelFunc
+
 	// a map like map[string]*actor.Actor
 	actors sync.Map
 
@@ -91,10 +94,14 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 	log.SetOutput(VoidWriter{})
 	log.SetLevel(logrus.TraceLevel)
 
+	globCtx, globCancel := context.WithCancel(context.Background())
+
 	sp := &SessionProcessor{
-		adminLog: adminLog,
-		sessions: make(map[*Session]struct{}),
-		log:      log,
+		adminLog:          adminLog,
+		sessions:          make(map[*Session]struct{}),
+		log:               log,
+		globalActorCtx:    globCtx,
+		globalActorCancel: globCancel,
 	}
 
 	log.SetFormatter(LogSplitFn(func(entry *logrus.Entry) error {
@@ -179,7 +186,7 @@ type Call struct {
 }
 
 func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
-	a, _ := sp.actors.LoadOrStore(name, actor.NewActor(actor.ActorID(name)))
+	a, _ := sp.actors.LoadOrStore(name, actor.NewActor(sp.globalActorCtx, actor.ActorID(name)))
 	return a.(*actor.Actor)
 }
 
@@ -286,6 +293,9 @@ func (sp *SessionProcessor) Close() {
 		value.(*actor.Actor).Close()
 		return true
 	})
+
+	// closes cross-actor things such as peerstores and chains
+	sp.globalActorCancel()
 }
 
 func (sp *SessionProcessor) runSession(session *Session) {

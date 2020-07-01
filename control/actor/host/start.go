@@ -18,6 +18,7 @@ import (
 	ws "github.com/libp2p/go-ws-transport"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
+	"github.com/protolambda/rumor/control/actor/peerstore"
 	"github.com/protolambda/rumor/p2p/track"
 	"strings"
 	"time"
@@ -130,9 +131,16 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 
 	store := c.CurrentPeerstore
 	if !store.Initialized() {
-		// TODO run peerstore command to create peerstore, put it into global stores, and init current
+		// run peerstore command to create peerstore, put it into global stores, and init current
+		createStore := peerstore.CreateCmd{
+			Base:             c.Base,
+			GlobalPeerstores: c.GlobalPeerstores,
+			CurrentPeerstore: c.CurrentPeerstore,
+		}
+		if err := createStore.Run(ctx); err != nil {
+			return fmt.Errorf("failed to create peerstore: %v", err)
+		}
 	}
-
 	hostOptions = append(hostOptions,
 		libp2p.Identity(priv),
 		libp2p.Peerstore(store),

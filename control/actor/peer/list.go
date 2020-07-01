@@ -12,8 +12,8 @@ type PeerListCmd struct {
 	*base.Base
 	Store track.ExtendedPeerstore
 
-	Which string `ask:"[which]" help:"Which peers to list, possible values: 'all', 'connected'."`
-	Details  bool   `ask:"--details" help:"List detailed data of each peer"`
+	Which   string `ask:"[which]" help:"Which peers to list, possible values: 'all', 'connected'."`
+	Details bool   `ask:"--details" help:"List detailed data of each peer"`
 }
 
 func (c *PeerListCmd) Help() string {

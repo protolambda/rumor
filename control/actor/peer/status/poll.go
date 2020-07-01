@@ -14,7 +14,7 @@ import (
 type PeerStatusPollCmd struct {
 	*base.Base
 	*PeerStatusState
-	Book track.StatusBook
+	Book        track.StatusBook
 	Timeout     time.Duration         `ask:"--timeout" help:"request timeout, 0 to disable."`
 	Interval    time.Duration         `ask:"--interval" help:"interval to request status of peers on, applied as timeout to a round of work"`
 	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`

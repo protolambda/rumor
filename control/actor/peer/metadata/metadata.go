@@ -18,7 +18,7 @@ type PeerMetadataState struct {
 type PeerMetadataCmd struct {
 	*base.Base
 	*PeerMetadataState
-	Book track.MetadataBook
+	Store track.ExtendedPeerstore
 }
 
 func (c *PeerMetadataCmd) Help() string {
@@ -28,17 +28,17 @@ func (c *PeerMetadataCmd) Help() string {
 func (c *PeerMetadataCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "ping":
-		cmd = &PeerMetadataPingCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
+		cmd = &PeerMetadataPingCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Store: c.Store}
 	case "pong":
-		cmd = &PeerMetadataPongCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
+		cmd = &PeerMetadataPongCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Store}
 	case "get":
 		cmd = &PeerMetadataGetCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	case "set":
 		cmd = &PeerMetadataSetCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	case "req":
-		cmd = &PeerMetadataReqCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
+		cmd = &PeerMetadataReqCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Store}
 	case "poll":
-		cmd = &PeerMetadataPollCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
+		cmd = &PeerMetadataPollCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Store: c.Store}
 	case "serve":
 		cmd = &PeerMetadataServeCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	case "follow":

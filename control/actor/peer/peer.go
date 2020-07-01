@@ -34,7 +34,7 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "status":
 		cmd = &status.PeerStatusCmd{Base: c.Base, PeerStatusState: c.PeerStatusState, Book: c.Store}
 	case "metadata":
-		cmd = &metadata.PeerMetadataCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
+		cmd = &metadata.PeerMetadataCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Store: c.Store}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

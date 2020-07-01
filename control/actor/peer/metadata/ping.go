@@ -3,6 +3,9 @@ package metadata
 import (
 	"context"
 	"fmt"
+	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
@@ -15,7 +18,7 @@ import (
 type PeerMetadataPingCmd struct {
 	*base.Base
 	*PeerMetadataState
-	Book          track.MetadataBook
+	Store         track.ExtendedPeerstore
 	Timeout       time.Duration         `ask:"--timeout" help:"request timeout for ping, 0 to disable"`
 	Compression   flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 	Update        bool                  `ask:"--update" help:"If the seq nr pong is higher than known, request metadata"`
@@ -46,10 +49,17 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 		reqCtx, _ = context.WithTimeout(reqCtx, c.Timeout)
 	}
 	peerID := c.PeerID.PeerID
-	code, msg, pong, err := c.ping(h.NewStream, reqCtx, peerID, c.Compression.Compression)
+
+	var startTime time.Time
+	newStream := reqresp.NewStreamFn(func(ctx context.Context, peerId peer.ID, protocolId ...protocol.ID) (network.Stream, error) {
+		startTime = time.Now()
+		return h.NewStream(ctx, peerId, protocolId...)
+	})
+	code, msg, pong, err := c.ping(newStream, reqCtx, peerID, c.Compression.Compression)
 	if err != nil {
 		return fmt.Errorf("failed to ping: %v", err)
 	} else {
+		c.Store.RecordLatency(peerID, time.Since(startTime))
 		if code == reqresp.SuccessCode {
 			c.Log.WithFields(logrus.Fields{
 				"code": code,
@@ -65,9 +75,9 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 
 	updating := c.ForceUpdate
 	if !updating && c.Update {
-		current := c.Book.Metadata(peerID)
+		current := c.Store.Metadata(peerID)
 		if current == nil || current.SeqNumber < methods.SeqNr(pong) {
-			fetches := c.Book.RegisterMetaFetch(peerID)
+			fetches := c.Store.RegisterMetaFetch(peerID)
 			updating = fetches <= c.MaxTries
 		}
 	}
@@ -77,7 +87,7 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 		if c.UpdateTimeout != 0 {
 			updateCtx, _ = context.WithTimeout(updateCtx, c.UpdateTimeout)
 		}
-		code, msg, metadata, err := c.fetch(c.Book, h.NewStream, updateCtx, peerID, c.Compression.Compression)
+		code, msg, metadata, err := c.fetch(c.Store, h.NewStream, updateCtx, peerID, c.Compression.Compression)
 		if err != nil {
 			return fmt.Errorf("failed to fetch metadata upon pong: %v", err)
 		} else {

@@ -10,8 +10,12 @@ import (
 
 type Base struct {
 	WithHost
+	// Shared between actors
+	GlobalContext context.Context
+	// For actor
 	BaseContext context.Context
-	Log         logrus.FieldLogger
+	// For command
+	Log logrus.FieldLogger
 }
 
 type WithHost interface {
