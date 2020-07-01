@@ -52,10 +52,20 @@ var BlocksByRangeRPCv1 = reqresp.RPCMethod{
 	DefaultResponseChunkCount: 20,
 }
 
+const MAX_REQUEST_BLOCKS_BY_ROOT = 1024
+
 type BlocksByRootReq []Root
 
 func (*BlocksByRootReq) Limit() uint64 {
-	return 100
+	return MAX_REQUEST_BLOCKS_BY_ROOT
+}
+
+func (r BlocksByRootReq) Data() []string {
+	out := make([]string, len(r), len(r))
+	for i := range r {
+		out[i] = hex.EncodeToString(r[i][:])
+	}
+	return out
 }
 
 func (r BlocksByRootReq) String() string {

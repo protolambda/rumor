@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-const MAX_REQUEST_BLOCKS = 1024
-
 type ByRootCmd struct {
 	*base.Base
 
@@ -73,9 +71,9 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 	}
 
 	req := methods.BlocksByRootReq(c.Roots)
-	if len(req) > MAX_REQUEST_BLOCKS {
+	if len(req) > methods.MAX_REQUEST_BLOCKS_BY_ROOT {
 		c.Log.Warn("Running blocks-by-root request with too many block roots. Max is %d, got %d",
-			MAX_REQUEST_BLOCKS, len(req))
+			methods.MAX_REQUEST_BLOCKS_BY_ROOT, len(req))
 	}
 
 	procCtx := ctx
