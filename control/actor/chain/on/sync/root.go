@@ -57,7 +57,7 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 		reqCtx, _ = context.WithTimeout(reqCtx, c.Timeout)
 	}
 
-	method := &methods.BlocksByRangeRPCv1
+	method := &methods.BlocksByRootRPCv1
 	peerId := c.PeerID.PeerID
 
 	protocolId := method.Protocol
