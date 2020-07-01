@@ -10,7 +10,7 @@ import (
 )
 
 type WithPeerInfos interface {
-	Find(id peer.ID) (pi *track.PeerInfo, ok bool)
+	Find(id peer.ID) (pi *track.peerInfo, ok bool)
 }
 
 type PeerCmd struct {

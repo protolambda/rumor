@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/zssz"
 )
 
 type Status struct {
@@ -13,6 +14,8 @@ type Status struct {
 	HeadRoot       Root
 	HeadSlot       Slot
 }
+
+var StatusSSZ = zssz.GetSSZ((*Status)(nil))
 
 func (s *Status) Data() map[string]interface{} {
 	return map[string]interface{}{

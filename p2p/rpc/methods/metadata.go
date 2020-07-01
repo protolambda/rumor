@@ -8,8 +8,8 @@ import (
 )
 
 type MetaData struct {
-	SeqNumber SeqNr
-	Attnets   types.AttnetBits
+	SeqNumber SeqNr `json:"seq_number"`
+	Attnets   types.AttnetBits `json:"attnets"`
 }
 
 func (m *MetaData) Data() map[string]interface{} {

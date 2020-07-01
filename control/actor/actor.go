@@ -25,6 +25,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type PeerStore struct {
+
+}
+func (ps *PeerStore) Agent() {
+	// TODO
+
+}
+
 type Actor struct {
 	GlobalPeerInfos   track.PeerInfos
 	PeerStatusState   status.PeerStatusState
