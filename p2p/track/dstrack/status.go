@@ -26,7 +26,7 @@ func NewStatusBook(store ds.Datastore) (*dsStatusBook, error) {
 }
 
 func (sb *dsStatusBook) loadStatus(p peer.ID) (*methods.Status, error) {
-	key := peerIdToKey(p).Child(statusSuffix)
+	key := peerIdToKey(eth2Base, p).Child(statusSuffix)
 	value, err := sb.ds.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("error while fetching status from datastore for peer %s: %s\n", p.Pretty(), err)
@@ -41,7 +41,7 @@ func (sb *dsStatusBook) loadStatus(p peer.ID) (*methods.Status, error) {
 }
 
 func (sb *dsStatusBook) storeStatus(p peer.ID, st *methods.Status) error {
-	key := peerIdToKey(p).Child(statusSuffix)
+	key := peerIdToKey(eth2Base, p).Child(statusSuffix)
 	size := zssz.SizeOf(st, methods.StatusSSZ)
 	out := bytes.NewBuffer(make([]byte, size, size))
 	if _, err := zssz.Encode(out, st, methods.StatusSSZ); err != nil {

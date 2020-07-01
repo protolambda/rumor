@@ -19,8 +19,8 @@ import (
 
 var eth2Base = ds.NewKey("/eth2")
 
-func peerIdToKey(p peer.ID) ds.Key {
-	return eth2Base.ChildString(base32.RawStdEncoding.EncodeToString([]byte(p)))
+func peerIdToKey(base ds.Key, p peer.ID) ds.Key {
+	return base.ChildString(base32.RawStdEncoding.EncodeToString([]byte(p)))
 }
 
 type dsExtendedPeerstore struct {
@@ -152,6 +152,6 @@ func (ep *dsExtendedPeerstore) GetAllData(id peer.ID) *track.PeerAllData {
 		MetaData:        ep.Metadata(id),
 		ClaimedSeq:      seq,
 		Status:          ep.Status(id),
-		ENR:             ep.LatestENR(),
+		ENR:             ep.LatestENR(id),
 	}
 }

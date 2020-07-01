@@ -12,7 +12,7 @@ import (
 )
 
 type HandleENR struct {
-	Store *track.ExtendedPeerstore
+	Store track.ExtendedPeerstore
 
 	Add            bool              `ask:"--add" help:"Add the discovered nodes to the peerstore"`
 	Eth2ForkDigest beacon.ForkDigest `ask:"--digest" help:"The digest to use for filtering"`
@@ -24,23 +24,26 @@ func (c *HandleENR) handle(log logrus.FieldLogger, h host.Host, res *enode.Node)
 	pubkey := res.Pubkey()
 	peerID := addrutil.PeerIDFromPubkey(pubkey)
 	if c.Add {
-		// TODO: we're still storing a little bit of data per ENR, even if different fork digest (when filtering it won't be added to peerstore however)
-		info, _ := c.PeerInfoFinder.Find(peerID)
-		updated, eth2Dat, _, err := info.UpdateMaybe(res)
+		eth2Dat, ok, err := addrutil.ParseEnrEth2Data(res)
 		if err != nil {
-			log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Warnf("enr field info update error: %v", err)
+			log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Warnf("enr parse error: %v", err)
+			return
+		}
+		if !ok && c.FilterDigest {
+			log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Warn("got ENR without fork digest")
 			return
 		}
 		if c.FilterDigest {
-			if eth2Dat == nil {
-				log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Warn("got ENR without fork digest")
-				return
-			}
-			if eth2Dat.ForkDigest == c.Eth2ForkDigest {
+			if eth2Dat.ForkDigest != c.Eth2ForkDigest {
 				log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String(),
 					"digest": hex.EncodeToString(eth2Dat.ForkDigest[:])}).Warn("got ENR with other fork digest")
 				return
 			}
+		}
+		updated, err := c.Store.UpdateENRMaybe(peerID, res)
+		if err != nil {
+			log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Warnf("enr update error: %v", err)
+			return
 		}
 		if updated {
 			addr, err := addrutil.EnodeToMultiAddr(res)

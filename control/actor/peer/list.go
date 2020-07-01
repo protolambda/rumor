@@ -13,13 +13,7 @@ type PeerListCmd struct {
 	Store track.ExtendedPeerstore
 
 	Which string `ask:"[which]" help:"Which peers to list, possible values: 'all', 'connected'."`
-
-	ListLatency   bool `ask:"--latency" help:"list peer latency"`
-	ListProtocols bool `ask:"--protocols" help:"list peer protocols"`
-	ListAddrs     bool `ask:"--addrs" help:"list peer addrs"`
-	ListStatus    bool `ask:"--status" help:"list peer status"`
-	ListMetadata  bool `ask:"--metadata" help:"list peer metadata"`
-	ListClaimSeq  bool `ask:"--claimseq" help:"list peer claimed metadata seq nr"`
+	Details  bool   `ask:"--details" help:"List detailed data of each peer"`
 }
 
 func (c *PeerListCmd) Help() string {
@@ -47,39 +41,14 @@ func (c *PeerListCmd) Run(ctx context.Context, args ...string) error {
 	default:
 		return fmt.Errorf("invalid peer type: %s", args[0])
 	}
-	store := h.Peerstore()
-	peerData := make(map[peer.ID]map[string]interface{})
-	for _, p := range peers {
-		v := make(map[string]interface{})
-		if c.ListAddrs {
-			v["addrs"] = store.PeerInfo(p).Addrs
+	if c.Details {
+		c.Log.WithField("peers", peers).Infof("%d peers", len(peers))
+	} else {
+		peerData := make(map[peer.ID]*track.PeerAllData)
+		for _, p := range peers {
+			peerData[p] = c.Store.GetAllData(p)
 		}
-		// TODO: add dv5 node ID
-		if c.ListLatency {
-			v["latency"] = store.LatencyEWMA(p).Seconds() // A float, ok for json
-		}
-		if c.ListProtocols {
-			protocols, err := store.GetProtocols(p)
-			if err != nil {
-				v["protocols"] = protocols
-			}
-		}
-		if c.ListStatus || c.ListMetadata || c.ListClaimSeq {
-			pInfoData, ok := c.WithPeerInfos.Find(p)
-			if ok {
-				if c.ListStatus {
-					v["status"] = pInfoData.Status()
-				}
-				if c.ListMetadata {
-					v["metadata"] = pInfoData.Metadata()
-				}
-				if c.ListClaimSeq {
-					v["metadata"] = pInfoData.ClaimedSeq()
-				}
-			}
-		}
-		peerData[p] = v
+		c.Log.WithField("peers", peerData).Infof("%d peers", len(peers))
 	}
-	c.Log.WithField("peers", peerData).Infof("%d peers", len(peers))
 	return nil
 }

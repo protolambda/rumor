@@ -63,39 +63,35 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	if c.ForceUpdate || c.Update {
-		updating := c.ForceUpdate
-		if !updating {
-			current := c.Book.Metadata(peerID)
-			if current == nil || current.SeqNumber < methods.SeqNr(pong) {
-				fetches := c.Book.RegisterMetaFetch(peerID)
-				updating = fetches <= c.MaxTries
-			}
+	updating := c.ForceUpdate
+	if !updating && c.Update {
+		current := c.Book.Metadata(peerID)
+		if current == nil || current.SeqNumber < methods.SeqNr(pong) {
+			fetches := c.Book.RegisterMetaFetch(peerID)
+			updating = fetches <= c.MaxTries
 		}
-		if updating {
-			c.Log.WithField("pong", pong).Debug("Got pong, following up with metadata request")
-			updateCtx := ctx
-			if c.UpdateTimeout != 0 {
-				updateCtx, _ = context.WithTimeout(updateCtx, c.UpdateTimeout)
-			}
-			code, msg, metadata, err := c.fetch(c.Book, h.NewStream, updateCtx, peerID, c.Compression.Compression)
-			if err != nil {
-				return fmt.Errorf("failed to fetch metadata upon pong: %v", err)
-			} else {
-				if code == reqresp.SuccessCode {
-					c.Log.WithFields(logrus.Fields{
-						"code":     code,
-						"metadata": metadata.Data(),
-					}).Debug("metadata request upon pong success")
-				} else {
-					c.Log.WithFields(logrus.Fields{
-						"code": code,
-						"msg":  msg,
-					}).Debug("metadata request upon pong non-success")
-				}
-			}
+	}
+	if updating {
+		c.Log.WithField("pong", pong).Debug("Got pong, following up with metadata request")
+		updateCtx := ctx
+		if c.UpdateTimeout != 0 {
+			updateCtx, _ = context.WithTimeout(updateCtx, c.UpdateTimeout)
+		}
+		code, msg, metadata, err := c.fetch(c.Book, h.NewStream, updateCtx, peerID, c.Compression.Compression)
+		if err != nil {
+			return fmt.Errorf("failed to fetch metadata upon pong: %v", err)
 		} else {
-			c.Log.WithField("pong", pong).Debug("Pong already seen, not updating with new metadata request")
+			if code == reqresp.SuccessCode {
+				c.Log.WithFields(logrus.Fields{
+					"code":     code,
+					"metadata": metadata.Data(),
+				}).Debug("metadata request upon pong success")
+			} else {
+				c.Log.WithFields(logrus.Fields{
+					"code": code,
+					"msg":  msg,
+				}).Debug("metadata request upon pong non-success")
+			}
 		}
 	}
 	return nil

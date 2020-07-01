@@ -36,7 +36,7 @@ func NewMetadataBook(store ds.Datastore) (*dsMetadataBook, error) {
 }
 
 func (mb *dsMetadataBook) loadMetadata(p peer.ID) (*methods.MetaData, error) {
-	key := peerIdToKey(p).Child(metadataSuffix)
+	key := peerIdToKey(eth2Base, p).Child(metadataSuffix)
 	value, err := mb.ds.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("error while fetching metadata from datastore for peer %s: %s\n", p.Pretty(), err)
@@ -49,7 +49,7 @@ func (mb *dsMetadataBook) loadMetadata(p peer.ID) (*methods.MetaData, error) {
 }
 
 func (mb *dsMetadataBook) storeMetadata(p peer.ID, md *methods.MetaData) error {
-	key := peerIdToKey(p).Child(metadataSuffix)
+	key := peerIdToKey(eth2Base, p).Child(metadataSuffix)
 	size := zssz.SizeOf(md, methods.MetaDataSSZ)
 	out := bytes.NewBuffer(make([]byte, size, size))
 	if _, err := zssz.Encode(out, md, methods.MetaDataSSZ); err != nil {
@@ -62,7 +62,7 @@ func (mb *dsMetadataBook) storeMetadata(p peer.ID, md *methods.MetaData) error {
 }
 
 func (mb *dsMetadataBook) loadClaim(p peer.ID) (methods.SeqNr, error) {
-	key := peerIdToKey(p).Child(claimSuffix)
+	key := peerIdToKey(eth2Base, p).Child(claimSuffix)
 	value, err := mb.ds.Get(key)
 	if err != nil {
 		return 0, fmt.Errorf("error while fetching claim seq nr from datastore for peer %s: %s\n", p.Pretty(), err)
@@ -72,7 +72,7 @@ func (mb *dsMetadataBook) loadClaim(p peer.ID) (methods.SeqNr, error) {
 }
 
 func (mb *dsMetadataBook) storeClaim(p peer.ID, claim methods.SeqNr) error {
-	key := peerIdToKey(p).Child(claimSuffix)
+	key := peerIdToKey(eth2Base, p).Child(claimSuffix)
 	var dat [8]byte
 	binary.LittleEndian.PutUint64(dat[:], uint64(claim))
 	if err := mb.ds.Put(key, dat[:]); err != nil {
@@ -82,34 +82,30 @@ func (mb *dsMetadataBook) storeClaim(p peer.ID, claim methods.SeqNr) error {
 }
 
 func (mb *dsMetadataBook) Metadata(id peer.ID) *methods.MetaData {
-	mb.RLock()
+	mb.Lock()
+	defer mb.Unlock()
 	dat, ok := mb.metadatas[id]
-	mb.RUnlock()
 	if !ok {
 		md, err := mb.loadMetadata(id)
 		if err != nil {
 			return nil
 		}
-		mb.Lock()
 		mb.metadatas[id] = *md
-		mb.Unlock()
 		return md
 	}
 	return &dat
 }
 
 func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq methods.SeqNr, ok bool) {
-	mb.RLock()
+	mb.Lock()
+	defer mb.Unlock()
 	dat, ok := mb.claims[id]
-	mb.RUnlock()
 	if !ok {
 		n, err := mb.loadClaim(id)
 		if err != nil {
 			return 0, false
 		}
-		mb.Lock()
 		mb.claims[id] = n
-		mb.Unlock()
 		return n, true
 	}
 	return dat, true
@@ -163,25 +159,19 @@ func (mb *dsMetadataBook) RegisterMetadata(id peer.ID, md methods.MetaData) (new
 func (mb *dsMetadataBook) flush() error {
 	mb.RLock()
 	defer mb.RUnlock()
-	var clErr error
 	// store all claims to datastore before exiting
 	for id, cl := range mb.claims {
 		if err := mb.storeClaim(id, cl); err != nil {
-			clErr = err
-			break
+			return err
 		}
-	}
-	if clErr != nil {
-		return clErr
 	}
 	// store all metadatas to datastore before exiting
 	for id, md := range mb.metadatas {
 		if err := mb.storeMetadata(id, &md); err != nil {
-			clErr = err
-			break
+			return err
 		}
 	}
-	return clErr
+	return nil
 }
 
 func (mb *dsMetadataBook) Close() error {

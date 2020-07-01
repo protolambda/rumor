@@ -6,8 +6,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/peerstore"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
-	"github.com/protolambda/rumor/p2p/types"
-	"io"
 	"time"
 )
 
@@ -19,15 +17,14 @@ type IdentifyBook interface {
 }
 
 type ENRBook interface {
-	io.Closer
+	// Updates the ENR, if it is has a higher sequence number
+	UpdateENRMaybe(id peer.ID, n *enode.Node) (updated bool, err error)
 
-	UpdateENRMaybe(n *enode.Node) (updated bool, data *types.Eth2Data, attnetbits *types.AttnetBits, err error)
-	LatestENR() (n *enode.Node)
+	// find the latest enr for the given peer.
+	LatestENR(id peer.ID) (n *enode.Node)
 }
 
 type StatusBook interface {
-	io.Closer
-
 	// Status retrieves the peer status, and may be nil if there is no status
 	Status(peer.ID) *methods.Status
 	// RegisterStatus updates the status of the peer
@@ -35,8 +32,6 @@ type StatusBook interface {
 }
 
 type MetadataBook interface {
-	io.Closer
-
 	Metadata(peer.ID) *methods.MetaData
 	ClaimedSeq(peer.ID) (seq methods.SeqNr, ok bool)
 	RegisterSeqClaim(id peer.ID, seq methods.SeqNr) (newer bool)

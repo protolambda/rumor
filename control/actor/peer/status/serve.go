@@ -8,12 +8,14 @@ import (
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/track"
 	"time"
 )
 
 type PeerStatusServeCmd struct {
 	*base.Base
 	*PeerStatusState
+	Book track.StatusBook
 	Timeout     time.Duration         `ask:"--timeout" help:"Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout"`
 	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 }
@@ -52,7 +54,7 @@ func (c *PeerStatusServeCmd) Run(ctx context.Context, args ...string) error {
 			c.Log.WithFields(f).Warnf("failed to read status request: %v", err)
 		} else {
 			f["data"] = reqStatus
-			c.StatusHandler.RegisterStatus(peerId, reqStatus)
+			c.Book.RegisterStatus(peerId, reqStatus)
 
 			if err := handler.WriteResponseChunk(reqresp.SuccessCode, &c.PeerStatusState.Local); err != nil {
 				c.Log.WithFields(f).Warnf("failed to respond to status request: %v", err)

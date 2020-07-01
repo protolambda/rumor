@@ -34,9 +34,9 @@ func (c *PeerStatusCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "req":
 		cmd = &PeerStatusReqCmd{Base: c.Base, PeerStatusState: c.PeerStatusState, Book: c.Book}
 	case "poll":
-		cmd = &PeerStatusPollCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+		cmd = &PeerStatusPollCmd{Base: c.Base, PeerStatusState: c.PeerStatusState, Book: c.Book}
 	case "serve":
-		cmd = &PeerStatusServeCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+		cmd = &PeerStatusServeCmd{Base: c.Base, PeerStatusState: c.PeerStatusState, Book: c.Book}
 	case "follow":
 		cmd = &PeerStatusFollowCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
 	default:

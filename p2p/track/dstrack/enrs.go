@@ -1,24 +1,25 @@
 package dstrack
 
 import (
+	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
-	"github.com/protolambda/rumor/p2p/types"
 )
+
+// enrs are stored under the /eth2/enr/<peer id> path, and stored in string representation
+var enrBase = eth2Base.ChildString("enr")
+
+var validSchemesForDB = enr.SchemeMap{
+	"v4":   enode.V4ID{},
+	"null": enode.NullID{},
+}
 
 type dsENRBook struct {
 	ds ds.Datastore
-
-	// Latest ENR eth2 data
-	enrEth2 *types.Eth2Data
-	// Latest ENR attnets data
-	enrAttnets types.AttnetBits
-
-	// Track ENR
-	n *enode.Node
 }
 
 var _ track.ENRBook = (*dsENRBook)(nil)
@@ -27,64 +28,44 @@ func NewENRBook(store ds.Datastore) (*dsENRBook, error) {
 	return &dsENRBook{ds: store}, nil
 }
 
+func (eb *dsENRBook) loadEnr(p peer.ID) (*enode.Node, error) {
+	key := peerIdToKey(enrBase, p)
+	value, err := eb.ds.Get(key)
+	if err != nil {
+		return nil, fmt.Errorf("error while fetching enr from datastore for peer %s: %s\n", p.Pretty(), err)
+	}
+	rec, err := addrutil.ParseEnr(string(value))
+	if err != nil {
+		return nil, fmt.Errorf("retrieved enr could not be parsed: %v", err)
+	}
+	return enode.New(validSchemesForDB, rec)
+}
+
+func (eb *dsENRBook) storeEnr(p peer.ID, n *enode.Node) error {
+	key := peerIdToKey(enrBase, p)
+	if err := eb.ds.Put(key, []byte(n.String())); err != nil {
+		return fmt.Errorf("failed to store enr: %v", err)
+	}
+	return nil
+}
+
 // Update the record tracking of the peer,
 // return updated=true if the node is new, or it overrides a previously seen node (by higher seq nr).
 // and return eth2 and attnet data, if any.
-func (eb *dsENRBook) UpdateENRMaybe(n *enode.Node) (updated bool, data *types.Eth2Data, attnetbits *types.AttnetBits, err error) {
-	pi.Lock()
-	defer pi.Unlock()
-	if pi.n != nil {
-		if pi.n.Seq() >= n.Seq() {
-			return false, nil, nil, nil
+func (eb *dsENRBook) UpdateENRMaybe(id peer.ID, n *enode.Node) (updated bool, err error) {
+	old, err := eb.loadEnr(id)
+	if err != nil || old.Seq() < n.Seq() {
+		if err := eb.storeEnr(id, n); err != nil {
+			return false, err
 		}
+		return true, nil
 	}
-	pi.n = n
-	data, attnets, err := handleNewEnr(n)
-	return true, data, attnets, err
+	return false, nil
 }
-
-// Latest fetches the latest ENR of the peer, nil if we have none. The returned ENR may not be mutated.
-func (eb *dsENRBook) LatestENR() (n *enode.Node) {
-	return pi.n
-}
-
-func (eb *dsENRBook) flush() error {
-	var clErr error
-	// store all statuses to datastore before exiting
-	eb.data.Range(func(key, value interface{}) bool {
-		id := key.(peer.ID)
-		st := value.(*Status)
-		if err := sb.storeStatus(id, st); err != nil {
-			clErr = err
-			return false
-		}
-		return true
-	})
-	return clErr
-}
-
-func (eb *dsENRBook) Close() error {
-	return eb.flush()
-}
-
-func handleNewEnr(n *enode.Node) (data *types.Eth2Data, attnetbits *types.AttnetBits, err error) {
-	var eth2 addrutil.Eth2ENREntry
-	if err := n.Load(&eth2); err == nil {
-		dat, err := eth2.Eth2Data()
-		if err == nil {
-			data = dat
-		} else {
-			return nil, nil, err
-		}
+func (eb *dsENRBook) LatestENR(id peer.ID) (n *enode.Node) {
+	n, err := eb.loadEnr(id)
+	if err != nil {
+		return nil
 	}
-	var attnets addrutil.AttnetsENREntry
-	if err := n.Load(&attnets); err == nil {
-		dat, err := attnets.AttnetBits()
-		if err == nil {
-			attnetbits = &dat
-		} else {
-			return nil, nil, err
-		}
-	}
-	return
+	return n
 }

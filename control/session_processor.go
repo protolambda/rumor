@@ -179,7 +179,7 @@ type Call struct {
 }
 
 func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
-	a, _ := sp.actors.LoadOrStore(name, actor.NewActor())
+	a, _ := sp.actors.LoadOrStore(name, actor.NewActor(actor.ActorID(name)))
 	return a.(*actor.Actor)
 }
 

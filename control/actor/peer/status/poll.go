@@ -6,6 +6,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/track"
 	"sync"
 	"time"
 )
@@ -13,6 +14,7 @@ import (
 type PeerStatusPollCmd struct {
 	*base.Base
 	*PeerStatusState
+	Book track.StatusBook
 	Timeout     time.Duration         `ask:"--timeout" help:"request timeout, 0 to disable."`
 	Interval    time.Duration         `ask:"--interval" help:"interval to request status of peers on, applied as timeout to a round of work"`
 	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`

@@ -65,7 +65,15 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 			} else {
 				c.Log.WithFields(f).Info("handled ping request")
 			}
-			if c.ForceUpdate || (c.Update && c.PeerMetadataState.IsInteresting(peerId, methods.SeqNr(ping), c.MaxTries)) {
+			updating := c.ForceUpdate
+			if !updating && c.Update {
+				current := c.Book.Metadata(peerId)
+				if current == nil || current.SeqNumber < methods.SeqNr(ping) {
+					fetches := c.Book.RegisterMetaFetch(peerId)
+					updating = fetches <= c.MaxTries
+				}
+			}
+			if updating {
 				req := &PeerMetadataReqCmd{
 					Base:              c.Base,
 					PeerMetadataState: c.PeerMetadataState,

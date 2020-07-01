@@ -326,3 +326,27 @@ func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *ecdsa.PrivateKey) 
 	}
 	return &rec
 }
+
+func ParseEnrEth2Data(n *enode.Node) (data *types.Eth2Data, exists bool, err error) {
+	var eth2 Eth2ENREntry
+	if err := n.Load(&eth2); err != nil {
+		return nil, false, nil
+	}
+	dat, err := eth2.Eth2Data()
+	if err != nil {
+		return nil, true, fmt.Errorf("failed parsing eth2 bytes: %v", err)
+	}
+	return dat, true, nil
+}
+
+func ParseEnrAttnets(n *enode.Node) (attnetbits *types.AttnetBits, exists bool, err error) {
+	var attnets AttnetsENREntry
+	if err := n.Load(&attnets); err != nil {
+		return nil, false, nil
+	}
+	dat, err := attnets.AttnetBits()
+	if err != nil {
+		return nil, true, fmt.Errorf("failed parsing attnets bytes: %v", err)
+	}
+	return &dat, true, nil
+}
