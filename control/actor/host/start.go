@@ -11,7 +11,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	mplex "github.com/libp2p/go-libp2p-mplex"
 	noise "github.com/libp2p/go-libp2p-noise"
-	"github.com/libp2p/go-libp2p-peerstore/pstoremem"
 	secio "github.com/libp2p/go-libp2p-secio"
 	tls "github.com/libp2p/go-libp2p-tls"
 	yamux "github.com/libp2p/go-libp2p-yamux"
@@ -19,6 +18,7 @@ import (
 	ws "github.com/libp2p/go-ws-transport"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
+	"github.com/protolambda/rumor/p2p/track"
 	"strings"
 	"time"
 )
@@ -26,6 +26,10 @@ import (
 type HostStartCmd struct {
 	*base.Base
 	WithSetHost
+
+	GlobalPeerstores *track.Peerstores
+	CurrentPeerstore track.DynamicPeerstore
+
 	PrivKey          flags.P2pPrivKeyFlag `ask:"--priv" help:"hex-encoded private key for libp2p host. Random if none is specified."`
 	TransportsStrArr []string             `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
 	MuxStrArr        []string             `ask:"--mux" help:"Multiplexers to use"`
@@ -124,9 +128,14 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 		hostOptions = append(hostOptions, libp2p.EnableRelay())
 	}
 
+	store := c.CurrentPeerstore
+	if !store.Initialized() {
+		// TODO run peerstore command to create peerstore, put it into global stores, and init current
+	}
+
 	hostOptions = append(hostOptions,
 		libp2p.Identity(priv),
-		libp2p.Peerstore(pstoremem.NewPeerstore()), // TODO: persist peerstore?
+		libp2p.Peerstore(store),
 		libp2p.ConnectionManager(connmgr.NewConnManager(c.LoPeers, c.HiPeers, c.GracePeriod)),
 		libp2p.UserAgent(c.UserAgent),
 	)

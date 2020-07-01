@@ -36,8 +36,8 @@ type BlocksByRangeReqV1 struct {
 func (r *BlocksByRangeReqV1) Data() map[string]interface{} {
 	return map[string]interface{}{
 		"start_slot": r.StartSlot,
-		"count": r.Count,
-		"step": r.Step,
+		"count":      r.Count,
+		"step":       r.Step,
 	}
 }
 

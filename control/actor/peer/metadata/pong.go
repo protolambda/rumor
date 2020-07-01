@@ -8,12 +8,14 @@ import (
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/track"
 	"time"
 )
 
 type PeerMetadataPongCmd struct {
 	*base.Base
 	*PeerMetadataState
+	Book          track.MetadataBook
 	Timeout       time.Duration         `ask:"--timeout" help:"Apply timeout of n milliseconds to each stream (complete request <> response time). 0 to Disable timeout"`
 	Compression   flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 	Update        bool                  `ask:"--update" help:"If the seq nr ping is higher than known, request metadata"`
@@ -67,6 +69,7 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 				req := &PeerMetadataReqCmd{
 					Base:              c.Base,
 					PeerMetadataState: c.PeerMetadataState,
+					Book:              c.Book,
 					Timeout:           c.UpdateTimeout,
 					Compression:       c.Compression,
 					PeerID:            flags.PeerIDFlag{PeerID: peerId},

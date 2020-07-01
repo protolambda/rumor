@@ -7,19 +7,18 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/track"
 )
-
-type OnStatus func(peerID peer.ID, status *methods.Status)
 
 type PeerStatusState struct {
 	Following bool
 	Local     methods.Status
-	OnStatus
 }
 
 type PeerStatusCmd struct {
 	*base.Base
 	*PeerStatusState
+	Book track.StatusBook
 }
 
 func (c *PeerStatusCmd) Help() string {
@@ -33,7 +32,7 @@ func (c *PeerStatusCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "set":
 		cmd = &PeerStatusSetCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
 	case "req":
-		cmd = &PeerStatusReqCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+		cmd = &PeerStatusReqCmd{Base: c.Base, PeerStatusState: c.PeerStatusState, Book: c.Book}
 	case "poll":
 		cmd = &PeerStatusPollCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
 	case "serve":
@@ -50,7 +49,7 @@ func (c *PeerStatusState) Routes() []string {
 	return []string{"get", "set", "req", "poll", "serve", "follow"}
 }
 
-func (c *PeerStatusState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
+func (c *PeerStatusState) fetch(book track.StatusBook, sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
 	resCode reqresp.ResponseCode, errMsg string, data *methods.Status, err error) {
 
 	err = methods.StatusRPCv1.RunRequest(ctx, sFn, peerID, comp,
@@ -70,7 +69,7 @@ func (c *PeerStatusState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, pe
 					return err
 				}
 				data = &stat
-				c.OnStatus(peerID, &stat)
+				book.RegisterStatus(peerID, stat)
 			}
 			return nil
 		})

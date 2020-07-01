@@ -8,8 +8,8 @@ import (
 
 type Eth2Data struct {
 	ForkDigest      beacon.ForkDigest `json:"fork_digest"`
-	NextForkVersion beacon.Version `json:"next_fork_version"`
-	NextForkEpoch   beacon.Epoch `json:"next_fork_epoch"`
+	NextForkVersion beacon.Version    `json:"next_fork_version"`
+	NextForkEpoch   beacon.Epoch      `json:"next_fork_epoch"`
 }
 
 var Eth2DataSSZ = zssz.GetSSZ((*Eth2Data)(nil))
@@ -23,7 +23,7 @@ func (ab *AttnetBits) BitLen() uint64 {
 }
 
 func (ab *AttnetBits) MarshalJSON() ([]byte, error) {
-	return []byte(`"`+hex.EncodeToString(ab[:])+`"`), nil
+	return []byte(`"` + hex.EncodeToString(ab[:]) + `"`), nil
 }
 
 var AttnetBitsSSZ = zssz.GetSSZ((*AttnetBits)(nil))

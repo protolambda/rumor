@@ -1,7 +1,6 @@
 package peer
 
 import (
-	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/peer/metadata"
@@ -9,15 +8,11 @@ import (
 	"github.com/protolambda/rumor/p2p/track"
 )
 
-type WithPeerInfos interface {
-	Find(id peer.ID) (pi *track.peerInfo, ok bool)
-}
-
 type PeerCmd struct {
 	*base.Base
 	*status.PeerStatusState
 	*metadata.PeerMetadataState
-	WithPeerInfos
+	Store track.ExtendedPeerstore
 }
 
 func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
@@ -33,11 +28,11 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "trim":
 		cmd = &PeerTrimCmd{Base: c.Base}
 	case "list":
-		cmd = &PeerListCmd{Base: c.Base, WithPeerInfos: c.WithPeerInfos}
+		cmd = &PeerListCmd{Base: c.Base, Store: c.Store}
 	case "addrs":
 		cmd = &PeerAddrsCmd{Base: c.Base}
 	case "status":
-		cmd = &status.PeerStatusCmd{Base: c.Base, PeerStatusState: c.PeerStatusState}
+		cmd = &status.PeerStatusCmd{Base: c.Base, PeerStatusState: c.PeerStatusState, Book: c.Store}
 	case "metadata":
 		cmd = &metadata.PeerMetadataCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	default:

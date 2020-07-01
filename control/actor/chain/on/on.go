@@ -15,7 +15,7 @@ import (
 
 type ChainOnCmd struct {
 	*base.Base
-	Chain chain.FullChain
+	Chain  chain.FullChain
 	Blocks bdb.DB
 	States sdb.DB
 }

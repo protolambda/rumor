@@ -11,6 +11,7 @@ require (
 	github.com/golang/snappy v0.0.1
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gorilla/websocket v1.4.2
+	github.com/ipfs/go-datastore v0.4.4
 	github.com/libp2p/go-libp2p v0.8.1
 	github.com/libp2p/go-libp2p-connmgr v0.2.1
 	github.com/libp2p/go-libp2p-core v0.5.1
@@ -24,6 +25,7 @@ require (
 	github.com/libp2p/go-tcp-transport v0.2.0
 	github.com/libp2p/go-ws-transport v0.3.0
 	github.com/minio/sha256-simd v0.1.1
+	github.com/multiformats/go-base32 v0.0.3
 	github.com/multiformats/go-multiaddr v0.2.1
 	github.com/protolambda/ask v0.0.1
 	github.com/protolambda/zrnt v0.12.2-alpha.0

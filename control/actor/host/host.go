@@ -4,6 +4,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/p2p/track"
 	"net"
 )
 
@@ -23,6 +24,10 @@ type WithSetEnr interface {
 
 type HostCmd struct {
 	*base.Base
+
+	GlobalPeerstores *track.Peerstores
+	CurrentPeerstore track.DynamicPeerstore
+
 	WithSetHost
 	WithSetEnr
 	WithCloseHost
@@ -31,7 +36,8 @@ type HostCmd struct {
 func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "start":
-		cmd = &HostStartCmd{Base: c.Base, WithSetHost: c.WithSetHost}
+		cmd = &HostStartCmd{Base: c.Base, WithSetHost: c.WithSetHost,
+			GlobalPeerstores: c.GlobalPeerstores, CurrentPeerstore: c.CurrentPeerstore}
 	case "stop":
 		cmd = &HostStopCmd{Base: c.Base, WithCloseHost: c.WithCloseHost}
 	case "view":

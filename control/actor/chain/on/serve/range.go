@@ -22,11 +22,11 @@ type ByRangeCmd struct {
 	Blocks bdb.DB
 	Chain  chain.FullChain
 
-	Timeout        time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
-	Compression    flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	Timeout     time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
+	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 
-	MaxCount       uint64                `ask:"--max-count" help:"Max count param in range requests"`
-	MaxStep        uint64                `ask:"--max-step" help:"Max step param in range requests"`
+	MaxCount uint64 `ask:"--max-count" help:"Max count param in range requests"`
+	MaxStep  uint64 `ask:"--max-step" help:"Max step param in range requests"`
 }
 
 func (c *ByRangeCmd) Default() {
@@ -59,7 +59,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 	}
 	listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
 		f := map[string]interface{}{
-			"from":     peerId.String(),
+			"from": peerId.String(),
 		}
 		respondErr := func(code reqresp.ResponseCode, msg string) {
 			if err := handler.WriteErrorChunk(code, msg); err != nil {
@@ -90,7 +90,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 			respondErr(reqresp.ServerErrCode, "no chain available")
 			return
 		}
-		end := req.StartSlot + beacon.Slot(req.Step * req.Count)
+		end := req.StartSlot + beacon.Slot(req.Step*req.Count)
 		if req.StartSlot < iter.Start() || (end > iter.End()) {
 			c.Log.WithFields(f).Warn("request out of bounds")
 			respondErr(reqresp.InvalidReqCode, "request out of bounds")

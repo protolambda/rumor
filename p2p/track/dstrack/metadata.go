@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	metadataSuffix  = ds.NewKey("/metadata")
-	claimSuffix  = ds.NewKey("/metadata_claim")
+	metadataSuffix = ds.NewKey("/metadata")
+	claimSuffix    = ds.NewKey("/metadata_claim")
 )
 
 type dsMetadataBook struct {

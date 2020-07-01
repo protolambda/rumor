@@ -24,11 +24,11 @@ type ByRootCmd struct {
 
 	Roots []beacon.Root `ask:"--roots" help:"Block roots to request"`
 
-	Timeout     time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
+	Timeout        time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
 	ProcessTimeout time.Duration         `ask:"--process-timeout" help:"Timeout for parallel processing of blocks. 0 to disable."`
-	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
-	Store       bool                  `ask:"--store" help:"If the blocks should be stored in the blocks DB"`
-	Process     bool                  `ask:"--process" help:"If the blocks should be added to the current chain view, ignored otherwise"`
+	Compression    flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
+	Store          bool                  `ask:"--store" help:"If the blocks should be stored in the blocks DB"`
+	Process        bool                  `ask:"--process" help:"If the blocks should be added to the current chain view, ignored otherwise"`
 }
 
 func (c *ByRootCmd) Default() {

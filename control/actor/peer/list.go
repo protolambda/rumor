@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/p2p/track"
 )
 
 type PeerListCmd struct {
 	*base.Base
-	WithPeerInfos
+	Store track.ExtendedPeerstore
 
 	Which string `ask:"[which]" help:"Which peers to list, possible values: 'all', 'connected'."`
 

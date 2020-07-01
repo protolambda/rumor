@@ -7,6 +7,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 	"time"
 )
@@ -14,6 +15,7 @@ import (
 type PeerMetadataPingCmd struct {
 	*base.Base
 	*PeerMetadataState
+	Book          track.MetadataBook
 	Timeout       time.Duration         `ask:"--timeout" help:"request timeout for ping, 0 to disable"`
 	Compression   flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 	Update        bool                  `ask:"--update" help:"If the seq nr pong is higher than known, request metadata"`
@@ -62,13 +64,21 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 	}
 
 	if c.ForceUpdate || c.Update {
-		if c.ForceUpdate || c.PeerMetadataState.IsInteresting(peerID, methods.SeqNr(pong), c.MaxTries) {
+		updating := c.ForceUpdate
+		if !updating {
+			current := c.Book.Metadata(peerID)
+			if current == nil || current.SeqNumber < methods.SeqNr(pong) {
+				fetches := c.Book.RegisterMetaFetch(peerID)
+				updating = fetches <= c.MaxTries
+			}
+		}
+		if updating {
 			c.Log.WithField("pong", pong).Debug("Got pong, following up with metadata request")
 			updateCtx := ctx
 			if c.UpdateTimeout != 0 {
 				updateCtx, _ = context.WithTimeout(updateCtx, c.UpdateTimeout)
 			}
-			code, msg, metadata, err := c.fetch(h.NewStream, updateCtx, peerID, c.Compression.Compression)
+			code, msg, metadata, err := c.fetch(c.Book, h.NewStream, updateCtx, peerID, c.Compression.Compression)
 			if err != nil {
 				return fmt.Errorf("failed to fetch metadata upon pong: %v", err)
 			} else {

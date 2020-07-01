@@ -12,7 +12,7 @@ import (
 )
 
 type HandleENR struct {
-	PeerInfoFinder track.PeerInfoFinder
+	Store *track.ExtendedPeerstore
 
 	Add            bool              `ask:"--add" help:"Add the discovered nodes to the peerstore"`
 	Eth2ForkDigest beacon.ForkDigest `ask:"--digest" help:"The digest to use for filtering"`

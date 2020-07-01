@@ -13,8 +13,8 @@ import (
 type BlockCmd struct {
 	*base.Base
 	Blocks bdb.DB
-	Chain chain.FullChain
-	Root beacon.Root `ask:"<root>" help:"Root of the block to add to the chain"`
+	Chain  chain.FullChain
+	Root   beacon.Root `ask:"<root>" help:"Root of the block to add to the chain"`
 }
 
 func (c *BlockCmd) Help() string {

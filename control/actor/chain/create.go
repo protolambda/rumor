@@ -13,9 +13,9 @@ import (
 type ChainCreateCmd struct {
 	*base.Base
 	*chain.Chains
-	States sdb.DB
-	Name       chain.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
-	StateRoot  beacon.Root   `ask:"<state>" help:"The state to start from, retrieved from the states DB"`
+	States    sdb.DB
+	Name      chain.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
+	StateRoot beacon.Root   `ask:"<state>" help:"The state to start from, retrieved from the states DB"`
 }
 
 func (c *ChainCreateCmd) Help() string {

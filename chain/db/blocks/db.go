@@ -168,7 +168,7 @@ func (db *MemDB) Export(root beacon.Root, w io.Writer) (exists bool, err error) 
 func (db *MemDB) Stream(root beacon.Root) (r io.Reader, size uint64, exists bool, err error) {
 	dat, ok := db.data.Load(root)
 	if !ok {
-		return nil, 0, false,nil
+		return nil, 0, false, nil
 	}
 	buf := dat.(*bytes.Buffer)
 	return buf, uint64(buf.Len()), true, nil

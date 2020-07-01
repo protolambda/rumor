@@ -11,8 +11,7 @@ import (
 	"sync"
 )
 
-var statusSuffix  = ds.NewKey("/status")
-
+var statusSuffix = ds.NewKey("/status")
 
 type dsStatusBook struct {
 	ds ds.Datastore

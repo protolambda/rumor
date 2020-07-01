@@ -21,7 +21,7 @@ type Dv5Cmd struct {
 	*base.Base
 	*Dv5State
 
-	PeerInfoFinder track.PeerInfoFinder
+	Store track.ExtendedPeerstore
 
 	WithPriv
 }
@@ -41,10 +41,7 @@ func (c *Dv5Cmd) Cmd(route string) (cmd interface{}, err error) {
 	case "lookup":
 		cmd = &Dv5LookupCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "random":
-		cmd = &Dv5RandomCmd{Base: c.Base, Dv5State: c.Dv5State,
-			HandleENR: HandleENR{
-				PeerInfoFinder: c.PeerInfoFinder,
-			}}
+		cmd = &Dv5RandomCmd{Base: c.Base, Dv5State: c.Dv5State, HandleENR: HandleENR{Store: c.Store}}
 	case "self":
 		cmd = &Dv5SelfCmd{Base: c.Base, Dv5State: c.Dv5State}
 	default:

@@ -2,7 +2,7 @@ package actor
 
 import (
 	"context"
-	libpeer "github.com/libp2p/go-libp2p-core/peer"
+	"fmt"
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
@@ -20,13 +20,11 @@ import (
 	"github.com/protolambda/rumor/control/actor/peer/status"
 	"github.com/protolambda/rumor/control/actor/rpc"
 	"github.com/protolambda/rumor/control/actor/states"
-	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 )
 
 type PeerStore struct {
-
 }
 
 func (ps *PeerStore) Agent() {
@@ -34,9 +32,13 @@ func (ps *PeerStore) Agent() {
 
 }
 
+type ActorID string
+
 type Actor struct {
-	GlobalPeerstores   track.Peerstores
-	CurrentPeerstore  track.PeerstoreID
+	ID ActorID
+
+	GlobalPeerstores track.Peerstores
+	CurrentPeerstore track.DynamicPeerstore
 
 	PeerStatusState   status.PeerStatusState
 	PeerMetadataState metadata.PeerMetadataState
@@ -59,25 +61,15 @@ type Actor struct {
 	actorCancel context.CancelFunc
 }
 
-func NewActor() *Actor {
+func NewActor(id ActorID) *Actor {
 	ctxAll, cancelAll := context.WithCancel(context.Background())
 	act := &Actor{
-		ActorCtx:    ctxAll,
-		actorCancel: cancelAll,
-		Blocks:      &bdb.MemDB{},
-		States:      &sdb.MemDB{},
-	}
-	act.PeerStatusState.OnStatus = func(peerID libpeer.ID, status *methods.Status) {
-		inf, _ := act.GlobalPeerInfos.Find(peerID)
-		inf.RegisterStatus(*status)
-	}
-	act.PeerMetadataState.OnMetadata = func(peerID libpeer.ID, meta *methods.MetaData) {
-		inf, _ := act.GlobalPeerInfos.Find(peerID)
-		inf.RegisterMetadata(*meta)
-	}
-	act.PeerMetadataState.IsInteresting = func(peerID libpeer.ID, seqNr methods.SeqNr, maxTries uint64) bool {
-		inf, _ := act.GlobalPeerInfos.Find(peerID)
-		return inf.ClaimedSeq() < seqNr
+		ID:               id,
+		ActorCtx:         ctxAll,
+		actorCancel:      cancelAll,
+		CurrentPeerstore: track.NewDynamicPeerstore(),
+		Blocks:           &bdb.MemDB{},
+		States:           &sdb.MemDB{},
 	}
 	return act
 }
@@ -107,22 +99,28 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "host":
 		cmd = &host.HostCmd{
-			Base:          b,
-			WithSetHost:   &c.HostState,
-			WithSetEnr:    &c.HostState,
-			WithCloseHost: &c.HostState,
+			Base:             b,
+			WithSetHost:      &c.HostState,
+			WithSetEnr:       &c.HostState,
+			WithCloseHost:    &c.HostState,
+			GlobalPeerstores: &c.GlobalPeerstores,
+			CurrentPeerstore: c.CurrentPeerstore,
 		}
 	case "enr":
 		cmd = &enr.EnrCmd{Base: b}
 	case "peer":
+		store := c.CurrentPeerstore
+		if !store.Initialized() {
+			return nil, fmt.Errorf("no peerstore found named \"%s\", create a peerstore or host first", store.PeerstoreID())
+		}
 		cmd = &peer.PeerCmd{
 			Base:              b,
 			PeerStatusState:   &c.PeerStatusState,
 			PeerMetadataState: &c.PeerMetadataState,
-			WithPeerInfos:     &c.GlobalPeerInfos,
+			Store:             store,
 		}
 	case "dv5":
-		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState, PeerInfoFinder: &c.GlobalPeerInfos}
+		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState, Store: c.CurrentPeerstore}
 	case "gossip":
 		cmd = &gossip.GossipCmd{Base: b, GossipState: &c.GossipState}
 	case "rpc":

@@ -9,7 +9,7 @@ import (
 
 type ServeCmd struct {
 	*base.Base
-	Chain chain.FullChain
+	Chain  chain.FullChain
 	Blocks bdb.DB
 }
 

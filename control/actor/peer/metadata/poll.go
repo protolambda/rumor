@@ -6,6 +6,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/track"
 	"sync"
 	"time"
 )
@@ -13,6 +14,7 @@ import (
 type PeerMetadataPollCmd struct {
 	*base.Base
 	*PeerMetadataState
+	Book          track.MetadataBook
 	Timeout       time.Duration         `ask:"--timeout" help:"request timeout for ping, 0 to disable."`
 	Interval      time.Duration         `ask:"--interval" help:"interval to send pings to peers on, applied as timeout to a round of work"`
 	Update        bool                  `ask:"--update" help:"If the seq nr pong is higher than known, request metadata"`
@@ -51,6 +53,7 @@ func (c *PeerMetadataPollCmd) Run(ctx context.Context, args ...string) error {
 				pingCmd := &PeerMetadataPingCmd{
 					Base:              c.Base,
 					PeerMetadataState: c.PeerMetadataState,
+					Book:              c.Book,
 					Timeout:           c.Timeout,
 					Compression:       c.Compression,
 					Update:            c.Update,

@@ -7,24 +7,18 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/rumor/p2p/track"
 )
-
-type OnMetadata func(peerID peer.ID, meta *methods.MetaData)
-
-// Returns true if the peer has not been seen, or if the seq nr is newer than we currently know for the peer
-// Returns false otherwise, or if the peer has already attempted too many fetches.
-type IsInteresting func(peerID peer.ID, seqNr methods.SeqNr, maxTries uint64) bool
 
 type PeerMetadataState struct {
 	Following bool
 	Local     methods.MetaData
-	OnMetadata
-	IsInteresting
 }
 
 type PeerMetadataCmd struct {
 	*base.Base
 	*PeerMetadataState
+	Book track.MetadataBook
 }
 
 func (c *PeerMetadataCmd) Help() string {
@@ -34,17 +28,17 @@ func (c *PeerMetadataCmd) Help() string {
 func (c *PeerMetadataCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "ping":
-		cmd = &PeerMetadataPingCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
+		cmd = &PeerMetadataPingCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
 	case "pong":
-		cmd = &PeerMetadataPongCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
+		cmd = &PeerMetadataPongCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
 	case "get":
 		cmd = &PeerMetadataGetCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	case "set":
 		cmd = &PeerMetadataSetCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	case "req":
-		cmd = &PeerMetadataReqCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
+		cmd = &PeerMetadataReqCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
 	case "poll":
-		cmd = &PeerMetadataPollCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
+		cmd = &PeerMetadataPollCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState, Book: c.Book}
 	case "serve":
 		cmd = &PeerMetadataServeCmd{Base: c.Base, PeerMetadataState: c.PeerMetadataState}
 	case "follow":
@@ -59,7 +53,7 @@ func (c *PeerMetadataCmd) Routes() []string {
 	return []string{"ping", "pong", "get", "set", "req", "poll", "serve", "follow"}
 }
 
-func (c *PeerMetadataState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
+func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
 	resCode reqresp.ResponseCode, errMsg string, data *methods.MetaData, err error) {
 
 	err = methods.MetaDataRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: nil}, 1,
@@ -78,7 +72,7 @@ func (c *PeerMetadataState) fetch(sFn reqresp.NewStreamFn, ctx context.Context, 
 					return err
 				}
 				data = &meta
-				c.OnMetadata(peerID, &meta)
+				book.RegisterMetadata(peerID, meta)
 			}
 			return nil
 		})

@@ -52,7 +52,7 @@ func (c *PeerStatusServeCmd) Run(ctx context.Context, args ...string) error {
 			c.Log.WithFields(f).Warnf("failed to read status request: %v", err)
 		} else {
 			f["data"] = reqStatus
-			c.OnStatus(peerId, &reqStatus)
+			c.StatusHandler.RegisterStatus(peerId, reqStatus)
 
 			if err := handler.WriteResponseChunk(reqresp.SuccessCode, &c.PeerStatusState.Local); err != nil {
 				c.Log.WithFields(f).Warnf("failed to respond to status request: %v", err)
