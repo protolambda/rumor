@@ -33,6 +33,7 @@ require (
 	github.com/protolambda/ztyp v0.0.1
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
+	mvdan.cc/sh/v3 v3.1.2
 )
 
 replace (
