@@ -17,7 +17,7 @@ type PeerListCmd struct {
 }
 
 func (c *PeerListCmd) Help() string {
-	return "Stop the host node."
+	return "List peers."
 }
 
 func (c *PeerListCmd) Default() {
@@ -29,26 +29,23 @@ func (c *PeerListCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	if len(args) == 0 {
-		args = append(args, "connected")
-	}
 	var peers []peer.ID
-	switch args[0] {
+	switch c.Which {
 	case "all":
 		peers = h.Peerstore().Peers()
 	case "connected":
 		peers = h.Network().Peers()
 	default:
-		return fmt.Errorf("invalid peer type: %s", args[0])
+		return fmt.Errorf("invalid peer selection type: %s", c.Which)
 	}
 	if c.Details {
-		c.Log.WithField("peers", peers).Infof("%d peers", len(peers))
-	} else {
-		peerData := make(map[peer.ID]*track.PeerAllData)
+		peerData := make(map[string]*track.PeerAllData)
 		for _, p := range peers {
-			peerData[p] = c.Store.GetAllData(p)
+			peerData[p.String()] = c.Store.GetAllData(p)
 		}
 		c.Log.WithField("peers", peerData).Infof("%d peers", len(peers))
+	} else {
+		c.Log.WithField("peers", peers).Infof("%d peers", len(peers))
 	}
 	return nil
 }

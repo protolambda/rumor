@@ -140,11 +140,15 @@ func (ep *dsExtendedPeerstore) GetAllData(id peer.ID) *track.PeerAllData {
 	userAgent, _ := ep.UserAgent(id)
 	protVersion, _ := ep.ProtocolVersion(id)
 	seq, _ := ep.ClaimedSeq(id)
+	var multiAddrs []string
+	for _, addr := range ep.Addrs(id) {
+		multiAddrs = append(multiAddrs, addr.String())
+	}
 	return &track.PeerAllData{
 		PeerID:          id,
 		NodeID:          nodeID,
 		Pubkey:          pubStr,
-		Addrs:           ep.Addrs(id),
+		Addrs:           multiAddrs,
 		Protocols:       protocols,
 		Latency:         ep.LatencyEWMA(id),
 		UserAgent:       userAgent,

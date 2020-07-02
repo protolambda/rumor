@@ -4,7 +4,6 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"time"
 )
@@ -44,8 +43,8 @@ type PeerAllData struct {
 	NodeID enode.ID `json:"node_id"`
 	Pubkey string   `json:"pubkey"`
 
-	Addrs     []ma.Multiaddr `json:"addrs"`
-	Protocols []string       `json:"protocols"`
+	Addrs     []string `json:"addrs"`
+	Protocols []string `json:"protocols"`
 
 	Latency time.Duration `json:"latency"`
 

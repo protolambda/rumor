@@ -29,6 +29,8 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &PeerTrimCmd{Base: c.Base}
 	case "list":
 		cmd = &PeerListCmd{Base: c.Base, Store: c.Store}
+	case "info":
+		cmd = &PeerInfoCmd{Base: c.Base, Store: c.Store}
 	case "addrs":
 		cmd = &PeerAddrsCmd{Base: c.Base}
 	case "status":
@@ -42,7 +44,7 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *PeerCmd) Routes() []string {
-	return []string{"connect", "disconnect", "protect", "unprotect", "trim", "list", "addrs", "status", "metadata"}
+	return []string{"connect", "disconnect", "protect", "unprotect", "trim", "list", "info", "addrs", "status", "metadata"}
 }
 
 func (c *PeerCmd) Help() string {

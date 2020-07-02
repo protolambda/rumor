@@ -9,7 +9,8 @@ alice: host listen --ip=127.0.0.1 --tcp=9001
 bob: host listen --ip=127.0.0.1 --tcp=9002
 
 bob: peer connect /ip4/127.0.0.1/tcp/9001/p2p/16Uiu2HAm9jTVTnbEp1mXDvcd6eUGAtV9ARPUgkxDVysZtBzQUgnN
-bob: peer list
+bob: peer list --details
+bob: peer info 16Uiu2HAm9jTVTnbEp1mXDvcd6eUGAtV9ARPUgkxDVysZtBzQUgnN
 bob: peer disconnect 16Uiu2HAm9jTVTnbEp1mXDvcd6eUGAtV9ARPUgkxDVysZtBzQUgnN
 
 alice: kill
