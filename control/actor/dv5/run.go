@@ -38,7 +38,7 @@ func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("Already have dv5 open at %s", c.Dv5State.Dv5Node.Self().String())
 	}
 	bootNodes := make([]*enode.Node, 0, len(c.Bootnodes))
-	for i := 1; i < len(c.Bootnodes); i++ {
+	for i := 0; i < len(c.Bootnodes); i++ {
 		dv5Addr, err := addrutil.ParseEnrOrEnode(c.Bootnodes[i])
 		if err != nil {
 			return err
@@ -49,7 +49,7 @@ func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	c.Log.Info("Started discv5")
+	c.Log.Infof("Started discv5 with %d bootnodes", len(bootNodes))
 
 	spCtx, freed := c.SpawnContext()
 	go func() {

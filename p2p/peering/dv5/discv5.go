@@ -29,34 +29,6 @@ type Discv5Impl struct {
 	gLog *GethLogger
 }
 
-type GethLogger struct {
-	logrus.FieldLogger
-}
-
-// New returns a new Logger that has this logger's context plus the given context
-func (gl *GethLogger) Log(r *geth_log.Record) error {
-	rCtx := r.Ctx
-	l := gl.FieldLogger
-	for i := 0; i < len(rCtx); i += 2 {
-		l = l.WithField(rCtx[i].(string), rCtx[i+1])
-	}
-	switch r.Lvl {
-	case geth_log.LvlCrit:
-		l.Panicln(r.Msg)
-	case geth_log.LvlError:
-		l.Errorln(r.Msg)
-	case geth_log.LvlWarn:
-		l.Warningln(r.Msg)
-	case geth_log.LvlInfo:
-		l.Infoln(r.Msg)
-	case geth_log.LvlDebug:
-		l.Debugln(r.Msg)
-	case geth_log.LvlTrace:
-		l.Debugln(r.Msg)
-	}
-	return nil
-}
-
 func NewDiscV5(log logrus.FieldLogger, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
 	k, ok := privKey.(*crypto.Secp256k1PrivateKey)
 	if !ok {

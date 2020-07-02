@@ -8,25 +8,25 @@ charlie: host notify all
 
 alice: host view
 
+# TODO: instead of opening a host for ENR details, specify ENR separately in dv5
+
 # UDP copies TCP port by default
 alice: host listen --ip=127.0.0.1 --tcp=9001
 bob: host listen --ip=127.0.0.1 --tcp=9002
 charlie: host listen --ip=127.0.0.1 --tcp=9003
 
-# Start discv5
-alice_dv5> alice: dv5 run
-bob_dv5> bob: dv5 run
-charlie_dv5> charlie: dv5 run
-
+# Where the Alice ENR comes from
 alice_view> alice: host view
 
+# Start discv5 (with alice as bootnode passed to bob and charlie)
+alice_dv5> alice: dv5 run
+bob_dv5> bob: dv5 run run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
+charlie_dv5> charlie: dv5 run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
+
+
 # TODO: no variables in rumor scripting yet. Can use python (Pyrum) instead, or maybe worth the change here?
+# TODO: need syntax + implementation for explicit waiting for a log event to check results better
 
-# Ping alice both, make sure Alice is aware of Bob and Charlie
-bob: dv5 ping enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
-charlie: dv5 ping enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
-
-# TODO: need syntax + implementation for explicit waiting for a log event
 # Let's see if Bob can find Charlie through Alice
 alice_find_nodes> bob: dv5 random --add=true
 bob_find_nodes> bob: dv5 random --add=true
@@ -37,11 +37,6 @@ debug sleep 20s
 alice_find_nodes> cancel
 bob_find_nodes> cancel
 charlie_find_nodes> cancel
-
-# TODO
-#alice_dv5> mute
-#bob_dv5> mute
-#charlie_dv5> mute
 
 alice: peer list all --details
 bob: peer list all --details
