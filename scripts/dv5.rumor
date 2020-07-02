@@ -23,18 +23,24 @@ alice_view> alice: host view
 # TODO: no variables in rumor scripting yet. Can use python (Pyrum) instead, or maybe worth the change here?
 
 # Connect Bob and Charlie to Alice (bootnode)
-bob: peer connect $alice_view.enr
-charlie: peer connect $alice_view.enr
+bob: peer connect enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
+charlie: peer connect enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
 
 # Ping alice both, make sure Alice is aware of Bob and Charlie
-bob: dv5 ping $alice_view.enr
-charlie: dv5 ping $alice_view.enr
+bob: dv5 ping enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
+charlie: dv5 ping enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
 
 # TODO: need syntax + implementation for explicit waiting for a log event
 # Let's see if Bob can find Charlie through Alice
-find_nodes> bob: bg dv5 random
+find_nodes> bob: bg dv5 random --add=true
 
-find_nodes.nodes>> timeout 10s
+debug sleep 20s
+
+#find_nodes.nodes>> timeout 10s
+
+bob: peer list all --details
+alice: peer list all --details
+charlie: peer list all --details
 
 alice: kill
 bob: kill

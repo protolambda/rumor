@@ -12,7 +12,7 @@ type DebugCmd struct {
 func (c *DebugCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "sleep":
-		cmd = DebugSleepCmd{Base: c.Base}
+		cmd = &DebugSleepCmd{Base: c.Base}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

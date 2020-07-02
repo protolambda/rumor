@@ -22,7 +22,7 @@ type HostListenCmd struct {
 
 func (c *HostListenCmd) Default() {
 	c.TcpPort = 9000
-	c.UdpPort = 9000
+	c.UdpPort = 0
 }
 
 func (c *HostListenCmd) Help() string {

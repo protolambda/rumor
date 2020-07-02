@@ -10,7 +10,7 @@ import (
 type Dv5PingCmd struct {
 	*base.Base
 	*Dv5State
-	Target *flags.EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
+	Target flags.EnrOrEnodeFlag `ask:"<target>" help:"Target ENR/enode"`
 }
 
 func (c *Dv5PingCmd) Help() string {

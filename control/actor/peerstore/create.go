@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	ds "github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/sync"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/pstoreds"
 	"github.com/protolambda/rumor/control/actor/base"
@@ -27,7 +28,8 @@ func (c *CreateCmd) Help() string {
 }
 
 func (c *CreateCmd) Run(ctx context.Context, args ...string) error {
-	st := ds.NewMapDatastore()
+	// TODO: default map is not safe, and mutex wrapper is slow
+	st := sync.MutexWrap(ds.NewMapDatastore())
 	ep, err := dstrack.NewExtendedPeerstore(c.GlobalContext, st, pstoreds.DefaultOpts())
 	if err != nil {
 		return fmt.Errorf("failed to build datastore-backed peerstore named: %v", err)

@@ -152,7 +152,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *ActorCmd) Routes() []string {
-	return []string{"host", "enr", "peer", "dv5", "gossip", "rpc", "debug"}
+	return []string{"host", "enr", "peer", "peerstore", "dv5", "gossip", "rpc", "debug", "blocks", "states", "chain"}
 }
 
 func (c *ActorCmd) Help() string {
