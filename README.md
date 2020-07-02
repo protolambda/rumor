@@ -143,6 +143,20 @@ The call-ID is useful to correlate results, and for tooling that interacts with 
 
 Calls can be made in, and moved to, foreground and background.
 
+Note that running in the background may not guarantee that the call actually starts fully operating before you continue.
+E.g. if you start a process in the background, and try to communicate with it immediately, it may not be there yet.
+
+Calls that do this kind of background operation spawn a sub-process. The call can be awaited for in sync,
+ and once it's up and running to communicate with, it's done but not freed.
+To close such background process, simply `cancel` it.
+
+Example:
+```
+my_dv5> dv5 run
+dv5 ping foobar
+my_dv5> cancel
+```
+
 #### Making calls
  
 - After a command is started, it is in the foreground by default, i.e. the shell waits for it to run the next command.
@@ -173,19 +187,6 @@ cancel
 123> mute
 # To unmute the messages of a call, also works to read results of other sessions (if access to them)
 123> watch
-```
-
-### Owning calls
-
-To separate the call domains, you can specify an owner for a call with:
-```
-foobar$ my_call> some command here
-```
-`foobar` here is the owner of the call
-
-Now other owners that try to cancel, can't. This will fail:
-```
-other$ my_call> cancel
 ```
 
 ### Stopping an actor

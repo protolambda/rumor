@@ -3,7 +3,6 @@ package dv5
 import (
 	"context"
 	"errors"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/sirupsen/logrus"
 	"time"
@@ -29,7 +28,7 @@ func (c *Dv5RandomCmd) Run(ctx context.Context, args ...string) error {
 		return NoDv5Err
 	}
 	randomNodes := c.Dv5State.Dv5Node.RandomNodes()
-	log.Info("Started looking for random nodes")
+	c.Log.Infof("Started looking for random nodes: %s", time.Now().String())
 
 	h, err := c.Host()
 	if err != nil {
@@ -37,18 +36,28 @@ func (c *Dv5RandomCmd) Run(ctx context.Context, args ...string) error {
 			return errors.New("to add or connect nodes, a libp2p host needs to be started first")
 		}
 	}
+	finished := make(chan struct{})
 	go func() {
-		<-ctx.Done()
-		randomNodes.Close()
-	}()
-	for {
-		if !randomNodes.Next() {
-			break
+		for {
+			if !randomNodes.Next() {
+				break
+			}
+			res := randomNodes.Node()
+			c.HandleENR.handle(c.Log, h, res)
+			c.Base.Log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Infof("Got random node")
 		}
-		res := randomNodes.Node()
-		c.HandleENR.handle(c.Log, h, res)
-		c.Base.Log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Infof("Got random node")
-	}
-	log.Info("Stopped looking for random nodes")
+		finished <- struct{}{}
+	}()
+
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+
+		randomNodes.Close()
+		<-finished
+
+		c.Log.Infof("Stopped looking for random nodes: %s", time.Now().String())
+		freed()
+	}()
 	return nil
 }

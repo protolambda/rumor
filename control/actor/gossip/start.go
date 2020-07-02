@@ -24,7 +24,7 @@ func (c *GossipStartCmd) Run(ctx context.Context, args ...string) error {
 	if c.GossipState.GsNode != nil {
 		return errors.New("Already started GossipSub")
 	}
-	c.GossipState.GsNode, err = gossip.NewGossipSub(c.BaseContext, h)
+	c.GossipState.GsNode, err = gossip.NewGossipSub(c.ActorContext, h)
 	if err != nil {
 		return err
 	}

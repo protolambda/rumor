@@ -152,10 +152,10 @@ func (sp *SessionProcessor) NewSession(log logrus.FieldLogger, readNextLine Next
 	go func() {
 		sp.runSession(s)
 		// Declare the the session closed as soon as it exits
-		cancel()
 		sp.sessionsLock.Lock()
 		delete(sp.sessions, s)
 		sp.sessionsLock.Unlock()
+		cancel()
 	}()
 
 	return s
@@ -171,18 +171,49 @@ func (fn WriteableFn) Write(p []byte) (n int, err error) {
 type CallID string
 
 type CallSummary struct {
-	Owner     CallOwner `json:"owner"`
-	ActorName string    `json:"actor"`
+	ActorName string   `json:"actor"`
+	Args      []string `json:"args"`
 }
 
-type CallOwner string
-
 type Call struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
+	id   CallID
+	args []string
+
+	// context for immediate resources of the command
+	ctx    context.Context
+	cancel context.CancelFunc
+	// context that completes after the command finishes running (excludes spawned processes)
+	doneCtx context.Context
+	done    context.CancelFunc
+
+	// context for spawned background processes
+	spawnCtx   context.Context
+	closeSpawn context.CancelFunc
+
+	spawned bool
+
+	// Used to wait for resources to be completely free (including spawned processes)
+	freeCtx context.Context
+	// To indicate resources are freed
+	free context.CancelFunc
+
 	logger    logrus.FieldLogger
-	owner     CallOwner
 	actorName string
+}
+
+func (c *Call) Spawn() (ctx context.Context, done context.CancelFunc) {
+	c.spawned = true
+	return c.spawnCtx, c.free
+}
+
+// Close the call gracefully, blocking until it is freed
+func (c *Call) Close() {
+	// stop command, and wait gracefully for it to be done
+	c.cancel()
+	<-c.doneCtx.Done()
+	// Stop background processes, and wait gracefully for them to be done
+	c.closeSpawn()
+	<-c.freeCtx.Done()
 }
 
 func (sp *SessionProcessor) GetActor(name string) *actor.Actor {
@@ -200,29 +231,45 @@ func (sp *SessionProcessor) KillActor(name string) {
 	}
 }
 
-func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner CallOwner, cmdArgs []string) {
+func (sp *SessionProcessor) processCmd(actorName string, callID CallID, cmdArgs []string) *Call {
 	rep := sp.GetActor(actorName)
-	cmdCtx, cmdCancel := context.WithCancel(rep.ActorCtx)
+	freeCtx, freeCancel := context.WithCancel(rep.ActorCtx)
+	doneCtx, doneCancel := context.WithCancel(freeCtx)
+	cmdCtx, cmdCancel := context.WithCancel(doneCtx)
+	spawnCtx, spawnCancel := context.WithCancel(freeCtx)
+
+	fmt.Printf("%s: %v\n", actorName, cmdArgs)
 
 	cmdLogger := sp.log.WithField("actor", actorName).WithField("call_id", callID)
 
 	call := &Call{
-		ctx:       cmdCtx,
-		cancel:    cmdCancel,
-		logger:    cmdLogger,
-		owner:     owner,
-		actorName: actorName,
+		id:         callID,
+		args:       cmdArgs,
+		ctx:        cmdCtx,
+		cancel:     cmdCancel,
+		doneCtx:    doneCtx,
+		done:       doneCancel,
+		spawnCtx:   spawnCtx,
+		closeSpawn: spawnCancel,
+		freeCtx:    freeCtx,
+		free:       freeCancel,
+		logger:     cmdLogger,
+		actorName:  actorName,
 	}
 
-	sp.jobs.Store(callID, call)
+	callCmd := rep.MakeCmd(cmdLogger, call.Spawn)
 
-	go func() {
-		callCmd := rep.MakeCmd(cmdLogger)
+	cmdLogger.Infof("Started! %s: %s", actorName, strings.Join(cmdArgs, " "))
 
-		loadedCmd, err := ask.Load(callCmd)
-		if err != nil {
-			cmdLogger.WithError(err).Error("failed to parse command")
-		} else {
+	loadedCmd, err := ask.Load(callCmd)
+	if err != nil {
+		cmdLogger.WithError(err).Error("failed to parse command")
+		freeCancel()
+		sp.RemoveInterests(callID)
+	} else {
+		sp.jobs.Store(callID, call)
+		go func() {
+			cmdLogger.Tracef("Running! %s: ['%s']", actorName, strings.Join(cmdArgs, "', '"))
 			fCmd, isHelp, err := loadedCmd.Execute(cmdCtx, cmdArgs...)
 			if err != nil {
 				cmdLogger.WithError(err).Error("exited with error")
@@ -232,25 +279,23 @@ func (sp *SessionProcessor) processCmd(actorName string, callID CallID, owner Ca
 				}
 				cmdLogger.WithField("@success", "").Trace("completed call")
 			}
-		}
-		sp.CloseCall(callID)
-		// Only remove interests when the call is done, not when the call is closed,
-		// at which point it is still running and the `@success` hasn't been posted yet.
-		sp.RemoveInterests(callID)
-	}()
-}
-
-func (sp *SessionProcessor) CloseCall(id CallID) {
-	ci, ok := sp.jobs.Load(id)
-	if !ok {
-		return
+			doneCancel()
+			// If nothing was spawned, we can free the command early
+			if !call.spawned {
+				cmdLogger.Trace("Command is done, no background resources were spawned")
+				freeCancel()
+			} else {
+				cmdLogger.Trace("Waiting for background tasks to be freed")
+				// Wait for command to free
+				<-freeCtx.Done()
+			}
+			cmdLogger.Trace("Finished, including optional spawned resources, removing call now")
+			sp.RemoveInterests(callID)
+			sp.jobs.Delete(callID)
+		}()
 	}
-	c := ci.(*Call)
-	// safe to cancel multiple times, safe to unset interest multiple times.
-	// No global locking at the cost of a little overhead sometimes.
-	// TODO: once we have Go 1.15 we can use LoadAndDelete, see golang #33762
-	c.cancel()
-	sp.jobs.Delete(id)
+
+	return call
 }
 
 func (sp *SessionProcessor) RemoveInterests(id CallID) {
@@ -267,39 +312,38 @@ func (sp *SessionProcessor) Close() {
 	sp.closing = true
 
 	var wg sync.WaitGroup
+	sp.log.Debug("Closing remaining jobs...")
 	// close remaining jobs
 	sp.jobs.Range(func(ki, vi interface{}) bool {
-		k := ki.(CallID)
 		v := vi.(*Call)
-		v.logger.Info("Closing job with 5 second timeout...")
+		v.logger.Debug("Closing job with 5 second timeout...")
 		v.cancel()
 		wg.Add(1)
-		go func(k CallID, ctx context.Context, log logrus.FieldLogger) {
-			ctx, _ = context.WithTimeout(ctx, time.Second*5)
-			<-ctx.Done()
-			if err := ctx.Err(); err != nil {
-				if err != context.Canceled {
-					log.Error(err)
-				}
-			}
-			wg.Done()
-		}(k, v.ctx, v.logger)
+		closeCtx, _ := context.WithTimeout(v.freeCtx, time.Second*5)
+		<-closeCtx.Done()
+		if err := closeCtx.Err(); err != nil {
+			v.logger.Error("Failed to close job with timeout")
+		}
+		wg.Done()
 		return true
 	})
 	wg.Wait()
 
+	sp.log.Debug("Closing remaining actors...")
 	// close all libp2p hosts
 	sp.actors.Range(func(key, value interface{}) bool {
 		value.(*actor.Actor).Close()
 		return true
 	})
 
+	sp.log.Debug("Closing global context...")
 	// closes cross-actor things such as peerstores and chains
 	sp.globalActorCancel()
+	sp.log.Debug("Closed session processor")
 }
 
 func (sp *SessionProcessor) runSession(session *Session) {
-	var lastCall CallID
+	var lastCall *Call
 
 	// count calls, for unique ID (if user does not specify their own ID for the call)
 	callCounter := 0
@@ -336,14 +380,32 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			continue
 		}
 
+		if lastCall != nil && len(cmdArgs) == 1 {
+			switch cmdArgs[0] {
+			case "watch":
+				session.log.Infof("Un-muting call '%s'", lastCall.id)
+				session.SetInterest(lastCall.id, logrus.TraceLevel)
+			case "mute":
+				session.log.Infof("Muting call '%s'", lastCall.id)
+				session.UnsetInterest(lastCall.id)
+			case "bg":
+				session.log.Infof("Moved call '%s' to background", lastCall.id)
+				lastCall = nil
+			case "cancel":
+				session.log.Infof("Closing call '%s'", lastCall.id)
+				lastCall.Close()
+			default:
+				break
+			}
+		}
+
 		var actorName string
 		var customCallID CallID
-		var owner CallOwner
 		{
-			var actorStr, customCallIDStr, ownerStr string
+			var actorStr, customCallIDStr, logLvlStr string
 			skip := 0
 			for _, arg := range cmdArgs {
-				if len(arg) <= 1 {
+				if len(arg) == 0 {
 					break
 				}
 				if strings.HasSuffix(arg, ":") && actorStr == "" {
@@ -352,8 +414,8 @@ func (sp *SessionProcessor) runSession(session *Session) {
 				} else if strings.HasSuffix(arg, ">") && customCallIDStr == "" {
 					customCallIDStr = arg[:len(arg)-1]
 					skip++
-				} else if strings.HasSuffix(arg, "$") && ownerStr == "" {
-					ownerStr = arg[:len(arg)-1]
+				} else if strings.HasSuffix(arg, "$") && logLvlStr == "" {
+					logLvlStr = arg[:len(arg)-1]
 					skip++
 				} else {
 					break
@@ -363,17 +425,22 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			if actorStr == "" {
 				actorStr = "DEFAULT_ACTOR"
 			}
-			if ownerStr == "" {
-				ownerStr = "DEFAULT_OWNER"
+			if logLvlStr == "" {
+				logLvlStr = "TRACE"
 			}
 
 			actorName = actorStr
 			customCallID = CallID(customCallIDStr)
-			owner = CallOwner(ownerStr)
+			// TODO log level
 		}
 
 		if len(cmdArgs) == 0 {
 			continue
+		}
+
+		if lastCall != nil {
+			session.log.Debug("waiting for last call to complete")
+			<-lastCall.doneCtx.Done()
 		}
 
 		if len(cmdArgs) == 1 && cmdArgs[0] == "kill" {
@@ -382,41 +449,25 @@ func (sp *SessionProcessor) runSession(session *Session) {
 			continue
 		}
 
-		if lastCall != "" && (customCallID == "" || customCallID == lastCall) {
-			c, ok := sp.jobs.Load(lastCall)
-			if ok {
-				lastCallObj := c.(*Call)
-				if existingOwner := lastCallObj.owner; existingOwner != owner {
-					session.log.Errorf("No access to call of %s", existingOwner)
-					continue
-				} else {
-					if len(cmdArgs) == 1 && cmdArgs[0] == "cancel" {
-						session.log.Infof("Closing call '%s'", lastCall)
-						sp.CloseCall(lastCall)
-						continue
-					} else if len(cmdArgs) == 1 && cmdArgs[0] == "bg" {
-						session.log.Infof("Moved call '%s' to background", lastCall)
-						lastCall = ""
-						continue
-					} else if customCallID == "" {
-						// if a next command and we are here by accident, wait for current call to stop
-						<-lastCallObj.ctx.Done()
-						lastCall = ""
+		if len(cmdArgs) == 1 && cmdArgs[0] == "jobs" {
+			openJobs := make(map[CallID]CallSummary, 0)
+			sp.jobs.Range(func(key, value interface{}) bool {
+				c := value.(*Call)
+				if c.actorName == actorName {
+					openJobs[key.(CallID)] = CallSummary{
+						Args:      c.args,
+						ActorName: c.actorName,
 					}
 				}
-			} else {
-				// call does not exist anymore, it ended. Safe to do another call with new id.
-				lastCall = ""
-			}
+				return true
+			})
+			session.log.WithField("jobs", openJobs).WithField("actor", actorName).Info("running jobs of actor")
 		}
 
 		if customCallID != "" {
 			// try historical call
 			if c, ok := sp.jobs.Load(customCallID); ok {
-				if existingOwner := c.(*Call).owner; existingOwner != owner {
-					session.log.Errorf("No access to call of %s", existingOwner)
-					continue
-				}
+				call := c.(*Call)
 				if len(cmdArgs) == 1 {
 					switch cmdArgs[0] {
 					case "watch":
@@ -427,11 +478,10 @@ func (sp *SessionProcessor) runSession(session *Session) {
 						session.UnsetInterest(customCallID)
 					case "fg":
 						session.log.Infof("Moved call '%s' to foreground", customCallID)
-						lastCall = customCallID
-						session.SetInterest(customCallID, logrus.TraceLevel)
+						lastCall = call
 					case "cancel":
 						session.log.Infof("Closing call '%s'", customCallID)
-						sp.CloseCall(customCallID)
+						call.Close()
 					}
 				} else {
 					session.log.Errorf("Unrecognized command for modifying call: '%s'", line)
@@ -458,38 +508,22 @@ func (sp *SessionProcessor) runSession(session *Session) {
 		}
 
 		if len(cmdArgs) == 1 && cmdArgs[0] == "jobs" {
-			openJobs := make(map[CallID]CallSummary, 0)
-			sp.jobs.Range(func(key, value interface{}) bool {
-				c := value.(*Call)
-				if c.owner == owner {
-					openJobs[key.(CallID)] = CallSummary{
-						Owner:     c.owner,
-						ActorName: c.actorName,
-					}
-				}
-				return true
-			})
-			session.log.WithField("jobs", openJobs).Infof("jobs started by %s", owner)
 			continue
 		}
 
 		// TODO: option to change log level per command
 		session.SetInterest(callID, logrus.TraceLevel)
 
-		sp.processCmd(actorName, callID, owner, cmdArgs)
+		newCall := sp.processCmd(actorName, callID, cmdArgs)
 
-		if background {
-			lastCall = ""
-		} else {
-			lastCall = callID
+		if !background {
+			lastCall = newCall
 		}
 	}
-	remaining := session.ListInterests()
-	session.log.WithField("calls", remaining).Info("Done, waiting for calls to complete")
-	for _, interstCallId := range remaining {
-		c, ok := sp.jobs.Load(interstCallId)
-		if ok {
-			<-c.(*Call).ctx.Done()
-		}
+
+	if lastCall != nil {
+		session.log.Info("waiting for last call to complete")
+		<-lastCall.doneCtx.Done()
 	}
+	session.log.Debug("Session finished")
 }

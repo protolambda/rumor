@@ -82,23 +82,28 @@ func (r *Actor) Close() {
 	r.actorCancel()
 }
 
-func (r *Actor) MakeCmd(log logrus.FieldLogger) *ActorCmd {
+func (r *Actor) MakeCmd(log logrus.FieldLogger, spawnCtx base.SpawnFn) *ActorCmd {
 	return &ActorCmd{
-		Actor: r,
-		Log:   log,
+		Actor:        r,
+		Log:          log,
+		SpawnContext: spawnCtx,
 	}
 }
 
 type ActorCmd struct {
 	*Actor
+	// To log things while the command runs, including spawned processes
 	Log logrus.FieldLogger
+	// For non-blocking tasks to end later. E.g. serving data in the background.
+	SpawnContext base.SpawnFn
 }
 
 func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	b := &base.Base{
 		WithHost:      &c.HostState,
 		GlobalContext: c.GlobalCtx,
-		BaseContext:   c.ActorCtx,
+		ActorContext:  c.ActorCtx,
+		SpawnContext:  c.SpawnContext,
 		Log:           c.Log,
 	}
 	switch route {

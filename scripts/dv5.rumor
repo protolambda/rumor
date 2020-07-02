@@ -2,9 +2,9 @@ alice: host start --priv=4fbdc938929d6286339ff996c7d5d374bb11b3d624ee2761af10a4c
 bob: host start
 charlie: host start
 
-alice: bg host notify all
-bob: bg host notify all
-charlie: bg host notify all
+alice: host notify all
+bob: host notify all
+charlie: host notify all
 
 alice: host view
 
@@ -14,33 +14,37 @@ bob: host listen --ip=127.0.0.1 --tcp=9002
 charlie: host listen --ip=127.0.0.1 --tcp=9003
 
 # Start discv5
-alice: dv5 start
-bob: dv5 start
-charlie: dv5 start
+alice_dv5> alice: dv5 run
+bob_dv5> bob: dv5 run
+charlie_dv5> charlie: dv5 run
 
 alice_view> alice: host view
 
 # TODO: no variables in rumor scripting yet. Can use python (Pyrum) instead, or maybe worth the change here?
 
-# Connect Bob and Charlie to Alice (bootnode)
-bob: peer connect enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
-charlie: peer connect enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
-
 # Ping alice both, make sure Alice is aware of Bob and Charlie
-bob: dv5 ping enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
-charlie: dv5 ping enr:-Iu4QGnmxy5Xpgg1npiugO5QjVTMwJ5TBLI_TdycWPb1PteCVxeV__D5Mu4lKfG51hqHPiI5KHg2OCWXR3UddkZL-jOAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMo
+bob: dv5 ping enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
+charlie: dv5 ping enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
 
 # TODO: need syntax + implementation for explicit waiting for a log event
 # Let's see if Bob can find Charlie through Alice
-find_nodes> bob: bg dv5 random --add=true
+find_nodes> bob: dv5 random --add=true
 
 debug sleep 20s
 
+find_nodes> cancel
+
+# TODO
+#alice_dv5> mute
+#bob_dv5> mute
+#charlie_dv5> mute
+
+
 #find_nodes.nodes>> timeout 10s
 
-bob: peer list all --details
-alice: peer list all --details
+#bob: peer list all --details
 charlie: peer list all --details
+alice: peer list all --details
 
 alice: kill
 bob: kill

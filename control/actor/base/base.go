@@ -8,12 +8,19 @@ import (
 	"net"
 )
 
+// SpawnFn spawns background tasks.
+// Ctx is used to terminate spawned resources.
+// Done is called after the spawned resources are fully freed.
+type SpawnFn func() (ctx context.Context, done context.CancelFunc)
+
 type Base struct {
 	WithHost
 	// Shared between actors
 	GlobalContext context.Context
 	// For actor
-	BaseContext context.Context
+	ActorContext context.Context
+	// For non-blocking tasks to end later. E.g. serving data in the background.
+	SpawnContext SpawnFn
 	// For command
 	Log logrus.FieldLogger
 }

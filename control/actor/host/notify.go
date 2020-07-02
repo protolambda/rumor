@@ -120,11 +120,12 @@ func (c *HostNotifyCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 	h.Network().Notify(bundle)
-	select {
-	case <-ctx.Done():
-	case <-c.BaseContext.Done():
-	}
-	h.Network().StopNotify(bundle)
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+		h.Network().StopNotify(bundle)
+		freed()
+	}()
 	return nil
 }
 

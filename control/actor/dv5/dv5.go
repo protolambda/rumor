@@ -28,10 +28,8 @@ type Dv5Cmd struct {
 
 func (c *Dv5Cmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
-	case "start":
-		cmd = &Dv5StartCmd{Base: c.Base, Dv5State: c.Dv5State, WithPriv: c.WithPriv}
-	case "stop":
-		cmd = &Dv5StopCmd{Base: c.Base, Dv5State: c.Dv5State}
+	case "run":
+		cmd = &Dv5RunCmd{Base: c.Base, Dv5State: c.Dv5State, WithPriv: c.WithPriv}
 	case "ping":
 		cmd = &Dv5PingCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "resolve":
@@ -51,7 +49,7 @@ func (c *Dv5Cmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *Dv5Cmd) Routes() []string {
-	return []string{"start", "stop", "ping", "resolve", "request", "lookup", "random", "self"}
+	return []string{"run", "ping", "resolve", "request", "lookup", "random", "self"}
 }
 
 func (c *Dv5Cmd) Help() string {

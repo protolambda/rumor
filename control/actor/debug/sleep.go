@@ -20,13 +20,20 @@ func (c *DebugSleepCmd) Default() {
 }
 
 func (c *DebugSleepCmd) Run(ctx context.Context, args ...string) error {
-	c.Log.Infoln("started sleeping for duration %s!", c.Time.String())
-	sleepCtx, _ := context.WithTimeout(ctx, c.Time)
-	<-sleepCtx.Done()
-	if ctx.Err() == nil {
-		c.Log.Infoln("done sleeping!")
+	if c.Time != 0 {
+		c.Log.Infof("started sleeping for duration %s!", c.Time.String())
+		ticker := time.NewTicker(c.Time)
+		select {
+		case <-ticker.C:
+			c.Log.Infoln("done sleeping!")
+			break
+		case <-ctx.Done():
+			c.Log.Infof("stopped sleep, exit early: %v", ctx.Err())
+			break
+		}
+		ticker.Stop()
 	} else {
-		c.Log.Infof("stopped sleep, exit early: %v", ctx.Err())
+		c.Log.Warn("cannot sleep for 0 duration")
 	}
 	return nil
 }

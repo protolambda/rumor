@@ -11,17 +11,17 @@ import (
 	"github.com/protolambda/rumor/p2p/peering/dv5"
 )
 
-type Dv5StartCmd struct {
+type Dv5RunCmd struct {
 	*base.Base
 	*Dv5State
 	WithPriv
 }
 
-func (c *Dv5StartCmd) Help() string {
-	return "Start discv5."
+func (c *Dv5RunCmd) Help() string {
+	return "Run discv5, spawned as a background process."
 }
 
-func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
+func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 	_, err := c.Host()
 	if err != nil {
 		return err
@@ -48,6 +48,17 @@ func (c *Dv5StartCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	log.Info("Started discv5")
+	c.Log.Info("Started discv5")
+
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+
+		c.Dv5State.Dv5Node.Close()
+		c.Dv5State.Dv5Node = nil
+		log.Info("Stopped discv5")
+
+		freed()
+	}()
 	return nil
 }

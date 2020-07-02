@@ -148,7 +148,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 		libp2p.UserAgent(c.UserAgent),
 	)
 	// Not the command ctx, we want the host to stay open after the command.
-	h, err := libp2p.New(c.BaseContext, hostOptions...)
+	h, err := libp2p.New(c.ActorContext, hostOptions...)
 	if err != nil {
 		return err
 	}
