@@ -70,8 +70,14 @@ func (c *PeerStatusServeCmd) Run(ctx context.Context, args ...string) error {
 		prot += protocol.ID("_" + comp.Name())
 	}
 	h.SetStreamHandler(prot, streamHandler)
-	c.Log.WithField("started", true).Info("Opened listener")
-	<-ctx.Done()
-	h.RemoveStreamHandler(prot)
+	c.Log.WithField("started", true).Info("Started serving status")
+
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+		h.RemoveStreamHandler(prot)
+		c.Log.WithField("stopped", true).Infof("Stopped serving status")
+		freed()
+	}()
 	return nil
 }

@@ -65,8 +65,14 @@ func (c *PeerMetadataServeCmd) Run(ctx context.Context, args ...string) error {
 		prot += protocol.ID("_" + comp.Name())
 	}
 	h.SetStreamHandler(prot, streamHandler)
-	c.Log.WithField("started", true).Info("Opened listener")
-	<-ctx.Done()
-	h.RemoveStreamHandler(prot)
+	c.Log.WithField("started", true).Info("Started serving metadata")
+
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+		h.RemoveStreamHandler(prot)
+		c.Log.WithField("stopped", true).Infof("Stopped serving metadata")
+		freed()
+	}()
 	return nil
 }

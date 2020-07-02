@@ -124,7 +124,13 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 	streamHandler := method.MakeStreamHandler(sCtxFn, c.Compression.Compression, listenReq)
 	h.SetStreamHandler(prot, streamHandler)
 	c.Log.WithField("started", true).Infof("Started by-range serving")
-	<-ctx.Done()
-	h.RemoveStreamHandler(prot)
+
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+		h.RemoveStreamHandler(prot)
+		c.Log.WithField("stopped", true).Infof("Stopped by-range serving")
+		freed()
+	}()
 	return nil
 }

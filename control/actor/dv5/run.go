@@ -15,6 +15,7 @@ type Dv5RunCmd struct {
 	*base.Base
 	*Dv5State
 	WithPriv
+	Bootnodes []string `ask:"[bootnodes]" help:"Bootnodes for dv5"`
 }
 
 func (c *Dv5RunCmd) Help() string {
@@ -36,9 +37,9 @@ func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 	if c.Dv5State.Dv5Node != nil {
 		return fmt.Errorf("Already have dv5 open at %s", c.Dv5State.Dv5Node.Self().String())
 	}
-	bootNodes := make([]*enode.Node, 0, len(args))
-	for i := 1; i < len(args); i++ {
-		dv5Addr, err := addrutil.ParseEnrOrEnode(args[i])
+	bootNodes := make([]*enode.Node, 0, len(c.Bootnodes))
+	for i := 1; i < len(c.Bootnodes); i++ {
+		dv5Addr, err := addrutil.ParseEnrOrEnode(c.Bootnodes[i])
 		if err != nil {
 			return err
 		}

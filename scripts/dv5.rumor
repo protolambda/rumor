@@ -28,23 +28,24 @@ charlie: dv5 ping enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eA
 
 # TODO: need syntax + implementation for explicit waiting for a log event
 # Let's see if Bob can find Charlie through Alice
-find_nodes> bob: dv5 random --add=true
+alice_find_nodes> bob: dv5 random --add=true
+bob_find_nodes> bob: dv5 random --add=true
+charlie_find_nodes> bob: dv5 random --add=true
 
 debug sleep 20s
 
-find_nodes> cancel
+alice_find_nodes> cancel
+bob_find_nodes> cancel
+charlie_find_nodes> cancel
 
 # TODO
 #alice_dv5> mute
 #bob_dv5> mute
 #charlie_dv5> mute
 
-
-#find_nodes.nodes>> timeout 10s
-
-#bob: peer list all --details
-charlie: peer list all --details
 alice: peer list all --details
+bob: peer list all --details
+charlie: peer list all --details
 
 alice: kill
 bob: kill

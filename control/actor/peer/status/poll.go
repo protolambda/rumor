@@ -35,40 +35,47 @@ func (c *PeerStatusPollCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	for {
-		start := time.Now()
-		var wg sync.WaitGroup
 
-		// apply timeout to each poll target in this round
-		reqCtx, _ := context.WithTimeout(ctx, c.Interval)
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		for {
+			start := time.Now()
+			var wg sync.WaitGroup
 
-		for _, p := range h.Network().Peers() {
-			wg.Add(1)
-			go func(peerID peer.ID) {
-				pingCmd := &PeerStatusReqCmd{
-					Base:            c.Base,
-					PeerStatusState: c.PeerStatusState,
-					Timeout:         c.Timeout,
-					Compression:     c.Compression,
-					PeerID:          flags.PeerIDFlag{PeerID: peerID},
-				}
-				if err := pingCmd.Run(reqCtx); err != nil {
-					c.Log.WithField("peer", peerID.String()).WithError(err).Warn("failed to poll peer")
-				}
+			// apply timeout to each poll target in this round
+			reqCtx, _ := context.WithTimeout(ctx, c.Interval)
 
-				wg.Done()
-			}(p)
+			for _, p := range h.Network().Peers() {
+				wg.Add(1)
+				go func(peerID peer.ID) {
+					pingCmd := &PeerStatusReqCmd{
+						Base:            c.Base,
+						PeerStatusState: c.PeerStatusState,
+						Timeout:         c.Timeout,
+						Compression:     c.Compression,
+						PeerID:          flags.PeerIDFlag{PeerID: peerID},
+					}
+					if err := pingCmd.Run(reqCtx); err != nil {
+						c.Log.WithField("peer", peerID.String()).WithError(err).Warn("failed to poll peer")
+					}
+
+					wg.Done()
+				}(p)
+			}
+			wg.Wait()
+			pollStepDuration := time.Since(start)
+			if pollStepDuration < c.Interval {
+				time.Sleep(c.Interval - pollStepDuration)
+			}
+			select {
+			case <-spCtx.Done():
+				c.Log.WithField("stopped", true).Infof("Stopped polling")
+				freed()
+				return
+			default:
+				// next interval
+			}
 		}
-		wg.Wait()
-		pollStepDuration := time.Since(start)
-		if pollStepDuration < c.Interval {
-			time.Sleep(c.Interval - pollStepDuration)
-		}
-		select {
-		case <-ctx.Done():
-			return nil
-		default:
-			// next interval
-		}
-	}
+	}()
+	return nil
 }

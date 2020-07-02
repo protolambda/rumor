@@ -85,7 +85,12 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 	streamHandler := c.Method.MakeStreamHandler(sCtxFn, c.Compression.Compression, listenReq)
 	h.SetStreamHandler(prot, streamHandler)
 	c.Log.WithField("started", true).Infof("Opened listener")
-	<-ctx.Done()
-	h.RemoveStreamHandler(prot)
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+		h.RemoveStreamHandler(prot)
+		c.Log.WithField("stopped", true).Infof("Stopped listener")
+		freed()
+	}()
 	return nil
 }

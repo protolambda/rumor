@@ -98,7 +98,15 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 		prot += protocol.ID("_" + comp.Name())
 	}
 	h.SetStreamHandler(prot, streamHandler)
-	c.Log.WithField("started", true).Info("Opened listener")
-	<-ctx.Done()
+	c.Log.WithField("started", true).Info("Started serving pongs")
+
+	spCtx, freed := c.SpawnContext()
+	go func() {
+		<-spCtx.Done()
+		h.RemoveStreamHandler(prot)
+		c.Log.WithField("stopped", true).Infof("Stopped serving pongs")
+		freed()
+	}()
+
 	return nil
 }
