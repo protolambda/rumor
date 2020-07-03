@@ -35,6 +35,9 @@ type Session struct {
 	ctx            context.Context
 	cancelSelf     context.CancelFunc
 
+	// if commands block, i.e. nicely wait for them to finish before freeing the runner for the next command.
+	blocking bool
+
 	callCounter   uint64
 	requestedExit bool
 }
@@ -50,6 +53,7 @@ func newSession(id SessionID, ctx context.Context, log logrus.FieldLogger, globa
 		runner:     nil,
 		ctx:        ctx,
 		cancelSelf: cancel,
+		blocking:   true,
 	}
 	// ugly hack to map internal std-out and std-err to the log of the session, and to ignore std-in.
 	// it ignores whitespace to avoid extra unnecessary log-entries.
@@ -91,6 +95,10 @@ func (sess *Session) Run(ctx context.Context, node syntax.Node) error {
 		return sess.Close()
 	}
 	return err
+}
+
+func (sess *Session) SetBlocking(blocking bool) {
+	sess.blocking = blocking
 }
 
 func (sess *Session) Close() error {
@@ -152,11 +160,12 @@ func (sess *Session) Done() <-chan struct{} {
 
 // RunCmd implements interp.ExecHandlerFunc
 func (sess *Session) RunCmd(ctx context.Context, args []string) error {
-	fmt.Printf("args: %s\n", strings.Join(args, " "))
 	var actorName actor.ActorID
 	var customCallID CallID
+	logLvl := logrus.DebugLevel
 	{
-		var actorStr, customCallIDStr, logLvlStr string
+		changedLogLvl := false
+		var actorStr, customCallIDStr string
 		skip := 0
 		for _, arg := range args {
 			if len(arg) == 0 {
@@ -168,8 +177,13 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			} else if strings.HasPrefix(arg, "_") && strings.HasSuffix(arg, "_") && customCallIDStr == "" {
 				customCallIDStr = arg[1 : len(arg)-1]
 				skip++
-			} else if logLvlStr == "" && arg == "trace" { // TODO other log levels
-				logLvlStr = arg
+			} else if !changedLogLvl && strings.HasPrefix(arg, "lvl_") {
+				var err error
+				logLvl, err = logrus.ParseLevel(arg[4:])
+				if err != nil {
+					break
+				}
+				changedLogLvl = true
 				skip++
 			} else {
 				break
@@ -179,13 +193,8 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		if actorStr == "" {
 			actorStr = "DEFAULT_ACTOR"
 		}
-		if logLvlStr == "" {
-			logLvlStr = "TRACE"
-		}
-
 		actorName = actor.ActorID(actorStr)
 		customCallID = CallID(customCallIDStr)
-		// TODO log level
 	}
 
 	// TODO option to cancel last call
@@ -217,12 +226,14 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 	if callID == "" {
 		callID = sess.NewCallID()
 	}
-	sess.SetInterest(callID, logrus.TraceLevel)
+	sess.SetInterest(callID, logLvl)
 
 	// We remember the last call, even though we wait for it to be done,
 	// since we may want to cancel/modify its spawned background processes, without having to specify the call ID again.
 	sess.lastCall = sess.global.MakeCall(actorName, callID, args)
-	<-sess.lastCall.doneCtx.Done()
+	if sess.blocking {
+		<-sess.lastCall.doneCtx.Done()
+	}
 
 	// TODO: could change exit code with special error return here.
 	return nil

@@ -6,7 +6,6 @@ import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
-	"strings"
 	"sync"
 	"time"
 )
@@ -125,8 +124,6 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 	cmdCtx, cmdCancel := context.WithCancel(doneCtx)
 	spawnCtx, spawnCancel := context.WithCancel(freeCtx)
 
-	fmt.Printf("%s: %v\n", actorName, cmdArgs)
-
 	cmdLogger := sp.log.WithField("actor", actorName).WithField("call_id", callID)
 
 	call := &Call{
@@ -148,7 +145,7 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 
 	callCmd := rep.MakeCmd(cmdLogger, call.Spawn)
 
-	cmdLogger.Infof("Started! %s: %s", actorName, strings.Join(cmdArgs, " "))
+	cmdLogger.WithField("args", cmdArgs).Trace("Started")
 
 	loadedCmd, err := ask.Load(callCmd)
 	if err != nil {
@@ -159,7 +156,6 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 	} else {
 		sp.jobs.Store(callID, call)
 		go func() {
-			cmdLogger.Tracef("Running! %s: ['%s']", actorName, strings.Join(cmdArgs, "', '"))
 			fCmd, isHelp, err := loadedCmd.Execute(cmdCtx, cmdArgs...)
 			if err != nil {
 				cmdLogger.WithError(err).Error("exited with error")
@@ -174,14 +170,12 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 			doneCancel()
 			// If nothing was spawned, we can free the command early
 			if !call.spawned {
-				cmdLogger.Trace("Command is done, no background resources were spawned")
 				freeCancel()
 			} else {
-				cmdLogger.Trace("Waiting for background tasks to be freed")
-				// Wait for command to free
+				// Waiting for background tasks to be freed
 				<-freeCtx.Done()
 			}
-			cmdLogger.Trace("Finished, including optional spawned resources, removing call now")
+			// Finished, including optional spawned resources, removing call now
 			sp.RemoveInterests(callID)
 			sp.jobs.Delete(callID)
 		}()

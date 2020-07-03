@@ -130,6 +130,13 @@ alice: host view
 bob: peer connect <ENR from alice>
 ```
 
+### Log levels
+
+The loglevel individual commands can be changed with the `lvl_{name}` proxy commands.
+`name` can be any of `trace, debug, info, warn, error, fatal, panic`
+E.g. `lvl_warn peer connect` to ignore most logs, except warnings and higher-severity errors.
+
+
 ### Call IDs
 
 By surrounding a command with `_`, like `_{my-call-id}_`, you can see which logs are a result of the given call `{my-call-id}`,

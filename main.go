@@ -633,7 +633,7 @@ func main() {
 				})
 			},
 		}
-		shellCmd.Flags().StringVar(&level, "level", "trace", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
+		shellCmd.Flags().StringVar(&level, "level", "debug", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
 
 		mainCmd.AddCommand(shellCmd)
 	}
