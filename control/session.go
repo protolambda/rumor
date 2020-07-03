@@ -8,6 +8,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -40,6 +41,8 @@ type Session struct {
 	cancelSelf     context.CancelFunc
 	parentEnv      expand.Environ
 
+	includesParser *syntax.Parser
+
 	defaultActorID actor.ActorID
 
 	// if commands block, i.e. nicely wait for them to finish before freeing the runner for the next command.
@@ -52,16 +55,18 @@ type Session struct {
 func newSession(id SessionID, ctx context.Context, parentEnv expand.Environ, log logrus.FieldLogger, global EnvGlobal) *Session {
 	ctx, cancel := context.WithCancel(ctx)
 	sess := &Session{
-		global:     global,
-		sessionID:  id,
-		lastCall:   nil,
-		interests:  make(map[CallID]logrus.Level),
-		log:        log,
-		runner:     nil,
-		ctx:        ctx,
-		cancelSelf: cancel,
-		parentEnv:  parentEnv,
-		blocking:   true,
+		global:         global,
+		sessionID:      id,
+		lastCall:       nil,
+		interests:      make(map[CallID]logrus.Level),
+		log:            log,
+		runner:         nil,
+		ctx:            ctx,
+		cancelSelf:     cancel,
+		parentEnv:      parentEnv,
+		blocking:       true,
+		defaultActorID: "DEFAULT_ACTOR_ID",
+		includesParser: syntax.NewParser(),
 	}
 	// ugly hack to map internal std-out and std-err to the log of the session, and to ignore std-in.
 	// it ignores whitespace to avoid extra unnecessary log-entries.
@@ -203,6 +208,21 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		customCallID = CallID(customCallIDStr)
 	}
 
+	if len(args) >= 1 && args[0] == "include" {
+		if len(args) != 2 {
+			sess.log.Errorf("Bad 'include' usage. Need a single script path, got %v.", args[1:])
+			return ParseError.ExitErr()
+		}
+		// Temporarily change the default actor, to whatever the include was called with.
+		// This makes running a snippet with a different default actor a one-liner: `bob: include some_task.rumor`
+		prevActor := sess.defaultActorID
+		sess.defaultActorID = actorName
+		defer func() {
+			sess.defaultActorID = prevActor
+		}()
+		return sess.RunInclude(ctx, args[1])
+	}
+
 	if len(args) == 1 && args[0] == "cancel" {
 		sess.lastCall.Close()
 		return sess.lastCall.exitReason.ExitErr()
@@ -252,6 +272,25 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 	return sess.lastCall.exitReason.ExitErr()
 }
 
+func (sess *Session) RunInclude(ctx context.Context, includePath string) error {
+	inputFile, err := os.Open(includePath)
+	if err != nil {
+		sess.log.WithField("include", includePath).WithError(err).Error("failed to open included rumor script")
+		return RuntimeError.ExitErr()
+	}
+
+	fileDoc, err := sess.includesParser.Parse(inputFile, includePath)
+	_ = inputFile.Close()
+
+	if err != nil {
+		return ParseError.ExitErr()
+	}
+
+	subShell := sess.runner.Subshell()
+	sess.log.WithField("include", includePath).Info("Running included rumor script")
+	return subShell.Run(ctx, fileDoc)
+}
+
 func (sess *Session) RunNonRumorCmd(ctx context.Context, args []string) error {
 	// TODO: by modifying the handler-context in `ctx`
 	// (get with interp.HandlerCtx(ctx)) things like std in/out and environment can be modified.
@@ -277,13 +316,13 @@ func (sess *Session) Get(name string) expand.Variable {
 		if ok {
 			// if it's just a string, like most data, then avoid reflection and just return it.
 			if vStr, ok := val.(string); ok {
-				return expand.Variable{Exported: true, Kind: expand.String, Str: vStr}
+				return expand.Variable{Exported: true, Kind: expand.String, ReadOnly: true, Str: vStr}
 			}
 			if vMap, ok := val.(map[string]string); ok {
-				return expand.Variable{Exported: true, Kind: expand.Associative, Map: vMap}
+				return expand.Variable{Exported: true, Kind: expand.Associative, ReadOnly: true, Map: vMap}
 			}
 			if vList, ok := val.([]string); ok {
-				return expand.Variable{Exported: true, Kind: expand.Indexed, List: vList}
+				return expand.Variable{Exported: true, Kind: expand.Indexed, ReadOnly: true, List: vList}
 			}
 			// Do some extra work with reflection for non-string types. To e.g. enable iteration over a list of peers.
 			v := reflect.ValueOf(val)
@@ -296,17 +335,20 @@ func (sess *Session) Get(name string) expand.Variable {
 					kStr := fmt.Sprintf("%v", iter.Key().Interface())
 					dat[kStr] = fmt.Sprintf("%v", iter.Value().Interface())
 				}
-				return expand.Variable{Exported: true, Kind: expand.Associative, Map: dat}
+				return expand.Variable{Exported: true, Kind: expand.Associative, ReadOnly: true, Map: dat}
 			case reflect.Slice:
 				dat := make([]string, v.Len(), v.Len())
 				for i := 0; i < len(dat); i++ {
 					dat[i] = fmt.Sprintf("%v", v.Index(i).Interface())
 				}
-				return expand.Variable{Exported: true, Kind: expand.Indexed, List: dat}
+				return expand.Variable{Exported: true, Kind: expand.Indexed, ReadOnly: true, List: dat}
 			default:
-				return expand.Variable{Exported: true, Kind: expand.String, Str: fmt.Sprintf("%v", val)}
+				return expand.Variable{Exported: true, Kind: expand.String, ReadOnly: true, Str: fmt.Sprintf("%v", val)}
 			}
 		}
+	}
+	if name == "ACTOR" {
+		return expand.Variable{Exported: true, Kind: expand.String, ReadOnly: true, Str: string(sess.defaultActorID)}
 	}
 	return sess.parentEnv.Get(name)
 }

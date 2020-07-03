@@ -136,6 +136,28 @@ To change the default actor, use the `me` command:
 protolambda: me
 ```
 
+The environment var `ACTOR` is reserved and always points to the current default actor name
+ (not to what the command may say, which is evaluated later).
+
+### Includes
+
+Writing some things may become repetitive.
+To not repeat yourself, while still getting the same results as typing it yourself, you can use `include` to run rumor files.
+
+`host.rumor`
+```
+host start
+host notify all
+# maybe start some other tasks
+```
+
+Then, in a shell, or in another rumor file:
+```
+# The include will use the new default actor
+alice: me
+include host.rumor
+alice: host view
+```
 
 ### Log levels
 
