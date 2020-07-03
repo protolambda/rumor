@@ -99,10 +99,15 @@ func (sess *Session) Close() error {
 	sess.requestedExit = true
 	sess.cancelSelf()
 	if sess.lastCall != nil {
-		sess.log.Debug("Waiting for last open call before exiting")
-		<-sess.lastCall.doneCtx.Done()
+		sess.log.Debug("Closing last call before exiting")
+		sess.lastCall.Close()
+		sess.lastCall = nil
 	}
 	return nil
+}
+
+func (sess *Session) Exited() bool {
+	return sess.requestedExit
 }
 
 func (sess *Session) NewCallID() CallID {

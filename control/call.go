@@ -57,6 +57,9 @@ func (c *Call) Spawn() (ctx context.Context, done context.CancelFunc) {
 
 // Close the call gracefully, blocking until it is freed
 func (c *Call) Close() {
+	if c == nil {
+		return
+	}
 	// stop command, and wait gracefully for it to be done
 	c.cancel()
 	<-c.doneCtx.Done()

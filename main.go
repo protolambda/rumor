@@ -396,6 +396,9 @@ func main() {
 								log.WithError(err).Error("failed to run statement")
 								return false
 							}
+							if sess.Exited() {
+								return false
+							}
 						}
 						return true
 					}); err != nil {
@@ -572,6 +575,9 @@ func main() {
 							log.WithError(err).Error("failed to run statement")
 							return false
 						}
+						if sess.Exited() {
+							return false
+						}
 					}
 					return true
 				}); err != nil {
@@ -605,10 +611,12 @@ func main() {
 							fmt.Printf("incomplete! (%v)\n", stmts)
 							return true
 						}
-						fmt.Printf("processing! (%v)\n", stmts)
 						for _, stmt := range stmts {
 							if err := sess.Run(context.Background(), stmt); err != nil {
 								log.WithError(err).Error("failed to run statement")
+								return false
+							}
+							if sess.Exited() {
 								return false
 							}
 						}
