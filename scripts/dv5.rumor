@@ -23,11 +23,6 @@ alice: dv5 run
 bob: dv5 run run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
 charlie: dv5 run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
 
-echo "fun!"
-
-# TODO: no variables in rumor scripting yet. Can use python (Pyrum) instead, or maybe worth the change here?
-# TODO: need syntax + implementation for explicit waiting for a log event to check results better
-
 # Let's see if Bob can find Charlie through Alice
 _alice_find_nodes_ bob: dv5 random --add=true
 _bob_find_nodes_ bob: dv5 random --add=true
