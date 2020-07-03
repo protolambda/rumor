@@ -16,27 +16,28 @@ bob: host listen --ip=127.0.0.1 --tcp=9002
 charlie: host listen --ip=127.0.0.1 --tcp=9003
 
 # Where the Alice ENR comes from
-alice_view> alice: host view
+_alice_view_ alice: host view
 
 # Start discv5 (with alice as bootnode passed to bob and charlie)
-alice_dv5> alice: dv5 run
-bob_dv5> bob: dv5 run run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
-charlie_dv5> charlie: dv5 run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
+alice: dv5 run
+bob: dv5 run run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
+charlie: dv5 run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
 
+echo "fun!"
 
 # TODO: no variables in rumor scripting yet. Can use python (Pyrum) instead, or maybe worth the change here?
 # TODO: need syntax + implementation for explicit waiting for a log event to check results better
 
 # Let's see if Bob can find Charlie through Alice
-alice_find_nodes> bob: dv5 random --add=true
-bob_find_nodes> bob: dv5 random --add=true
-charlie_find_nodes> bob: dv5 random --add=true
+_alice_find_nodes_ bob: dv5 random --add=true
+_bob_find_nodes_ bob: dv5 random --add=true
+_charlie_find_nodes_ bob: dv5 random --add=true
 
 debug sleep 20s
 
-alice_find_nodes> cancel
-bob_find_nodes> cancel
-charlie_find_nodes> cancel
+_alice_find_nodes_ cancel
+_bob_find_nodes_ cancel
+_charlie_find_nodes_ cancel
 
 alice: peer list all --details
 bob: peer list all --details

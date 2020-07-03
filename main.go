@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"io"
+	"mvdan.cc/sh/v3/syntax"
 	"net"
 	"net/http"
 	"net/url"
@@ -106,14 +107,14 @@ func (t *TimedWsOut) Write(b []byte) (n int, err error) {
 }
 
 func main() {
-	fromFilepath := ""
 
 	mainCmd := cobra.Command{
 		Use:   "rumor",
 		Short: "Start Rumor",
 	}
 
-	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine control.NextLineFn)) {
+	// multi-line inputs end each intermediate line with "\"
+	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine control.NextMultiLineFn)) {
 		log := logrus.New()
 		log.SetOutput(os.Stdout)
 		log.SetLevel(logrus.TraceLevel)
@@ -138,24 +139,51 @@ func main() {
 			}
 			log.SetLevel(logLevel)
 		}
+		startPrompt := "\033[31m»\033[0m "
+		multilinePrompt := "\033[31m>>> \033[0m "
 
-		l, err := readline.NewEx(&readline.Config{
-			Prompt:              "\033[31m»\033[0m ",
-			HistoryFile:         "/tmp/rumor-history.tmp",
-			InterruptPrompt:     "^C",
-			EOFPrompt:           "exit",
-			HistorySearchFold:   true,
-			FuncFilterInputRune: filterInput,
+		rl, err := readline.NewEx(&readline.Config{
+			Prompt:                 startPrompt,
+			HistoryFile:            "/tmp/rumor-history.tmp",
+			InterruptPrompt:        "^C",
+			EOFPrompt:              "exit",
+			HistorySearchFold:      true,
+			FuncFilterInputRune:    filterInput,
+			DisableAutoSaveHistory: true, // disabled to deal with multi-line history better
 		})
 		if err != nil {
 			log.Error(err)
 			return
 		}
-		defer l.Close()
-		run(log, l.Readline)
+		defer rl.Close()
+		// re-use commands buffer
+		var cmds []string
+		readMultiLine := control.NextMultiLineFn(func() (string, error) {
+			for {
+				line, err := rl.Readline()
+				if err != nil {
+					return "", err
+				}
+				line = strings.TrimSpace(line)
+				if len(line) == 0 {
+					continue
+				}
+				cmds = append(cmds, line)
+				if strings.HasSuffix(line, " \\") {
+					rl.SetPrompt(multilinePrompt)
+					continue
+				}
+				cmd := strings.Join(cmds, " ")
+				cmds = cmds[:0]
+				rl.SetPrompt(startPrompt)
+				_ = rl.SaveHistory(cmd)
+				return cmd, nil
+			}
+		})
+		run(log, readMultiLine)
 	}
 
-	feedLog := func(log logrus.FieldLogger, nextLogLine control.NextLineFn, stopped *bool) {
+	feedLog := func(log logrus.FieldLogger, nextLogLine control.NextSingleLineFn, stopped *bool) {
 		for {
 			line, err := nextLogLine()
 			if err != nil {
@@ -191,7 +219,7 @@ func main() {
 		}
 	}
 
-	asLineReader := func(r io.Reader) control.NextLineFn {
+	asLineReader := func(r io.Reader) control.NextSingleLineFn {
 		sc := bufio.NewScanner(r)
 		return func() (s string, err error) {
 			hasMore := sc.Scan()
@@ -216,8 +244,8 @@ func main() {
 			Short: "Attach to a running rumor server",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextLineFn) {
-					var nextLogLine control.NextLineFn
+				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn) {
+					var nextLogLine control.NextSingleLineFn
 					var writeLine func(v string) error
 					if wsAddr != "" {
 						u, err := url.Parse(wsAddr)
@@ -269,13 +297,14 @@ func main() {
 						defer netInput.Close()
 					} else {
 						log.Fatal("Cannot attach to Rumor, no endpoint was specified. Try --ipc, --tcp or --ws")
+						return
 					}
 
 					stopped := false
 					// Take the log of the net input, and feed it into our shell log
 					go feedLog(log, nextLogLine, &stopped)
 
-					// Take the input of our shell log, and feed it to the net connection
+					// Take the input of our shell, and feed it to the net connection
 					for {
 						line, err := nextLine()
 						if err != nil {
@@ -347,43 +376,55 @@ func main() {
 				sp := control.NewSessionProcessor(log)
 
 				adminLog := log
-				newSession := func(c net.Conn) {
+
+				newSession := func(w io.Writer, r io.Reader, addr string) {
 					log := logrus.New()
-					log.SetOutput(&TimedNetOut{c: c, timeout: UserWriteTimeout})
+					log.SetOutput(w)
 					log.SetLevel(logrus.TraceLevel)
 					log.SetFormatter(&logrus.JSONFormatter{})
 
-					addr := c.RemoteAddr().String() + "/" + c.RemoteAddr().Network()
 					adminLog.WithField("addr", addr).Info("new user session")
 
-					userInputLines := asLineReader(c)
-
-					timedUserInputLines := func() (s string, err error) {
-						// Reset read-deadline.
-						err = c.SetReadDeadline(time.Now().Add(UserReadTimeout))
-						if err != nil {
-							return "", err
+					sess := sp.NewSession(log)
+					parser := syntax.NewParser()
+					if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
+						if parser.Incomplete() {
+							return true
 						}
-						return userInputLines()
+						for _, stmt := range stmts {
+							if err := sess.Run(context.Background(), stmt); err != nil {
+								log.WithError(err).Error("failed to run statement")
+								return false
+							}
+						}
+						return true
+					}); err != nil {
+						log.WithError(err).Error("failed to run input")
 					}
-
-					<-sp.NewSession(log, timedUserInputLines).Done()
+					<-sess.Done()
 
 					adminLog.WithField("addr", addr).Info("user session stopped")
 
+				}
+
+				newConnSession := func(c net.Conn) {
+					w := &TimedNetOut{c: c, timeout: UserWriteTimeout}
+					r := &control.ReadWithCallback{
+						Reader: c,
+						Callback: func() error {
+							// Reset read-deadline after every read
+							return c.SetReadDeadline(time.Now().Add(UserReadTimeout))
+						},
+					}
+					addr := c.RemoteAddr().String() + "/" + c.RemoteAddr().Network()
+					newSession(w, r, addr)
 					if err := c.Close(); err != nil {
 						log.Error(err)
 					}
 				}
 
 				newWsSession := func(c *websocket.Conn) {
-					log := logrus.New()
-					log.SetOutput(&TimedWsOut{c: c, timeout: UserWriteTimeout})
-					log.SetLevel(logrus.TraceLevel)
-					log.SetFormatter(&logrus.JSONFormatter{})
-
-					addr := c.RemoteAddr().String() + "/" + c.RemoteAddr().Network()
-					adminLog.WithField("addr", addr).Info("new user session")
+					w := &TimedWsOut{c: c, timeout: UserWriteTimeout}
 
 					timedUserInputLines := func() (s string, err error) {
 						// Reset read-deadline.
@@ -401,9 +442,10 @@ func main() {
 						return string(mContent), nil
 					}
 
-					<-sp.NewSession(log, timedUserInputLines).Done()
+					r := &control.LinesReader{Fn: timedUserInputLines}
+					addr := c.RemoteAddr().String() + "/" + c.RemoteAddr().Network()
 
-					adminLog.WithField("addr", addr).Info("user session stopped")
+					newSession(w, r, addr)
 
 					if err := c.Close(); err != nil {
 						log.Error(err)
@@ -441,7 +483,7 @@ func main() {
 							}
 							log.Error("Network connection accept error: ", err)
 						}
-						go newSession(c)
+						go newConnSession(c)
 					}
 				}
 				if ipcInput != nil {
@@ -476,18 +518,41 @@ func main() {
 	}
 
 	{
-		bareCmd := &cobra.Command{
-			Use:   "bare [input-file]",
-			Short: "Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess. Optionally read input from a file instead of stdin.",
-			Args: func(cmd *cobra.Command, args []string) error {
-				if len(args) > 1 {
-					return fmt.Errorf("non-interactive mode cannot have more than 1 argument. Got: %s", strings.Join(args, " "))
+		fileCmd := &cobra.Command{
+			Use:   "file <input-file>",
+			Short: "Run rom a file",
+			Args:  cobra.ExactArgs(1),
+			Run: func(cmd *cobra.Command, args []string) {
+				log := logrus.New()
+				log.SetOutput(os.Stdout)
+				log.SetLevel(logrus.TraceLevel)
+				log.SetFormatter(&logrus.JSONFormatter{})
+
+				inputFile, err := os.Open(args[0])
+				if err != nil {
+					log.Error(err)
+					return
 				}
-				if len(args) == 1 {
-					fromFilepath = args[0]
+				defer inputFile.Close()
+				sp := control.NewSessionProcessor(log)
+				sess := sp.NewSession(log)
+				parser := syntax.NewParser()
+				fileDoc, err := parser.Parse(inputFile, "")
+				if err := sess.Run(context.Background(), fileDoc); err != nil {
+					log.WithError(err).Error("failed to run script")
 				}
-				return nil
+				sess.Close()
+				sp.Close()
 			},
+		}
+		mainCmd.AddCommand(fileCmd)
+	}
+
+	{
+		bareCmd := &cobra.Command{
+			Use:   "bare",
+			Short: "Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess.",
+			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
 				log := logrus.New()
 				log.SetOutput(os.Stdout)
@@ -495,18 +560,24 @@ func main() {
 				log.SetFormatter(&logrus.JSONFormatter{})
 
 				r := io.Reader(os.Stdin)
-				if fromFilepath != "" {
-					inputFile, err := os.Open(fromFilepath)
-					if err != nil {
-						log.Error(err)
-						return
-					}
-					r = inputFile
-					defer inputFile.Close()
-				}
-				nextLine := asLineReader(r)
 				sp := control.NewSessionProcessor(log)
-				<-sp.NewSession(log, nextLine).Done()
+				sess := sp.NewSession(log)
+				parser := syntax.NewParser()
+				if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
+					if parser.Incomplete() {
+						return true
+					}
+					for _, stmt := range stmts {
+						if err := sess.Run(context.Background(), stmt); err != nil {
+							log.WithError(err).Error("failed to run statement")
+							return false
+						}
+					}
+					return true
+				}); err != nil {
+					log.WithError(err).Error("failed to run input")
+				}
+				sess.Close()
 				sp.Close()
 			},
 		}
@@ -524,10 +595,33 @@ func main() {
 				return nil
 			},
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextLineFn) {
+				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn) {
 					sp := control.NewSessionProcessor(log)
-					<-sp.NewSession(log, nextLine).Done()
+					sess := sp.NewSession(log)
+					parser := syntax.NewParser()
+					r := &control.LinesReader{Fn: nextLine}
+					if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
+						if parser.Incomplete() {
+							fmt.Printf("incomplete! (%v)\n", stmts)
+							return true
+						}
+						fmt.Printf("processing! (%v)\n", stmts)
+						for _, stmt := range stmts {
+							if err := sess.Run(context.Background(), stmt); err != nil {
+								log.WithError(err).Error("failed to run statement")
+								return false
+							}
+						}
+						return true
+					}); err != nil {
+						if err != readline.ErrInterrupt {
+							log.WithError(err).Error("failed to run input")
+						}
+					}
+					sess.Close()
 					sp.Close()
+					// TODO exit codes
+					os.Exit(0)
 				})
 			},
 		}

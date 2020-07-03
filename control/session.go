@@ -40,7 +40,6 @@ type Session struct {
 }
 
 func newSession(id SessionID, ctx context.Context, log logrus.FieldLogger, global EnvGlobal) *Session {
-	// TODO
 	ctx, cancel := context.WithCancel(ctx)
 	sess := &Session{
 		global:     global,
@@ -52,11 +51,27 @@ func newSession(id SessionID, ctx context.Context, log logrus.FieldLogger, globa
 		ctx:        ctx,
 		cancelSelf: cancel,
 	}
-	// TODO err?
+	stdOutLog := log.WithField("dev", "out")
+	stdErrLog := log.WithField("dev", "err")
+	// ugly hack to map internal std-out and std-err to the log of the session, and to ignore std-in.
+	// it ignores whitespace to avoid extra unnecessary log-entries.
+	ioFns := interp.StdIO(nil,
+		WriteableFn(func(msg string) {
+			if strings.TrimSpace(msg) == "" {
+				return
+			}
+			stdOutLog.Info(msg)
+		}), WriteableFn(func(msg string) {
+			if strings.TrimSpace(msg) == "" {
+				return
+			}
+			stdErrLog.Error(msg)
+		}))
+	// never errors
 	sess.runner, _ = interp.New(
 		interp.ExecHandler(sess.RunCmd),
 		interp.Env(sess),
-		interp.StdIO(nil, nil, nil), // TODO: map stdout to info logs, stderr to error logs
+		ioFns,
 	)
 	return sess
 }
@@ -134,6 +149,7 @@ func (sess *Session) Done() <-chan struct{} {
 
 // RunCmd implements interp.ExecHandlerFunc
 func (sess *Session) RunCmd(ctx context.Context, args []string) error {
+	fmt.Printf("args: %s\n", strings.Join(args, " "))
 	var actorName actor.ActorID
 	var customCallID CallID
 	{
