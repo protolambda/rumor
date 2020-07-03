@@ -30,7 +30,7 @@ type SessionProcessor struct {
 	// a map like map[string]*actor.Actor
 	actors sync.Map
 
-	mainEnv     expand.Environ
+	mainEnv expand.Environ
 
 	// a map like map[CallID]*Call
 	ongoingCalls sync.Map
