@@ -40,6 +40,8 @@ type Session struct {
 	cancelSelf     context.CancelFunc
 	parentEnv      expand.Environ
 
+	defaultActorID actor.ActorID
+
 	// if commands block, i.e. nicely wait for them to finish before freeing the runner for the next command.
 	blocking bool
 
@@ -165,7 +167,7 @@ func (sess *Session) Done() <-chan struct{} {
 
 // RunCmd implements interp.ExecHandlerFunc
 func (sess *Session) RunCmd(ctx context.Context, args []string) error {
-	var actorName actor.ActorID
+	actorName := sess.defaultActorID
 	var customCallID CallID
 	logLvl := logrus.DebugLevel
 	{
@@ -195,10 +197,9 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			}
 		}
 		args = args[skip:]
-		if actorStr == "" {
-			actorStr = "DEFAULT_ACTOR"
+		if actorStr != "" {
+			actorName = actor.ActorID(actorStr)
 		}
-		actorName = actor.ActorID(actorStr)
 		customCallID = CallID(customCallIDStr)
 	}
 
@@ -221,6 +222,12 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 
 	if len(args) == 1 && args[0] == "clear_log_data" {
 		sess.global.ClearLogData()
+		return nil
+	}
+
+	if len(args) == 1 && args[0] == "me" {
+		sess.defaultActorID = actorName
+		sess.log.Infof("Changed default actor to %s", actorName)
 		return nil
 	}
 

@@ -130,6 +130,13 @@ alice: host view
 bob: peer connect <ENR from alice>
 ```
 
+To change the default actor, use the `me` command:
+
+```
+protolambda: me
+```
+
+
 ### Log levels
 
 The loglevel individual commands can be changed with the `lvl_{name}` proxy commands.
