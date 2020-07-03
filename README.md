@@ -139,24 +139,48 @@ E.g. `lvl_warn peer connect` to ignore most logs, except warnings and higher-sev
 
 ### Call IDs
 
-By surrounding a command with `_`, like `_{my-call-id}_`, you can see which logs are a result of the given call `{my-call-id}`,
+By prefixing a command with `_`, like `_{my-call-id}`, you can see which logs are a result of the given call `{my-call-id}`,
  even if interleaved with other logs (because of async results).
 The call-ID should be placed before the actor name.
 If no call-ID is specified, the call uses an incrementing counter for each new call.
-I.e. an auto-generated call ID, with just the session id and a number, the command is prefixed with e.g. `s42_123> `.
-Using such bare numbers as custom call-IDs is unsafe, as these call-IDs will overlap with the auto-generated IDs.
+I.e. an auto-generated call ID, with just the session id and a number, the command is prefixed with e.g. `s42_123`.
+Using such bare strings as custom call-IDs is unsafe, as these call-IDs will overlap with the auto-generated IDs.
 
 ```
-_my_call_ alice: host start
+_my_call alice: host start
 .... log output with call_id="my_call"
 
 # also valid, but not recommend:
-alice: _my_call_ host start
+alice: _my_call host start
 ```
 
 The call-ID is useful to correlate results, and for tooling that interacts with Rumor to get results.
 
 Also, to reference log-output in environment variables, the call IDs are very useful to select an exact variable.
+
+### Automatic environment variables
+
+Each log-entry will automatically be stored in the Rumor environment, to retrieve by its call ID.
+
+Example:
+```
+_my_call alice: host listen
+bob: peer connect _my_call_enr
+```
+
+And, the log entry variables of the last call in the session can be referenced with just `_` (and still separated with `_` from the log-entry name):
+
+Example:
+```
+alice: host listen
+bob: peer connect __enr
+```
+
+Both the call ID and the log entry name may contain multiple underscores. References to call IDs always start with a `_`.
+
+After running many calls, the environment may grow too big.
+To flush it, run `clear_log_data` to clear every entry, except those prefixed with a call ID of an open call.
+
 
 ### Cancel long-running calls
 

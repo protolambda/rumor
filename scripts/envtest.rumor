@@ -1,0 +1,37 @@
+let z=4
+export N=3
+X=123 alice: host start
+echo "x is: $X, z is: $z, n is $N"
+
+alice: host listen
+echo "Alice ENR is $__enr"
+
+_hostdata alice: host view
+
+# run some other command to show how `_hostdata` when not the latest anymore
+_peerlist alice: peer list
+
+# Host data is not the last call, but we can still access its data by ID
+echo "host data: multi addr: $_hostdata_multi_addr  peer id: $_hostdata_peer_id"
+
+bob: host start
+bob: host listen --tcp=9001
+bob: peer connect $_hostdata_multi_addr
+
+charlie: host start
+charlie: host listen --tcp=9002
+charlie: peer connect $_hostdata_multi_addr
+
+_peerlist alice: peer list
+
+for peer_id in ${_peerlist_peers[@]}; do
+  echo "Alice is connected to peer $peer_id"
+done
+
+alice: kill
+bob: kill
+charlie: kill
+
+echo "Before data clear: $_hostdata_multi_addr"
+clear_log_data
+echo "After data clear: $_hostdata_multi_addr"

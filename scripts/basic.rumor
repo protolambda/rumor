@@ -1,5 +1,6 @@
 host start
 host listen
+echo "Alice ENR is $__enr"
 host view
 peer list
 kill

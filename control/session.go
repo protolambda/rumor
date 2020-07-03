@@ -8,6 +8,7 @@ import (
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,8 @@ type EnvGlobal interface {
 	IsClosing() bool
 	KillActor(id actor.ActorID)
 	GetJobs(id actor.ActorID) map[CallID]CallSummary
+	GetLogData(key string) (value interface{}, ok bool)
+	ClearLogData()
 }
 
 type SessionID string
@@ -174,8 +177,8 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			if strings.HasSuffix(arg, ":") && actorStr == "" {
 				actorStr = arg[:len(arg)-1]
 				skip++
-			} else if strings.HasPrefix(arg, "_") && strings.HasSuffix(arg, "_") && customCallIDStr == "" {
-				customCallIDStr = arg[1 : len(arg)-1]
+			} else if strings.HasPrefix(arg, "_") && customCallIDStr == "" {
+				customCallIDStr = arg[1:]
 				skip++
 			} else if !changedLogLvl && strings.HasPrefix(arg, "lvl_") {
 				var err error
@@ -218,7 +221,13 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 
 	if len(args) == 1 && args[0] == "jobs" {
 		openJobs := sess.global.GetJobs(actorName)
-		sess.log.WithField("jobs", openJobs).WithField("actor", actorName).Info("running jobs of actor")
+		sess.log.WithField("jobs", openJobs).WithField("actor", actorName).Info("list of running jobs of actor")
+		return nil
+	}
+
+	if len(args) == 1 && args[0] == "clear_log_data" {
+		sess.global.ClearLogData()
+		return nil
 	}
 
 	callID := customCallID
@@ -240,12 +249,56 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 }
 
 func (sess *Session) Get(name string) expand.Variable {
-	// TODO
-	value := name //transform key into value
-	if value == "" {
-		return expand.Variable{}
+	sess.log.WithField("envlookup", name).Info("lookup!")
+	if strings.HasPrefix(name, "_") {
+		var val interface{}
+		var ok bool
+		if strings.HasPrefix(name, "__") {
+			if last := sess.lastCall; last != nil {
+				// still separated by a `_`, but first  `_` is a shortcut for the last call ID
+				val, ok = sess.global.GetLogData(string(last.id) + name[1:])
+			}
+		} else {
+			val, ok = sess.global.GetLogData(name[1:])
+		}
+		if ok {
+			// if it's just a string, like most data, then avoid reflection and just return it.
+			if vStr, ok := val.(string); ok {
+				return expand.Variable{Exported: true, Kind: expand.String, Str: vStr}
+			}
+			if vMap, ok := val.(map[string]string); ok {
+				return expand.Variable{Exported: true, Kind: expand.Associative, Map: vMap}
+			}
+			if vList, ok := val.([]string); ok {
+				return expand.Variable{Exported: true, Kind: expand.Indexed, List: vList}
+			}
+			// Do some extra work with reflection for non-string types. To e.g. enable iteration over a list of peers.
+			v := reflect.ValueOf(val)
+			typ := v.Type()
+			switch typ.Kind() {
+			case reflect.Map:
+				dat := make(map[string]string, v.Len())
+				iter := v.MapRange()
+				for iter.Next() {
+					kStr := fmt.Sprintf("%v", iter.Key().Interface())
+					dat[kStr] = fmt.Sprintf("%v", iter.Value().Interface())
+				}
+				return expand.Variable{Exported: true, Kind: expand.Associative, Map: dat}
+			case reflect.Slice:
+				dat := make([]string, v.Len(), v.Len())
+				for i := 0; i < len(dat); i++ {
+					dat[i] = fmt.Sprintf("%v", v.Index(i).Interface())
+				}
+				return expand.Variable{Exported: true, Kind: expand.Indexed, List: dat}
+			default:
+				return expand.Variable{Exported: true, Kind: expand.String, Str: fmt.Sprintf("%v", val)}
+			}
+		}
 	}
-	return expand.Variable{Exported: true, Kind: expand.String, Str: value}
+	// TODO: include non-rumor variables from parent scope?
+
+	// return unset variable
+	return expand.Variable{}
 }
 
 func (sess *Session) Each(func(name string, vr expand.Variable) bool) {

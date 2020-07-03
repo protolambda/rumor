@@ -6,6 +6,7 @@ import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,7 +29,11 @@ type SessionProcessor struct {
 	actors sync.Map
 
 	// a map like map[CallID]*Call
-	jobs      sync.Map
+	jobs sync.Map
+	// logData is a map of all past log data, like map[string]interface{}.
+	// Keys are formatted as "{callid}_{entrykey}", i.e. they are concatenated with an underscore.
+	// The call ID here excludes the prefix-underscore.
+	logData   sync.Map
 	log       logrus.FieldLogger
 	closeLock sync.Mutex
 	closing   bool
@@ -66,6 +71,12 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 				return fmt.Errorf("cannot parse call id: %v", callIDi)
 			}
 			callID = CallID(callIDStr)
+		}
+		for k, v := range entry.Data {
+			if k == "level" || k == "call_id" || k == "msg" || k == "time" {
+				continue
+			}
+			sp.logData.Store(string(callID)+"_"+k, v)
 		}
 		for s := range sp.sessions {
 			if lvl, ok := s.HasInterest(callID); ok {
@@ -117,6 +128,35 @@ func (sp *SessionProcessor) KillActor(id actor.ActorID) {
 	}
 }
 
+func (sp *SessionProcessor) GetLogData(key string) (value interface{}, ok bool) {
+	value, ok = sp.logData.Load(key)
+	return
+}
+
+func (sp *SessionProcessor) ClearLogData() {
+	openCalls := make(map[CallID]struct{})
+	sp.jobs.Range(func(key, value interface{}) bool {
+		k := key.(CallID)
+		openCalls[k] = struct{}{}
+		return true
+	})
+	sp.logData.Range(func(key, value interface{}) bool {
+		k := key.(string)
+		keep := false
+		// ranging is fine, open calls should be small, and this doesn't run often
+		for id := range openCalls {
+			if strings.HasPrefix(k, string(id)) {
+				keep = true
+				break
+			}
+		}
+		if !keep {
+			sp.logData.Delete(k)
+		}
+		return true
+	})
+}
+
 func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmdArgs []string) *Call {
 	rep := sp.GetActor(actorName)
 	freeCtx, freeCancel := context.WithCancel(rep.ActorCtx)
@@ -165,12 +205,12 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 				if isHelp {
 					cmdLogger.Info(fCmd.Usage())
 				}
-				cmdLogger.WithField("@success", "").Trace("completed call")
+				cmdLogger.WithField("success", "true").Trace("completed call")
 			}
 			doneCancel()
 			// If nothing was spawned, we can free the command early
 			if !call.spawned {
-				freeCancel()
+				freeCancel() // just cancel, no need to wait, nothing is blocked
 			} else {
 				// Waiting for background tasks to be freed
 				<-freeCtx.Done()
