@@ -393,8 +393,8 @@ func main() {
 						}
 						for _, stmt := range stmts {
 							if err := sess.Run(context.Background(), stmt); err != nil {
-								log.WithError(err).Error("failed to run statement")
-								return false
+								log.WithError(err).Error("error result")
+								return true
 							}
 							if sess.Exited() {
 								return false
@@ -572,8 +572,8 @@ func main() {
 					}
 					for _, stmt := range stmts {
 						if err := sess.Run(context.Background(), stmt); err != nil {
-							log.WithError(err).Error("failed to run statement")
-							return false
+							log.WithError(err).Error("error result")
+							return true
 						}
 						if sess.Exited() {
 							return false
@@ -613,8 +613,8 @@ func main() {
 						}
 						for _, stmt := range stmts {
 							if err := sess.Run(context.Background(), stmt); err != nil {
-								log.WithError(err).Error("failed to run statement")
-								return false
+								log.WithError(err).Error("error result")
+								return true
 							}
 							if sess.Exited() {
 								return false

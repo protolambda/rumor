@@ -1,6 +1,13 @@
 # Rumor
 
-A REPL written in Go, to run the Eth2 network stack, attach to testnets, debug clients, and extract data for tooling.
+An interactive shell written in Go, to run the Eth2 network stack, attach to testnets, debug clients, and extract data for tooling.
+
+The shell is built on top of ``, which aims to be POSIX compatible, and has some Bash features.
+
+The core idea of the shell is to start and maintain p2p processes, and make the resulting information available though logs, 
+ to auto-fill the environment with anything you would want.
+
+Also note that actors and running commands can be shared and persisted between sessions.
 
 ## Install
 
@@ -23,11 +30,12 @@ go get ./...
 There are a few subcommands to choose the mode of operation:
 
 ```
-  shell       Rumor as a human-readable shell
-  bare        Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess. Optionally read input from a file instead of stdin.
- 
-  serve       Rumor as a server to attach to
   attach      Attach to a running rumor server
+  bare        Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess.
+  file        Run rom a file
+  help        Help about any command
+  serve       Rumor as a server to attach to
+  shell       Rumor as a human-readable shell
 ```
 
 Serve and attach supported types: `ws` (http upgraded to websocket, optional auth key), `tcp` (raw socket), `ipc` (Unix socket)
@@ -76,7 +84,7 @@ Lighthouse:
 ```shell script
 # Start discv5 and connect to the Lighthouse testnet
 # Give one or more bootnode addresses (ENR or enode format).
-dv5 start enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9X8Im_ZjQYyeoBP_luLLBB4wy39gQ4JgmlkgnY0gmlwhCOhiGqJc2VjcDI1NmsxoQMrmBYg_yR_ZKZKoLiChvlpNqdwXwodXmgw_TRow7RVwYN0Y3CCIyiDdWRwgiMo
+dv5 run enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9X8Im_ZjQYyeoBP_luLLBB4wy39gQ4JgmlkgnY0gmlwhCOhiGqJc2VjcDI1NmsxoQMrmBYg_yR_ZKZKoLiChvlpNqdwXwodXmgw_TRow7RVwYN0Y3CCIyiDdWRwgiMo
 # Get your local Discv5 node info. Other discv5 nodes can bootstrap from this.
 dv5 self
 # Get nearby nodes
@@ -89,8 +97,6 @@ gossip start
 gossip join /eth2/beacon_block/ssz
 # listening on the topic!
 gossip list
-# Update your kademlia peers to learn about the gossip topic interest.
-kad refresh
 # Check your peers on the topic
 gossip list-peers /eth2/beacon_block/ssz
 # Subscribe to the topic
@@ -111,7 +117,7 @@ enr view --kv enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9
 
 ### Actors
 
-By prefixing a command with `{actor-name}:`, you can run multiple p2p hosts, by name `{actor-name}` in the same REPL process.
+By prefixing a command with `{actor-name}:`, you can run multiple p2p hosts, by name `{actor-name}` in the same process.
 
 ```
 alice: host start
@@ -126,67 +132,35 @@ bob: peer connect <ENR from alice>
 
 ### Call IDs
 
-By prefixing a command with `{my-call-id}>`, you can see which logs are a result of the given call `{my-call-id}`,
- even if interleaved with other logs (because of async or concurrent results).
+By surrounding a command with `_`, like `_{my-call-id}_`, you can see which logs are a result of the given call `{my-call-id}`,
+ even if interleaved with other logs (because of async results).
 The call-ID should be placed before the actor name.
-If no call-ID is specified, the call uses an incrementing counter for each new call. I.e. an auto-generated call ID, with just a number, the command is prefixed with e.g. `123> `.
-Using bare numbers as custom call-IDs is unsafe, as these call-IDs will overlap with the auto-generated IDs.
+If no call-ID is specified, the call uses an incrementing counter for each new call.
+I.e. an auto-generated call ID, with just the session id and a number, the command is prefixed with e.g. `s42_123> `.
+Using such bare numbers as custom call-IDs is unsafe, as these call-IDs will overlap with the auto-generated IDs.
 
 ```
-my_call> alice: host start
+_my_call_ alice: host start
 .... log output with call_id="my_call"
+
+# also valid, but not recommend:
+alice: _my_call_ host start
 ```
 
-The call-ID is useful to correlate results, and for tooling that interacts with Rumor to get results. 
+The call-ID is useful to correlate results, and for tooling that interacts with Rumor to get results.
 
-### Background / foreground
+Also, to reference log-output in environment variables, the call IDs are very useful to select an exact variable.
 
-Calls can be made in, and moved to, foreground and background.
-
-Note that running in the background may not guarantee that the call actually starts fully operating before you continue.
-E.g. if you start a process in the background, and try to communicate with it immediately, it may not be there yet.
-
-Calls that do this kind of background operation spawn a sub-process. The call can be awaited for in sync,
- and once it's up and running to communicate with, it's done but not freed.
-To close such background process, simply `cancel` it.
-
-Example:
-```
-my_dv5> dv5 run
-dv5 ping foobar
-my_dv5> cancel
-```
-
-#### Making calls
- 
-- After a command is started, it is in the foreground by default, i.e. the shell waits for it to run the next command.
-- To start a command in the background instead, add `bg` before the actual command. E.g. `example_host_call> alice: bg host start`
-
-#### Moving calls
-
-- To put the current foreground call in the background, enter `bg`.
-- To put a specific call back in the foreground, enter `my_call_id> fg`.
-
-### Cancel calls
+### Cancel long-running calls
 
 To close a long-running call (which may run in the background), you can:
 - Move it to foreground if it is not already, then cancel it:
 ```
-123> fg
 cancel
 ```
-- Cancel it directly:
+- Cancel it directly by its call ID:
 ```
-123> cancel
-```
-
-## Mute/watch calls
-
-```
-# 
-123> mute
-# To unmute the messages of a call, also works to read results of other sessions (if access to them)
-123> watch
+_my_call_ cancel
 ```
 
 ### Stopping an actor
@@ -201,6 +175,19 @@ alice: kill
 
 Enter `exit`, or send an interrupt signal.
 All remaining open jobs will be canceled.
+
+### Shell built-ins
+
+These are reserved names, used for shell functionality:
+
+```
+"false", "exit", "set", "shift", "unset",
+"echo", "printf", "break", "continue", "pwd", "cd",
+"wait", "builtin", "trap", "type", "source", ".", "command",
+"dirs", "pushd", "popd", "umask", "alias", "unalias",
+"fg", "bg", "getopts", "eval", "test", "[", "exec",
+"return", "read", "shopt"
+```
 
 ## License
 

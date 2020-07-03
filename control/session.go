@@ -51,8 +51,6 @@ func newSession(id SessionID, ctx context.Context, log logrus.FieldLogger, globa
 		ctx:        ctx,
 		cancelSelf: cancel,
 	}
-	stdOutLog := log.WithField("dev", "out")
-	stdErrLog := log.WithField("dev", "err")
 	// ugly hack to map internal std-out and std-err to the log of the session, and to ignore std-in.
 	// it ignores whitespace to avoid extra unnecessary log-entries.
 	ioFns := interp.StdIO(nil,
@@ -60,12 +58,12 @@ func newSession(id SessionID, ctx context.Context, log logrus.FieldLogger, globa
 			if strings.TrimSpace(msg) == "" {
 				return
 			}
-			stdOutLog.Info(msg)
+			log.WithField("stdout", msg).Info("")
 		}), WriteableFn(func(msg string) {
 			if strings.TrimSpace(msg) == "" {
 				return
 			}
-			stdErrLog.Error(msg)
+			log.WithField("stderr", msg).Error("")
 		}))
 	// never errors
 	sess.runner, _ = interp.New(
