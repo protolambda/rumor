@@ -136,6 +136,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 			Base:             c.Base,
 			GlobalPeerstores: c.GlobalPeerstores,
 			CurrentPeerstore: c.CurrentPeerstore,
+			Switch:           true,
 		}
 		if err := createStore.Run(ctx); err != nil {
 			return fmt.Errorf("failed to create peerstore: %v", err)

@@ -33,7 +33,7 @@ _alice_find_nodes_ bob: dv5 random --add=true
 _bob_find_nodes_ bob: dv5 random --add=true
 _charlie_find_nodes_ bob: dv5 random --add=true
 
-debug sleep 20s
+sleep 20s
 
 _alice_find_nodes_ cancel
 _bob_find_nodes_ cancel

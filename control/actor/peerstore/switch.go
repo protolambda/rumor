@@ -32,5 +32,6 @@ func (c *SwitchCmd) Run(ctx context.Context, args ...string) error {
 		retainId = h.ID()
 	}
 	c.CurrentPeerstore.Switch(retainId, c.ID, ep)
+	c.Log.WithField("store", c.ID).Info("Switched peerstore")
 	return nil
 }

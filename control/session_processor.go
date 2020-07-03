@@ -253,7 +253,8 @@ func (sp *SessionProcessor) Close() {
 	sp.closing = true
 
 	var wg sync.WaitGroup
-	sp.log.Debug("Closing remaining jobs...")
+	log := sp.log.(logrus.Ext1FieldLogger)
+	log.Trace("Closing remaining jobs...")
 	// close remaining jobs
 	sp.jobs.Range(func(ki, vi interface{}) bool {
 		v := vi.(*Call)
@@ -270,19 +271,19 @@ func (sp *SessionProcessor) Close() {
 	})
 	wg.Wait()
 
-	sp.log.Debug("Closing remaining actors...")
+	log.Trace("Closing remaining actors...")
 	// close all libp2p hosts
 	sp.actors.Range(func(key, value interface{}) bool {
 		value.(*actor.Actor).Close()
 		return true
 	})
 
-	sp.log.Debug("Closing global context...")
+	log.Trace("Closing global context...")
 	// closes cross-actor things such as peerstores and chains
 	sp.globalActorCancel()
 
-	sp.log.Debug("Closing remaining sessions...")
+	log.Trace("Closing remaining sessions...")
 	sp.globalSessionCancel()
 
-	sp.log.Debug("Closed session processor")
+	log.Trace("Closed session processor")
 }

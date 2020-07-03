@@ -12,6 +12,15 @@ type Peerstores struct {
 	stores sync.Map
 }
 
+func (cs *Peerstores) List() (out []PeerstoreID) {
+	cs.stores.Range(func(key, value interface{}) bool {
+		id := key.(PeerstoreID)
+		out = append(out, id)
+		return true
+	})
+	return
+}
+
 func (cs *Peerstores) Find(id PeerstoreID) (pi ExtendedPeerstore, ok bool) {
 	pii, ok := cs.stores.Load(id)
 	return pii.(ExtendedPeerstore), ok

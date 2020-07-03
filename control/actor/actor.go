@@ -2,7 +2,6 @@ package actor
 
 import (
 	"context"
-	"fmt"
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
@@ -10,7 +9,6 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/blocks"
 	"github.com/protolambda/rumor/control/actor/chain"
-	"github.com/protolambda/rumor/control/actor/debug"
 	"github.com/protolambda/rumor/control/actor/dv5"
 	"github.com/protolambda/rumor/control/actor/enr"
 	"github.com/protolambda/rumor/control/actor/gossip"
@@ -23,6 +21,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/states"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
+	"time"
 )
 
 type PeerStore struct {
@@ -121,7 +120,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "peer":
 		store := c.CurrentPeerstore
 		if !store.Initialized() {
-			return nil, fmt.Errorf("no peerstore found named \"%s\", create a peerstore or host first", store.PeerstoreID())
+			store = nil
 		}
 		cmd = &peer.PeerCmd{
 			Base:              b,
@@ -141,8 +140,6 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &gossip.GossipCmd{Base: b, GossipState: &c.GossipState}
 	case "rpc":
 		cmd = &rpc.RpcCmd{Base: b, RPCState: &c.RPCState}
-	case "debug":
-		cmd = &debug.DebugCmd{Base: b}
 	case "blocks":
 		cmd = &blocks.BlocksCmd{Base: b, DB: c.Blocks}
 	case "states":
@@ -150,6 +147,8 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "chain":
 		cmd = &chain.ChainCmd{Base: b, Chains: &c.GlobalChains,
 			ChainState: &c.ChainState, Blocks: c.Blocks, States: c.States}
+	case "sleep":
+		cmd = &SleepCmd{Base: b}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
@@ -157,9 +156,42 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *ActorCmd) Routes() []string {
-	return []string{"host", "enr", "peer", "peerstore", "dv5", "gossip", "rpc", "debug", "blocks", "states", "chain"}
+	return []string{"host", "enr", "peer", "peerstore", "dv5", "gossip",
+		"rpc", "blocks", "states", "chain", "sleep"}
 }
 
 func (c *ActorCmd) Help() string {
 	return "Interact with any p2p component in Eth2"
+}
+
+type SleepCmd struct {
+	*base.Base
+	Time time.Duration `ask:"<time>" help:"How long to sleep, e.g. 3s"`
+}
+
+func (c *SleepCmd) Help() string {
+	return "Sleep for given amount of time."
+}
+
+func (c *SleepCmd) Default() {
+	c.Time = time.Second
+}
+
+func (c *SleepCmd) Run(ctx context.Context, args ...string) error {
+	if c.Time != 0 {
+		c.Log.Infof("sleeping %s", c.Time.String())
+		ticker := time.NewTicker(c.Time)
+		select {
+		case <-ticker.C:
+			c.Log.Infoln("done sleeping!")
+			break
+		case <-ctx.Done():
+			c.Log.Infof("stopped sleep, exit early: %v", ctx.Err())
+			break
+		}
+		ticker.Stop()
+	} else {
+		c.Log.Warn("cannot sleep for 0 duration")
+	}
+	return nil
 }

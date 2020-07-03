@@ -8,7 +8,7 @@ import (
 
 type PeerTrimCmd struct {
 	*base.Base
-	Timeout time.Duration `ask:"[which]" help:"Timeout for trimming."`
+	Timeout time.Duration `ask:"[timeout]" help:"Timeout for trimming."`
 }
 
 func (c *PeerTrimCmd) Help() string {
@@ -25,6 +25,8 @@ func (c *PeerTrimCmd) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 	trimCtx, _ := context.WithTimeout(ctx, c.Timeout)
+	c.Log.Info("trimming peers")
 	h.ConnManager().TrimOpenConns(trimCtx)
+	c.Log.Info("Done trimming peers")
 	return nil
 }

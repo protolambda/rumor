@@ -21,6 +21,8 @@ func (c *PeerstoreCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &CreateCmd{Base: c.Base, GlobalPeerstores: c.GlobalPeerstores, CurrentPeerstore: c.CurrentPeerstore}
 	case "switch":
 		cmd = &SwitchCmd{Base: c.Base, GlobalPeerstores: c.GlobalPeerstores, CurrentPeerstore: c.CurrentPeerstore}
+	case "list":
+		cmd = &ListCmd{Base: c.Base, GlobalPeerstores: c.GlobalPeerstores, CurrentPeerstore: c.CurrentPeerstore}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
@@ -28,7 +30,7 @@ func (c *PeerstoreCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *PeerstoreCmd) Routes() []string {
-	return []string{"create", "switch"}
+	return []string{"create", "switch", "list"}
 }
 
 func (c *PeerstoreCmd) Help() string {

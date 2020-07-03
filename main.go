@@ -215,6 +215,7 @@ func main() {
 				msg = nil
 			}
 			delete(entry, "msg")
+			delete(entry, "time")
 			log.WithFields(entry).Log(lvl, msg)
 		}
 	}
@@ -325,7 +326,7 @@ func main() {
 				})
 			},
 		}
-
+		attachCmd.Flags().StringVar(&level, "level", "debug", "Log-level of the attached client. Valid values: trace, debug, info, warn, error, fatal, panic")
 		attachCmd.Flags().StringVar(&ipcPath, "ipc", "", "Path of unix domain socket to attach to, e.g. `my_socket_file.sock`. Priority over `--tcp` flag.")
 		attachCmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to attach to, e.g. `localhost:3030`.")
 		attachCmd.Flags().StringVar(&wsAddr, "ws", "", "Http address (full URL) to attach to through websocket upgrade, e.g. `ws://localhost:8000/ws`. Disabled if empty.")
@@ -334,6 +335,7 @@ func main() {
 		mainCmd.AddCommand(attachCmd)
 	}
 	{
+		var level string
 		var wsAddr string
 		var ipcPath string
 		var tcpAddr string
@@ -350,6 +352,14 @@ func main() {
 				log.SetOutput(os.Stdout)
 				log.SetLevel(logrus.TraceLevel)
 				log.SetFormatter(&logrus.TextFormatter{DisableTimestamp: true})
+
+				if level != "" {
+					logLevel, err := logrus.ParseLevel(level)
+					if err != nil {
+						log.Error(err)
+					}
+					log.SetLevel(logLevel)
+				}
 
 				var ipcInput net.Listener
 				if ipcPath != "" {
@@ -507,10 +517,12 @@ func main() {
 					log.Fatal(http.ListenAndServe(wsAddr, nil))
 				}
 
+				adminLog.Info("Started server")
+
 				<-ctx.Done()
 			},
 		}
-
+		serveCmd.Flags().StringVar(&level, "level", "debug", "Log-level of the server log. Valid values: trace, debug, info, warn, error, fatal, panic")
 		serveCmd.Flags().StringVar(&ipcPath, "ipc", "", "Path to unix domain socket for IPC, e.g. `my_socket_file.sock`, use `rumor attach <socket>` to connect.")
 		serveCmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to listen on, e.g. `localhost:3030`. Disabled if empty.")
 		serveCmd.Flags().StringVar(&wsAddr, "ws", "", "Websocket address to listen on, e.g. `localhost:8000`. Disabled if empty.")
@@ -521,6 +533,7 @@ func main() {
 	}
 
 	{
+		var level string
 		fileCmd := &cobra.Command{
 			Use:   "file <input-file>",
 			Short: "Run rom a file",
@@ -530,6 +543,14 @@ func main() {
 				log.SetOutput(os.Stdout)
 				log.SetLevel(logrus.TraceLevel)
 				log.SetFormatter(&logrus.JSONFormatter{})
+
+				if level != "" {
+					logLevel, err := logrus.ParseLevel(level)
+					if err != nil {
+						log.Error(err)
+					}
+					log.SetLevel(logLevel)
+				}
 
 				inputFile, err := os.Open(args[0])
 				if err != nil {
@@ -548,10 +569,12 @@ func main() {
 				sp.Close()
 			},
 		}
+		fileCmd.Flags().StringVar(&level, "level", "debug", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
 		mainCmd.AddCommand(fileCmd)
 	}
 
 	{
+		var level string
 		bareCmd := &cobra.Command{
 			Use:   "bare",
 			Short: "Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess.",
@@ -561,6 +584,14 @@ func main() {
 				log.SetOutput(os.Stdout)
 				log.SetLevel(logrus.TraceLevel)
 				log.SetFormatter(&logrus.JSONFormatter{})
+
+				if level != "" {
+					logLevel, err := logrus.ParseLevel(level)
+					if err != nil {
+						log.Error(err)
+					}
+					log.SetLevel(logLevel)
+				}
 
 				r := io.Reader(os.Stdin)
 				sp := control.NewSessionProcessor(log)
@@ -587,6 +618,7 @@ func main() {
 				sp.Close()
 			},
 		}
+		bareCmd.Flags().StringVar(&level, "level", "debug", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
 		mainCmd.AddCommand(bareCmd)
 	}
 	{

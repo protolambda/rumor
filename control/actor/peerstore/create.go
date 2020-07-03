@@ -20,7 +20,12 @@ type CreateCmd struct {
 	GlobalPeerstores *track.Peerstores
 	CurrentPeerstore track.DynamicPeerstore
 
-	ID track.PeerstoreID `ask:"--id" help:"ID of the peerstore, random otherwise"`
+	ID     track.PeerstoreID `ask:"[id]" help:"ID of the peerstore, random otherwise"`
+	Switch bool              `ask:"--switch" help:"If the host should immediately switch to the newly created peerstore"`
+}
+
+func (c *CreateCmd) Default() {
+	c.Switch = true
 }
 
 func (c *CreateCmd) Help() string {
@@ -50,6 +55,8 @@ func (c *CreateCmd) Run(ctx context.Context, args ...string) error {
 	if err == nil {
 		retainId = h.ID()
 	}
-	c.CurrentPeerstore.Switch(retainId, id, ep)
+	if c.Switch {
+		c.CurrentPeerstore.Switch(retainId, id, ep)
+	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package peer
 
 import (
+	"errors"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/peer/metadata"
@@ -16,6 +17,9 @@ type PeerCmd struct {
 }
 
 func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
+	if c.Store == nil {
+		return nil, errors.New("Not available. Create a peerstore first.")
+	}
 	switch route {
 	case "connect":
 		cmd = &PeerConnectCmd{Base: c.Base}

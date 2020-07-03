@@ -108,7 +108,6 @@ func (sess *Session) Close() error {
 	sess.requestedExit = true
 	sess.cancelSelf()
 	if sess.lastCall != nil {
-		sess.log.Debug("Closing last call before exiting")
 		sess.lastCall.Close()
 		sess.lastCall = nil
 	}
@@ -249,7 +248,7 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 }
 
 func (sess *Session) Get(name string) expand.Variable {
-	sess.log.WithField("envlookup", name).Info("lookup!")
+	sess.log.WithField("envlookup", name).Trace("lookup!")
 	if strings.HasPrefix(name, "_") {
 		var val interface{}
 		var ok bool
