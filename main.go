@@ -12,6 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"io"
+	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 	"net"
 	"net/http"
@@ -562,11 +563,18 @@ func main() {
 				sess := sp.NewSession(log)
 				parser := syntax.NewParser()
 				fileDoc, err := parser.Parse(inputFile, "")
+				exitCode := uint8(0)
 				if err := sess.Run(context.Background(), fileDoc); err != nil {
-					log.WithError(err).Error("failed to run script")
+					if e, ok := interp.IsExitStatus(err); ok {
+						exitCode = e
+					} else if err != nil {
+						log.WithError(err).Error("error result")
+						exitCode = 1
+					}
 				}
 				sess.Close()
 				sp.Close()
+				os.Exit(int(exitCode))
 			},
 		}
 		fileCmd.Flags().StringVar(&level, "level", "debug", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
@@ -575,6 +583,8 @@ func main() {
 
 	{
 		var level string
+		var asyncMode bool
+		var stopOnErr bool
 		bareCmd := &cobra.Command{
 			Use:   "bare",
 			Short: "Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess.",
@@ -596,14 +606,28 @@ func main() {
 				r := io.Reader(os.Stdin)
 				sp := control.NewSessionProcessor(log)
 				sess := sp.NewSession(log)
+				if asyncMode {
+					sess.SetBlocking(false)
+				}
 				parser := syntax.NewParser()
+				exitCode := uint8(0)
 				if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
 					if parser.Incomplete() {
 						return true
 					}
 					for _, stmt := range stmts {
 						if err := sess.Run(context.Background(), stmt); err != nil {
-							log.WithError(err).Error("error result")
+							if stopOnErr {
+								if e, ok := interp.IsExitStatus(err); ok {
+									exitCode = e
+									return false
+								}
+								if err != nil {
+									log.WithError(err).Error("error result")
+									exitCode = 1
+									return false
+								}
+							}
 							return true
 						}
 						if sess.Exited() {
@@ -616,9 +640,13 @@ func main() {
 				}
 				sess.Close()
 				sp.Close()
+				os.Exit(int(exitCode))
 			},
 		}
 		bareCmd.Flags().StringVar(&level, "level", "debug", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
+		bareCmd.Flags().BoolVar(&asyncMode, "async", false, "When async is on, rumor commands do not block until they are done, making async commands with a single session possible. A trace-level log entry with success=true is logged to notify when an async call completed.")
+		bareCmd.Flags().BoolVar(&stopOnErr, "stop-on-err", false, "When a command exits with an error, stop processing input.")
+
 		mainCmd.AddCommand(bareCmd)
 	}
 	{
@@ -660,7 +688,6 @@ func main() {
 					}
 					sess.Close()
 					sp.Close()
-					// TODO exit codes
 					os.Exit(0)
 				})
 			},

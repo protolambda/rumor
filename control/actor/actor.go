@@ -155,9 +155,26 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
+var topRoutes = []string{"host", "enr", "peer", "peerstore", "dv5", "gossip",
+	"rpc", "blocks", "states", "chain", "sleep"}
+var topRoutesMap = map[string]struct{}{}
+
+func init() {
+	for _, r := range topRoutes {
+		topRoutesMap[r] = struct{}{}
+	}
+}
+
 func (c *ActorCmd) Routes() []string {
-	return []string{"host", "enr", "peer", "peerstore", "dv5", "gossip",
-		"rpc", "blocks", "states", "chain", "sleep"}
+	return topRoutes
+}
+
+func IsActorCmd(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	_, ok := topRoutesMap[args[0]]
+	return ok
 }
 
 func (c *ActorCmd) Help() string {

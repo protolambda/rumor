@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type EnvGlobal interface {
@@ -19,7 +20,7 @@ type EnvGlobal interface {
 	MakeCall(actorID actor.ActorID, callID CallID, args []string) *Call
 	IsClosing() bool
 	KillActor(id actor.ActorID)
-	GetJobs(id actor.ActorID) map[CallID]CallSummary
+	GetCalls(id actor.ActorID) map[CallID]CallSummary
 	GetLogData(key string) (value interface{}, ok bool)
 	ClearLogData()
 }
@@ -37,6 +38,7 @@ type Session struct {
 	runner         *interp.Runner
 	ctx            context.Context
 	cancelSelf     context.CancelFunc
+	parentEnv      expand.Environ
 
 	// if commands block, i.e. nicely wait for them to finish before freeing the runner for the next command.
 	blocking bool
@@ -45,7 +47,7 @@ type Session struct {
 	requestedExit bool
 }
 
-func newSession(id SessionID, ctx context.Context, log logrus.FieldLogger, global EnvGlobal) *Session {
+func newSession(id SessionID, ctx context.Context, parentEnv expand.Environ, log logrus.FieldLogger, global EnvGlobal) *Session {
 	ctx, cancel := context.WithCancel(ctx)
 	sess := &Session{
 		global:     global,
@@ -56,6 +58,7 @@ func newSession(id SessionID, ctx context.Context, log logrus.FieldLogger, globa
 		runner:     nil,
 		ctx:        ctx,
 		cancelSelf: cancel,
+		parentEnv:  parentEnv,
 		blocking:   true,
 	}
 	// ugly hack to map internal std-out and std-err to the log of the session, and to ignore std-in.
@@ -199,17 +202,9 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		customCallID = CallID(customCallIDStr)
 	}
 
-	// TODO option to cancel last call
 	if len(args) == 1 && args[0] == "cancel" {
 		sess.lastCall.Close()
-		// TODO: could change exit code with special error return here.
-		return nil
-	}
-
-	// TODO option to exit
-	if len(args) == 1 && args[0] == "exit" {
-		sess.requestedExit = true
-		return nil
+		return sess.lastCall.exitReason.ExitErr()
 	}
 
 	if len(args) == 1 && args[0] == "kill" {
@@ -218,15 +213,19 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	if len(args) == 1 && args[0] == "jobs" {
-		openJobs := sess.global.GetJobs(actorName)
-		sess.log.WithField("jobs", openJobs).WithField("actor", actorName).Info("list of running jobs of actor")
+	if len(args) == 1 && args[0] == "calls" {
+		openJobs := sess.global.GetCalls(actorName)
+		sess.log.WithField("calls", openJobs).WithField("actor", actorName).Info("list of running calls of actor")
 		return nil
 	}
 
 	if len(args) == 1 && args[0] == "clear_log_data" {
 		sess.global.ClearLogData()
 		return nil
+	}
+
+	if !actor.IsActorCmd(args) {
+		return sess.RunNonRumorCmd(ctx, args)
 	}
 
 	callID := customCallID
@@ -243,8 +242,16 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		<-sess.lastCall.doneCtx.Done()
 	}
 
-	// TODO: could change exit code with special error return here.
-	return nil
+	return sess.lastCall.exitReason.ExitErr()
+}
+
+func (sess *Session) RunNonRumorCmd(ctx context.Context, args []string) error {
+	// TODO: by modifying the handler-context in `ctx`
+	// (get with interp.HandlerCtx(ctx)) things like std in/out and environment can be modified.
+
+	// wait 5 seconds before killing a process after interrupting it (does not work on Windows)
+	handler := interp.DefaultExecHandler(time.Second * 5)
+	return handler(ctx, args)
 }
 
 func (sess *Session) Get(name string) expand.Variable {
@@ -294,14 +301,14 @@ func (sess *Session) Get(name string) expand.Variable {
 			}
 		}
 	}
-	// TODO: include non-rumor variables from parent scope?
-
-	// return unset variable
-	return expand.Variable{}
+	return sess.parentEnv.Get(name)
 }
 
-func (sess *Session) Each(func(name string, vr expand.Variable) bool) {
-	// no-op
+func (sess *Session) Each(fn func(name string, vr expand.Variable) bool) {
+	// These are the variables that are passed to subshells (if not explicitly ignored).
+	// It doesn't include anything dynamic from the regular session environment.
+	// To run rumor inside rumor synchronously, with dynamic vars, use "include" instead of spawning a subshell.
+	sess.parentEnv.Each(fn)
 }
 
 var _ expand.Environ = (*Session)(nil)

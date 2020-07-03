@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
+	"mvdan.cc/sh/v3/interp"
 )
 
 type CallID string
@@ -15,10 +16,14 @@ type CallSummary struct {
 
 type CallExitReason uint8
 
+func (code CallExitReason) ExitErr() error {
+	return interp.NewExitStatus(uint8(code))
+}
+
 const (
 	SuccessDone CallExitReason = iota
-	ParseError
 	RuntimeError
+	ParseError
 )
 
 type Call struct {

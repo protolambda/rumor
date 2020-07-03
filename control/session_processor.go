@@ -6,6 +6,8 @@ import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
+	"mvdan.cc/sh/v3/expand"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -28,8 +30,10 @@ type SessionProcessor struct {
 	// a map like map[string]*actor.Actor
 	actors sync.Map
 
+	mainEnv     expand.Environ
+
 	// a map like map[CallID]*Call
-	jobs sync.Map
+	ongoingCalls sync.Map
 	// logData is a map of all past log data, like map[string]interface{}.
 	// Keys are formatted as "{callid}_{entrykey}", i.e. they are concatenated with an underscore.
 	// The call ID here excludes the prefix-underscore.
@@ -51,6 +55,7 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 		adminLog:            adminLog,
 		sessions:            make(map[*Session]struct{}),
 		log:                 log,
+		mainEnv:             expand.ListEnviron(os.Environ()...),
 		globalActorCtx:      globActCtx,
 		globalActorCancel:   globActCancel,
 		globalSessionCtx:    globSessCtx,
@@ -95,14 +100,14 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 func (sp *SessionProcessor) NewSession(log logrus.FieldLogger) *Session {
 	sp.sessionsLock.Lock()
 	sp.sessionIdCounter += 1
-	s := newSession(SessionID(fmt.Sprintf("s%d", sp.sessionIdCounter)), sp.globalSessionCtx, log, sp)
+	s := newSession(SessionID(fmt.Sprintf("s%d", sp.sessionIdCounter)), sp.globalSessionCtx, sp.mainEnv, log, sp)
 	sp.sessions[s] = struct{}{}
 	sp.sessionsLock.Unlock()
 	return s
 }
 
 func (sp *SessionProcessor) GetCall(id CallID) *Call {
-	dat, ok := sp.jobs.Load(id)
+	dat, ok := sp.ongoingCalls.Load(id)
 	if !ok {
 		return nil
 	}
@@ -135,7 +140,7 @@ func (sp *SessionProcessor) GetLogData(key string) (value interface{}, ok bool) 
 
 func (sp *SessionProcessor) ClearLogData() {
 	openCalls := make(map[CallID]struct{})
-	sp.jobs.Range(func(key, value interface{}) bool {
+	sp.ongoingCalls.Range(func(key, value interface{}) bool {
 		k := key.(CallID)
 		openCalls[k] = struct{}{}
 		return true
@@ -194,7 +199,7 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 		freeCancel()
 		sp.RemoveInterests(callID)
 	} else {
-		sp.jobs.Store(callID, call)
+		sp.ongoingCalls.Store(callID, call)
 		go func() {
 			fCmd, isHelp, err := loadedCmd.Execute(cmdCtx, cmdArgs...)
 			if err != nil {
@@ -217,7 +222,7 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 			}
 			// Finished, including optional spawned resources, removing call now
 			sp.RemoveInterests(callID)
-			sp.jobs.Delete(callID)
+			sp.ongoingCalls.Delete(callID)
 		}()
 	}
 
@@ -232,9 +237,9 @@ func (sp *SessionProcessor) RemoveInterests(id CallID) {
 	sp.sessionsLock.RUnlock()
 }
 
-func (sp *SessionProcessor) GetJobs(id actor.ActorID) map[CallID]CallSummary {
+func (sp *SessionProcessor) GetCalls(id actor.ActorID) map[CallID]CallSummary {
 	openJobs := make(map[CallID]CallSummary, 0)
-	sp.jobs.Range(func(key, value interface{}) bool {
+	sp.ongoingCalls.Range(func(key, value interface{}) bool {
 		c := value.(*Call)
 		if c.actorName == id {
 			openJobs[key.(CallID)] = CallSummary{
@@ -254,9 +259,9 @@ func (sp *SessionProcessor) Close() {
 
 	var wg sync.WaitGroup
 	log := sp.log.(logrus.Ext1FieldLogger)
-	log.Trace("Closing remaining jobs...")
-	// close remaining jobs
-	sp.jobs.Range(func(ki, vi interface{}) bool {
+	log.Trace("Closing remaining calls...")
+	// close remaining calls
+	sp.ongoingCalls.Range(func(ki, vi interface{}) bool {
 		v := vi.(*Call)
 		v.logger.Debug("Closing job with 5 second timeout...")
 		v.cancel()

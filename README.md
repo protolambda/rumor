@@ -205,7 +205,11 @@ alice: kill
 ### Exit
 
 Enter `exit`, or send an interrupt signal.
-All remaining open jobs will be canceled.
+All remaining open calls will be canceled.
+
+### Listing calls
+
+To see what Rumor is running, use `calls`
 
 ### Shell built-ins
 
