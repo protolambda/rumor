@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/protolambda/ask"
+	"github.com/protolambda/rumor/chain"
+	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor"
+	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/expand"
 	"os"
@@ -21,7 +25,7 @@ type SessionProcessor struct {
 	sessions         map[*Session]struct{}
 	sessionIdCounter uint64
 
-	globalActorCtx    context.Context
+	actorGlobals      actor.GlobalActorData
 	globalActorCancel context.CancelFunc
 
 	globalSessionCtx    context.Context
@@ -52,11 +56,17 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 	globSessCtx, globSessCancel := context.WithCancel(context.Background())
 
 	sp := &SessionProcessor{
-		adminLog:            adminLog,
+		adminLog: adminLog,
+		actorGlobals: actor.GlobalActorData{
+			GlobalCtx:        globActCtx,
+			GlobalPeerstores: &track.PeerstoresMap{},
+			GlobalChains:     &chain.ChainsMap{},
+			Blocks:           &bdb.MemDB{},
+			States:           &sdb.MemDB{},
+		},
 		sessions:            make(map[*Session]struct{}),
 		log:                 log,
 		mainEnv:             expand.ListEnviron(os.Environ()...),
-		globalActorCtx:      globActCtx,
 		globalActorCancel:   globActCancel,
 		globalSessionCtx:    globSessCtx,
 		globalSessionCancel: globSessCancel,
@@ -119,8 +129,15 @@ func (sp *SessionProcessor) IsClosing() bool {
 }
 
 func (sp *SessionProcessor) GetActor(name actor.ActorID) *actor.Actor {
-	a, _ := sp.actors.LoadOrStore(name, actor.NewActor(sp.globalActorCtx, name))
-	return a.(*actor.Actor)
+	// try optimistically loading first, don't create a new actor just yet.
+	a, ok := sp.actors.Load(name)
+	if ok {
+		return a.(*actor.Actor)
+	} else {
+		// if not already there, create the actor, but avoid overwriting if getting actors concurrently.
+		a, _ := sp.actors.LoadOrStore(name, actor.NewActor(name, &sp.actorGlobals))
+		return a.(*actor.Actor)
+	}
 }
 
 func (sp *SessionProcessor) KillActor(id actor.ActorID) {

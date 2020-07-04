@@ -9,7 +9,7 @@ import (
 type PeerstoreCmd struct {
 	*base.Base
 
-	GlobalPeerstores *track.Peerstores
+	GlobalPeerstores track.Peerstores
 	CurrentPeerstore track.DynamicPeerstore
 }
 

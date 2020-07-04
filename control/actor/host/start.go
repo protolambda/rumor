@@ -28,7 +28,7 @@ type HostStartCmd struct {
 	*base.Base
 	WithSetHost
 
-	GlobalPeerstores *track.Peerstores
+	GlobalPeerstores track.Peerstores
 	CurrentPeerstore track.DynamicPeerstore
 
 	PrivKey          flags.P2pPrivKeyFlag `ask:"--priv" help:"hex-encoded private key for libp2p host. Random if none is specified."`

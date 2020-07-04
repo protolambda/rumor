@@ -7,12 +7,20 @@ import (
 
 type PeerstoreID string
 
-type Peerstores struct {
+type Peerstores interface {
+	List() (out []PeerstoreID)
+	Find(id PeerstoreID) (pi ExtendedPeerstore, ok bool)
+	Create(id PeerstoreID, store ExtendedPeerstore) error
+	Remove(id PeerstoreID) (existed bool)
+}
+
+type PeerstoresMap struct {
 	// PeerstoreID -> ExtendedPeerstore
 	stores sync.Map
 }
 
-func (cs *Peerstores) List() (out []PeerstoreID) {
+func (cs *PeerstoresMap) List() (out []PeerstoreID) {
+	out = make([]PeerstoreID, 0, 4)
 	cs.stores.Range(func(key, value interface{}) bool {
 		id := key.(PeerstoreID)
 		out = append(out, id)
@@ -21,12 +29,15 @@ func (cs *Peerstores) List() (out []PeerstoreID) {
 	return
 }
 
-func (cs *Peerstores) Find(id PeerstoreID) (pi ExtendedPeerstore, ok bool) {
+func (cs *PeerstoresMap) Find(id PeerstoreID) (pi ExtendedPeerstore, ok bool) {
 	pii, ok := cs.stores.Load(id)
-	return pii.(ExtendedPeerstore), ok
+	if !ok {
+		return nil, false
+	}
+	return pii.(ExtendedPeerstore), true
 }
 
-func (cs *Peerstores) Create(id PeerstoreID, store ExtendedPeerstore) error {
+func (cs *PeerstoresMap) Create(id PeerstoreID, store ExtendedPeerstore) error {
 	_, alreadyExisted := cs.stores.LoadOrStore(id, store)
 	if alreadyExisted {
 		return errors.New("peerstore already existed")
@@ -34,7 +45,7 @@ func (cs *Peerstores) Create(id PeerstoreID, store ExtendedPeerstore) error {
 	return nil
 }
 
-func (cs *Peerstores) Remove(id PeerstoreID) (existed bool) {
+func (cs *PeerstoresMap) Remove(id PeerstoreID) (existed bool) {
 	_, existed = cs.stores.Load(id)
 	if existed {
 		cs.stores.Delete(id)

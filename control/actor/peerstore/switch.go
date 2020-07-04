@@ -11,7 +11,7 @@ import (
 type SwitchCmd struct {
 	*base.Base
 
-	GlobalPeerstores *track.Peerstores
+	GlobalPeerstores track.Peerstores
 	CurrentPeerstore track.DynamicPeerstore
 
 	ID track.PeerstoreID `ask:"<id>" help:"ID of the peerstore to switch to"`

@@ -16,7 +16,7 @@ type ChainState struct {
 
 type ChainCmd struct {
 	*base.Base
-	*chain.Chains
+	chain.Chains
 	*ChainState
 	Blocks bdb.DB
 	States sdb.DB
@@ -35,6 +35,8 @@ func (c *ChainCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &ChainSwitchCmd{Base: c.Base, ChainState: c.ChainState}
 	case "rm":
 		cmd = &ChainRemoveCmd{Base: c.Base, Chains: c.Chains}
+	case "list":
+		cmd = &ChainListCmd{Base: c.Base, Chains: c.Chains, ChainState: c.ChainState}
 	case "on":
 		currentChain, ok := c.Chains.Find(c.ChainState.CurrentChain)
 		if !ok {
@@ -48,7 +50,7 @@ func (c *ChainCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *ChainCmd) Routes() []string {
-	return []string{"create", "copy", "switch", "rm", "on"}
+	return []string{"create", "copy", "switch", "rm", "list", "on"}
 }
 
 func (c *ChainCmd) Help() string {

@@ -12,7 +12,7 @@ import (
 
 type ChainCreateCmd struct {
 	*base.Base
-	*chain.Chains
+	chain.Chains
 	States    sdb.DB
 	Name      chain.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
 	StateRoot beacon.Root   `ask:"<state>" help:"The state to start from, retrieved from the states DB"`
@@ -23,9 +23,12 @@ func (c *ChainCreateCmd) Help() string {
 }
 
 func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
-	state, err := c.States.Get(c.StateRoot)
+	state, exists, err := c.States.Get(c.StateRoot)
 	if err != nil {
 		return fmt.Errorf("failed to get state: %v", err)
+	}
+	if !exists {
+		return fmt.Errorf("state %x was not found", c.StateRoot)
 	}
 	slot, err := state.Slot()
 	if err != nil {

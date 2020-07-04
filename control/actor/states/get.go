@@ -20,11 +20,11 @@ func (c *StatesGetCmd) Help() string {
 }
 
 func (c *StatesGetCmd) Run(ctx context.Context, args ...string) error {
-	state, err := c.DB.Get(c.StateRoot)
+	state, exists, err := c.DB.Get(c.StateRoot)
 	if err != nil {
 		return err
 	}
-	if state != nil {
+	if exists {
 		slot, err := state.Slot()
 		if err != nil {
 			return err

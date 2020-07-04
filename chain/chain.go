@@ -183,17 +183,27 @@ func (fi *FullChainIter) Entry(slot Slot) (entry ChainEntry, err error) {
 
 type ChainID string
 
-type Chains struct {
+type Chains interface {
+	Find(id ChainID) (pi FullChain, ok bool)
+	Create(id ChainID, anchor *HotEntry) (pi FullChain, err error)
+	Remove(id ChainID) (existed bool)
+	List() []ChainID
+}
+
+type ChainsMap struct {
 	// ChainID -> FullChain
 	chains sync.Map
 }
 
-func (cs *Chains) Find(id ChainID) (pi FullChain, ok bool) {
+func (cs *ChainsMap) Find(id ChainID) (pi FullChain, ok bool) {
 	pii, ok := cs.chains.Load(id)
-	return pii.(FullChain), ok
+	if !ok {
+		return nil, false
+	}
+	return pii.(FullChain), true
 }
 
-func (cs *Chains) Create(id ChainID, anchor *HotEntry) (pi FullChain, err error) {
+func (cs *ChainsMap) Create(id ChainID, anchor *HotEntry) (pi FullChain, err error) {
 	coldCh := NewFinalizedChain(anchor.slot)
 	hotCh, err := NewUnfinalizedChain(anchor,
 		BlockSinkFn(func(entry *HotEntry, canonical bool) error {
@@ -218,11 +228,21 @@ func (cs *Chains) Create(id ChainID, anchor *HotEntry) (pi FullChain, err error)
 	return c, nil
 }
 
-func (cs *Chains) Remove(id ChainID) (existed bool) {
+func (cs *ChainsMap) Remove(id ChainID) (existed bool) {
 	_, existed = cs.chains.Load(id)
 	if existed {
 		cs.chains.Delete(id)
 	}
+	return
+}
+
+func (cs *ChainsMap) List() (out []ChainID) {
+	out = make([]ChainID, 0, 4)
+	cs.chains.Range(func(key, value interface{}) bool {
+		id := key.(ChainID)
+		out = append(out, id)
+		return true
+	})
 	return
 }
 

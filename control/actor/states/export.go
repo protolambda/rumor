@@ -24,11 +24,11 @@ func (c *StatesExportCmd) Help() string {
 }
 
 func (c *StatesExportCmd) Run(ctx context.Context, args ...string) (err error) {
-	state, err := c.DB.Get(c.StateRoot)
+	state, exists, err := c.DB.Get(c.StateRoot)
 	if err != nil {
 		return err
 	}
-	if state == nil {
+	if !exists {
 		return fmt.Errorf("state %x does not exist", c.StateRoot[:])
 	}
 	var w io.Writer

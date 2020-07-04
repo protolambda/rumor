@@ -19,8 +19,7 @@ type DB interface {
 	Store(ctx context.Context, state *beacon.BeaconStateView) (exists bool, err error)
 	// Get a state. The state is a view of a shared immutable backing.
 	// The view is save to mutate (it forks away from the original backing)
-	// If the state does not exist, a nil state is returned without error.
-	Get(root beacon.Root) (state *beacon.BeaconStateView, err error)
+	Get(root beacon.Root) (state *beacon.BeaconStateView, exists bool, err error)
 	// Remove removes a state from the DB. Removing a state that does not exist is safe.
 	// Returns exists=true if the state exists (previously), false otherwise. If error, it may not be accurate.
 	Remove(root beacon.Root) (exists bool, err error)
@@ -47,11 +46,12 @@ func (db *MemDB) Store(ctx context.Context, state *beacon.BeaconStateView) (exis
 	return loaded, nil
 }
 
-func (db *MemDB) Get(root beacon.Root) (state *beacon.BeaconStateView, err error) {
+func (db *MemDB) Get(root beacon.Root) (state *beacon.BeaconStateView, exists bool, err error) {
 	dat, ok := db.data.Load(root)
 	if !ok {
-		return nil, nil
+		return nil, false, nil
 	}
+	exists = true
 	v, vErr := beacon.BeaconStateType.ViewFromBacking(dat.(tree.Node), nil)
 	state, err = beacon.AsBeaconStateView(v, vErr)
 	return

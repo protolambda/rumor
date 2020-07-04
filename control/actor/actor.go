@@ -24,12 +24,13 @@ import (
 	"time"
 )
 
-type PeerStore struct {
-}
+type GlobalActorData struct {
+	GlobalCtx        context.Context
+	GlobalPeerstores track.Peerstores
+	GlobalChains     chaindata.Chains
 
-func (ps *PeerStore) Agent() {
-	// TODO
-
+	Blocks bdb.DB
+	States sdb.DB
 }
 
 type ActorID string
@@ -37,18 +38,14 @@ type ActorID string
 type Actor struct {
 	ID ActorID
 
-	GlobalPeerstores track.Peerstores
+	*GlobalActorData
+
 	CurrentPeerstore track.DynamicPeerstore
 
 	PeerStatusState   status.PeerStatusState
 	PeerMetadataState metadata.PeerMetadataState
 
-	GlobalChains chaindata.Chains
-	ChainState   chain.ChainState
-
-	// TODO init databases
-	Blocks bdb.DB
-	States sdb.DB
+	ChainState chain.ChainState
 
 	Dv5State dv5.Dv5State
 
@@ -57,22 +54,18 @@ type Actor struct {
 
 	HostState host.HostState
 
-	GlobalCtx context.Context
-
 	ActorCtx    context.Context
 	actorCancel context.CancelFunc
 }
 
-func NewActor(globalCtx context.Context, id ActorID) *Actor {
-	ctxAll, cancelAll := context.WithCancel(globalCtx)
+func NewActor(id ActorID, globals *GlobalActorData) *Actor {
+	ctxAll, cancelAll := context.WithCancel(globals.GlobalCtx)
 	act := &Actor{
-		GlobalCtx:        globalCtx,
+		GlobalActorData:  globals,
 		ID:               id,
 		ActorCtx:         ctxAll,
 		actorCancel:      cancelAll,
 		CurrentPeerstore: track.NewDynamicPeerstore(),
-		Blocks:           &bdb.MemDB{},
-		States:           &sdb.MemDB{},
 	}
 	return act
 }
@@ -112,7 +105,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 			WithSetHost:      &c.HostState,
 			WithSetEnr:       &c.HostState,
 			WithCloseHost:    &c.HostState,
-			GlobalPeerstores: &c.GlobalPeerstores,
+			GlobalPeerstores: c.GlobalPeerstores,
 			CurrentPeerstore: c.CurrentPeerstore,
 		}
 	case "enr":
@@ -131,7 +124,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "peerstore":
 		cmd = &peerstore.PeerstoreCmd{
 			Base:             b,
-			GlobalPeerstores: &c.GlobalPeerstores,
+			GlobalPeerstores: c.GlobalPeerstores,
 			CurrentPeerstore: c.CurrentPeerstore,
 		}
 	case "dv5":
@@ -145,7 +138,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "states":
 		cmd = &states.StatesCmd{Base: b, DB: c.States}
 	case "chain":
-		cmd = &chain.ChainCmd{Base: b, Chains: &c.GlobalChains,
+		cmd = &chain.ChainCmd{Base: b, Chains: c.GlobalChains,
 			ChainState: &c.ChainState, Blocks: c.Blocks, States: c.States}
 	case "sleep":
 		cmd = &SleepCmd{Base: b}

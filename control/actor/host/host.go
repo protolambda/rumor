@@ -25,7 +25,7 @@ type WithSetEnr interface {
 type HostCmd struct {
 	*base.Base
 
-	GlobalPeerstores *track.Peerstores
+	GlobalPeerstores track.Peerstores
 	CurrentPeerstore track.DynamicPeerstore
 
 	WithSetHost

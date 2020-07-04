@@ -40,6 +40,12 @@ func (c *StatesImportCmd) Run(ctx context.Context, args ...string) error {
 				return fmt.Errorf("failed to open %s: %v", c.Input, err)
 			}
 			defer f.Close()
+			fInfo, err := f.Stat()
+			if err != nil {
+				return fmt.Errorf("failed to get file size %s: %v", c.Input, err)
+			} else {
+				size = uint64(fInfo.Size())
+			}
 			r = f
 		}
 		var err error
