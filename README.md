@@ -2,7 +2,7 @@
 
 An interactive shell written in Go, to run the Eth2 network stack, attach to testnets, debug clients, and extract data for tooling.
 
-The shell is built on top of ``, which aims to be POSIX compatible, and has some Bash features.
+The shell is built on top of [`mvdan/sh`](https://github.com/mvdan/sh), which aims to be POSIX compatible, and has some Bash features.
 
 The core idea of the shell is to start and maintain p2p processes, and make the resulting information available though logs, 
  to auto-fill the environment with anything you would want.
@@ -24,6 +24,21 @@ git clone git@github.com:protolambda/rumor.git
 cd rumor
 go get ./...
 ```
+
+## Built with
+
+- Eth2:
+    - [`protolambda/zrnt`](https://github.com/protolambda/zrnt): For Eth2 consensus code
+    - [`protolambda/ztyp`](https://github.com/protolambda/ztyp): For SSZ tree structures
+    - [`protolambda/ztyp`](https://github.com/protolambda/ztyp): For SSZ utils (incl streaming for RPC)
+    - [`ethereum/go-ethereum`](https://github.com/ethereum/go-ethereum) Geth, for ENR and Discv5 packages
+- Libp2p
+    - [`ipfs/go-datastore`](https://github.com/ipfs/go-datastore): New experimental peerstore code
+    - [`libp2p/go-libp2p`](https://github.com/libp2p/go-libp2p): Gossipsub, mutli-select, transports, multiplexers, identification, RPC base, and more.
+- [`mvdan/sh`](https://github.com/mvdan/sh): For shell parsing and interpreting
+- [`chzyer/readline`](https://github.com/chzyer/readline): For history/shell code
+- [`gorilla/websocket`](https://github.com/gorilla/websocket): For websocket server/client
+- [`sirupsen/logrus`](https://github.com/sirupsen/logrus): For logging infrastructure
 
 ## Usage
 
