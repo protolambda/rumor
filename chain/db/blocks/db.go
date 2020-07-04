@@ -60,6 +60,8 @@ type DB interface {
 	Remove(root beacon.Root) (exists bool, err error)
 	// Stats shows some database statistics such as latest write key and entry count.
 	Stats() DBStats
+	// List all known block roots
+	List() []beacon.Root
 }
 
 type MemDB struct {
@@ -189,4 +191,14 @@ func (db *MemDB) Remove(root beacon.Root) (exists bool, err error) {
 func (db *MemDB) Stats() DBStats {
 	// return a copy (struct is small and has no pointers)
 	return db.stats
+}
+
+func (db *MemDB) List() (out []beacon.Root) {
+	out = make([]beacon.Root, 0, db.stats.Count)
+	db.data.Range(func(key, value interface{}) bool {
+		id := key.(beacon.Root)
+		out = append(out, id)
+		return true
+	})
+	return out
 }

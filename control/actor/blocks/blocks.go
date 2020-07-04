@@ -29,6 +29,8 @@ func (c *BlocksCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &BlocksRemoveCmd{Base: c.Base, DB: c.DB}
 	case "stats":
 		cmd = &BlocksStatsCmd{Base: c.Base, DB: c.DB}
+	case "list":
+		cmd = &BlocksListCmd{Base: c.Base, DB: c.DB}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
@@ -36,7 +38,7 @@ func (c *BlocksCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *BlocksCmd) Routes() []string {
-	return []string{"import", "export", "get", "rm", "stats"}
+	return []string{"import", "export", "get", "rm", "stats", "list"}
 }
 
 func (c *BlocksCmd) Help() string {
