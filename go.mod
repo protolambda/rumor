@@ -26,16 +26,11 @@ require (
 	github.com/minio/sha256-simd v0.1.1
 	github.com/multiformats/go-base32 v0.0.3
 	github.com/multiformats/go-multiaddr v0.2.1
-	github.com/protolambda/ask v0.0.1
+	github.com/protolambda/ask v0.0.4
 	github.com/protolambda/zrnt v0.12.2-alpha.1
 	github.com/protolambda/zssz v0.1.5
 	github.com/protolambda/ztyp v0.0.2
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
 	mvdan.cc/sh/v3 v3.1.2
-)
-
-replace (
-	github.com/protolambda/ask => ../ask
-	github.com/protolambda/zrnt => ../zrnt
 )

@@ -90,6 +90,20 @@ type ActorCmd struct {
 	SpawnContext base.SpawnFn
 }
 
+func (c *ActorCmd) Help() string {
+	return `Rumor provides a suite of commands for p2p/eth2 actions.
+Each action can (optionally):
+- Run by one actor, e.g. 'alice: host start'
+- Run with an ID, e.g. '_my_reference host start'
+- Run with a log level, e.g. 'lvl_warn host start' (each level is prefixed with lvl_)
+
+Log data fields automatically become available. E.g. '_my_reference_enr' to get 'enr' field, or '__enr' when it's from the last Rumor command.
+
+And Bash syntax can be used to script control flow.
+Rumor is a shell, but restricts unknown commands to running as a sub-process.
+`
+}
+
 func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	b := &base.Base{
 		WithHost:      &c.HostState,
@@ -166,12 +180,11 @@ func IsActorCmd(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
+	if args[0] == "help" { // implicit command
+		return true
+	}
 	_, ok := topRoutesMap[args[0]]
 	return ok
-}
-
-func (c *ActorCmd) Help() string {
-	return "Interact with any p2p component in Eth2"
 }
 
 type SleepCmd struct {
