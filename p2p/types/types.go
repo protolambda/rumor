@@ -2,6 +2,8 @@ package types
 
 import (
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"github.com/protolambda/zssz"
 )
@@ -16,14 +18,34 @@ var Eth2DataSSZ = zssz.GetSSZ((*Eth2Data)(nil))
 
 const ATTESTATION_SUBNET_COUNT = 64
 
-type AttnetBits [(ATTESTATION_SUBNET_COUNT + 7) / 8]byte
+const attnetByteLen = (ATTESTATION_SUBNET_COUNT + 7) / 8
+
+type AttnetBits [attnetByteLen]byte
 
 func (ab *AttnetBits) BitLen() uint64 {
 	return ATTESTATION_SUBNET_COUNT
 }
 
-func (ab *AttnetBits) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + hex.EncodeToString(ab[:]) + `"`), nil
+func (p AttnetBits) MarshalText() ([]byte, error) {
+	return []byte("0x" + hex.EncodeToString(p[:])), nil
+}
+
+func (p AttnetBits) String() string {
+	return "0x" + hex.EncodeToString(p[:])
+}
+
+func (p *AttnetBits) UnmarshalText(text []byte) error {
+	if p == nil {
+		return errors.New("cannot decode into nil AttnetBits")
+	}
+	if len(text) >= 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X') {
+		text = text[2:]
+	}
+	if len(text) != attnetByteLen*2 {
+		return fmt.Errorf("unexpected length string '%s'", string(text))
+	}
+	_, err := hex.Decode(p[:], text)
+	return err
 }
 
 var AttnetBitsSSZ = zssz.GetSSZ((*AttnetBits)(nil))

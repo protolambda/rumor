@@ -1,0 +1,3 @@
+for enr in "${bootnodes[@]}"; do
+    peer connect $enr
+done

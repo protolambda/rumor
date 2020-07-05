@@ -137,6 +137,10 @@ func main() {
 				if err != nil {
 					return "", err
 				}
+				// If it's the first line, and it's empty, then nothing happens.
+				if len(cmdBuf) == 0 && strings.TrimSpace(line) == "" {
+					continue
+				}
 				cmdBuf = append(cmdBuf, line)
 				return line, nil
 			}

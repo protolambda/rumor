@@ -13,7 +13,10 @@ import (
 	"github.com/libp2p/go-libp2p-core/peerstore"
 	"github.com/libp2p/go-libp2p-peerstore/pstoreds"
 	"github.com/multiformats/go-base32"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
+	"github.com/protolambda/rumor/p2p/types"
+	"github.com/protolambda/zrnt/eth2/beacon"
 	"io"
 )
 
@@ -144,6 +147,23 @@ func (ep *dsExtendedPeerstore) GetAllData(id peer.ID) *track.PeerAllData {
 	for _, addr := range ep.Addrs(id) {
 		multiAddrs = append(multiAddrs, addr.String())
 	}
+	var enrAttnets *types.AttnetBits
+
+	var forkDigest *beacon.ForkDigest
+	var nextForkVersion *beacon.Version
+	var nextForkEpoch *beacon.Epoch
+
+	en := ep.LatestENR(id)
+	if en != nil {
+		if dat, exists, err := addrutil.ParseEnrEth2Data(en); err == nil && exists {
+			forkDigest = &dat.ForkDigest
+			nextForkVersion = &dat.NextForkVersion
+			nextForkEpoch = &dat.NextForkEpoch
+		}
+		if dat, exists, err := addrutil.ParseEnrAttnets(en); err == nil && exists {
+			enrAttnets = dat
+		}
+	}
 	return &track.PeerAllData{
 		PeerID:          id,
 		NodeID:          nodeID,
@@ -153,9 +173,13 @@ func (ep *dsExtendedPeerstore) GetAllData(id peer.ID) *track.PeerAllData {
 		Latency:         ep.LatencyEWMA(id),
 		UserAgent:       userAgent,
 		ProtocolVersion: protVersion,
+		ForkDigest:      forkDigest,
+		NextForkVersion: nextForkVersion,
+		NextForkEpoch:   nextForkEpoch,
+		Attnets:         enrAttnets,
 		MetaData:        ep.Metadata(id),
 		ClaimedSeq:      seq,
 		Status:          ep.Status(id),
-		ENR:             ep.LatestENR(id),
+		ENR:             en,
 	}
 }

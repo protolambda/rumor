@@ -25,15 +25,15 @@ func (c *PeerListCmd) Default() {
 }
 
 func (c *PeerListCmd) Run(ctx context.Context, args ...string) error {
-	h, err := c.Host()
-	if err != nil {
-		return err
-	}
+	h, hostErr := c.Host()
 	var peers []peer.ID
 	switch c.Which {
 	case "all":
-		peers = h.Peerstore().Peers()
+		peers = c.Store.Peers()
 	case "connected":
+		if hostErr != nil {
+			return hostErr
+		}
 		peers = h.Network().Peers()
 	default:
 		return fmt.Errorf("invalid peer selection type: %s", c.Which)

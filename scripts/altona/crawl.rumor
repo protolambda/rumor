@@ -1,0 +1,11 @@
+dv5 run
+
+host peer list all
+all_peers=$__peers
+
+for peer_id in "${all_peers[@]}"; do
+do
+  echo "key  : $peer_id"
+  peer info $peer_id
+  # TODO filter data, and query on discv5, then repeat.
+done

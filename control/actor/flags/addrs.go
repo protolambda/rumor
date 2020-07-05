@@ -85,7 +85,8 @@ func (f *EnrOrEnodeFlag) Type() string {
 }
 
 type FlexibleAddrFlag struct {
-	MultiAddr ma.Multiaddr
+	MultiAddr   ma.Multiaddr
+	OptionalEnr *enode.Node
 }
 
 func (f *FlexibleAddrFlag) String() string {
@@ -102,6 +103,7 @@ func (f *FlexibleAddrFlag) Set(v string) error {
 		if err != nil {
 			return err
 		}
+		f.OptionalEnr = en
 		muAddr, err = addrutil.EnodeToMultiAddr(en)
 		if err != nil {
 			return err
