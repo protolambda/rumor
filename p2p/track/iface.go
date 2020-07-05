@@ -1,6 +1,7 @@
 package track
 
 import (
+	"encoding/json"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
@@ -43,22 +44,34 @@ type PeerAllData struct {
 	NodeID enode.ID `json:"node_id"`
 	Pubkey string   `json:"pubkey"`
 
-	Addrs     []string `json:"addrs"`
-	Protocols []string `json:"protocols"`
+	Addrs     []string `json:"addrs,omitempty"`
+	Protocols []string `json:"protocols,omitempty"`
 
-	Latency time.Duration `json:"latency"`
+	Latency time.Duration `json:"latency,omitempty"`
 
-	UserAgent       string `json:"user_agent"`
-	ProtocolVersion string `json:"protocol_version"`
+	UserAgent       string `json:"user_agent,omitempty"`
+	ProtocolVersion string `json:"protocol_version,omitempty"`
 
 	// Metadata with highest sequence number
-	MetaData *methods.MetaData `json:"metadata"`
+	MetaData *methods.MetaData `json:"metadata,omitempty"`
 	// Highest claimed seq nr, we may not have the actual corresponding metadata yet.
-	ClaimedSeq methods.SeqNr `json:"claimed_seq"`
+	ClaimedSeq methods.SeqNr `json:"claimed_seq,omitempty"`
 	// Latest status
-	Status *methods.Status `json:"status"`
+	Status *methods.Status `json:"status,omitempty"`
 	// Latest ENR
-	ENR *enode.Node `json:"enr"`
+	ENR *enode.Node `json:"enr,omitempty"`
+}
+
+func (p *PeerAllData) String() string {
+	if p == nil {
+		return "no data available"
+	} else {
+		dat, err := json.MarshalIndent(p, "", "  ")
+		if err != nil {
+			return "failed to format peer data"
+		}
+		return string(dat)
+	}
 }
 
 type AllDataGetter interface {

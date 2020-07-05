@@ -30,9 +30,6 @@ const UserReadTimeout = time.Hour * 1
 // Stop writing to users that can't receive a command within 10 seconds.
 const UserWriteTimeout = time.Second * 10
 
-const LogKeyActor = "actor"
-const LogKeyCallID = "call_id"
-
 func filterInput(r rune) (rune, bool) {
 	switch r {
 	// block CtrlZ feature
@@ -40,47 +37,6 @@ func filterInput(r rune) (rune, bool) {
 		return r, false
 	}
 	return r, true
-}
-
-type LogFormatter struct {
-	EntryFmtFn
-}
-
-type EntryFmtFn func(entry *logrus.Entry) (string, error)
-
-func (fn EntryFmtFn) Format(entry *logrus.Entry) ([]byte, error) {
-	out, err := fn(entry)
-	return []byte(out), err
-}
-
-func (l LogFormatter) WithKeyFormat(
-	key string,
-	fmtFn func(v interface{}, inner string) (string, error)) LogFormatter {
-	return LogFormatter{
-		EntryFmtFn: func(entry *logrus.Entry) (string, error) {
-			value, hasValue := entry.Data[key]
-			if !hasValue {
-				return l.EntryFmtFn(entry)
-			}
-			delete(entry.Data, key)
-			defer func() {
-				if hasValue {
-					entry.Data[key] = value
-				}
-			}()
-			out, err := l.EntryFmtFn(entry)
-			if err != nil {
-				return "", err
-			}
-			return fmtFn(value, out)
-		},
-	}
-}
-
-func simpleLogFmt(fmtStr string) func(v interface{}, inner string) (s string, err error) {
-	return func(v interface{}, inner string) (s string, err error) {
-		return fmt.Sprintf(fmtStr, v) + inner, nil
-	}
 }
 
 type TimedNetOut struct {
@@ -122,19 +78,7 @@ func main() {
 		log := logrus.New()
 		log.SetOutput(os.Stdout)
 		log.SetLevel(logrus.TraceLevel)
-
-		coreLogFmt := logrus.TextFormatter{ForceColors: true, DisableTimestamp: true}
-		logFmt := LogFormatter{EntryFmtFn: func(entry *logrus.Entry) (string, error) {
-			out, err := coreLogFmt.Format(entry)
-			if out == nil {
-				out = []byte{}
-			}
-			return string(out), err
-		}}
-		logFmt = logFmt.WithKeyFormat(LogKeyCallID, simpleLogFmt("\033[33m[%s]\033[0m")) // yellow
-		logFmt = logFmt.WithKeyFormat(LogKeyActor, simpleLogFmt("\033[36m[%s]\033[0m"))  // cyan
-
-		log.SetFormatter(logFmt)
+		log.SetFormatter(&control.ShellLogFmt{})
 
 		if levelFlag != "" {
 			logLevel, err := logrus.ParseLevel(levelFlag)

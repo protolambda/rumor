@@ -39,9 +39,9 @@ func (c *PeerListCmd) Run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("invalid peer selection type: %s", c.Which)
 	}
 	if c.Details {
-		peerData := make(map[string]track.PeerAllData)
+		peerData := make(map[string]*track.PeerAllData)
 		for _, p := range peers {
-			peerData[p.String()] = *c.Store.GetAllData(p)
+			peerData[p.String()] = c.Store.GetAllData(p)
 		}
 		c.Log.WithField("peers", peerData).Infof("%d peers", len(peers))
 	} else {
