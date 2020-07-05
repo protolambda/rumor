@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/peering/enrstate"
 	"net"
+	"strconv"
 )
 
 type EnrMakeCmd struct {
@@ -67,12 +69,42 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 			priv = currPriv
 		}
 	}
+	// If there is an existing libp2p host, it may already have made a port choice for us to default to.
+	// Or better, a public IP, derived with something like upnp or pmp
+	if h, err := c.Host(); err == nil {
+		var existingIp net.IP = nil
+		var existingTCP uint16 = 0
+		// The last address is generally the most public, keep looping.
+		for _, a := range h.Addrs() {
+			if existingTCP == 0 {
+				if addrTCP, err := a.ValueForProtocol(ma.P_TCP); err == nil {
+					v, err := strconv.ParseUint(addrTCP, 10, 16)
+					if err == nil {
+						existingTCP = uint16(v)
+					}
+				}
+			}
+			if addrIp, err := a.ValueForProtocol(ma.P_IP4); err == nil {
+				existingIp = net.ParseIP(addrIp)
+			}
+		}
+		if ip == nil {
+			ip = existingIp
+		}
+		if tcp == 0 {
+			tcp = existingTCP
+		}
+		if udp == 0 {
+			udp = existingTCP // just copy TCP if we've a tcp port
+		}
+	}
 	if tcp == 0 {
 		tcp = 9000
 	}
 	if udp == 0 {
 		udp = 9000
 	}
+
 	if ip == nil {
 		ip = net.IPv4zero
 	}
