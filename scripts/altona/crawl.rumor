@@ -1,5 +1,9 @@
 external_ip="$(curl -s v4.ident.me)"
+p2p_port=9030
+
 echo "External IP used in ENRs: $external_ip"
+
+enr make --ip="$external_ip" --tcp=$p2p_port --udp=$p2p_port
 
 # create a shared peerstore, we can hook more actors to it later.
 peerstore create crawler
@@ -7,7 +11,7 @@ peerstore create crawler
 # Try and get 400 peers connected, because why not, we're a crawler.
 # And tag, see how many users identify us
 host start --lo-peers=400 --hi-peers=500 --peer-grace-period=30s --agent="Crawly McCrawlface"
-host listen --tcp=9030 --udp=9030 --ip=0.0.0.0
+host listen --tcp=$p2p_port --udp=$p2p_port --ip=0.0.0.0
 
 # Set up a fake Altona status
 include fake_status.rumor

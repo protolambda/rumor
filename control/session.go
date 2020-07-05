@@ -9,6 +9,8 @@ import (
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 	"os"
+	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -213,6 +215,7 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			sess.log.Errorf("Bad 'include' usage. Need a single script path, got %v.", args[1:])
 			return ParseError.ExitErr()
 		}
+		handlingCtx := interp.HandlerCtx(ctx)
 		// Temporarily change the default actor, to whatever the include was called with.
 		// This makes running a snippet with a different default actor a one-liner: `bob: include some_task.rumor`
 		prevActor := sess.defaultActorID
@@ -220,7 +223,8 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		defer func() {
 			sess.defaultActorID = prevActor
 		}()
-		return sess.RunInclude(ctx, args[1])
+		scriptPath := path.Join(handlingCtx.Dir, args[1])
+		return sess.RunInclude(ctx, scriptPath)
 	}
 
 	if len(args) == 1 && args[0] == "cancel" {
@@ -287,6 +291,8 @@ func (sess *Session) RunInclude(ctx context.Context, includePath string) error {
 	}
 
 	subShell := sess.runner.Subshell()
+	// make the script run with directory set to that of the script, to make code organization easier.
+	subShell.Dir = filepath.Dir(includePath)
 	sess.log.WithField("include", includePath).Info("Running included rumor script")
 	return subShell.Run(ctx, fileDoc)
 }
