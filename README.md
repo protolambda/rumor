@@ -58,6 +58,8 @@ Serve and attach supported types: `ws` (http upgraded to websocket, optional aut
 
 ## General
 
+For more examples, see the [`/scripts`](./scripts/) directory. With `include` you can try snippets from the convenience of the interactive shell!
+
 ```shell script
 # Have a look at all functionality
 help
@@ -66,7 +68,7 @@ help
 host start
 
 # You probably want to know everything that is happening, run this in the background:
-bg host notify all
+host notify all
 
 # Start listening (optionally specify ip or tcp/udp ports to listen at)
 # Note that the peer-manager is active by default.
@@ -84,25 +86,14 @@ peer connect <enr/enode/multi-addr>
 
 ### Connecting to testnets
 
-Prysm:
-```shell script
-# Start kademlia and connect to the Prysm testnet
-kad start /prysm/0.0.0/dht
-# Connect to bootnode
-peer connect /dns4/prylabs.net/tcp/30001/p2p/16Uiu2HAm7Qwe19vz9WzD2Mxn7fXd1vgHHp4iccuyq7TxwRXoAGfc
-# Protect bootnode
-peer protect 16Uiu2HAm7Qwe19vz9WzD2Mxn7fXd1vgHHp4iccuyq7TxwRXoAGfc bootnode
-# Refresh the kademlia table
-kad refresh
-```
-
-Lighthouse:
 ```shell script
 # Start discv5 and connect to the Lighthouse testnet
 # Give one or more bootnode addresses (ENR or enode format).
 dv5 run enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9X8Im_ZjQYyeoBP_luLLBB4wy39gQ4JgmlkgnY0gmlwhCOhiGqJc2VjcDI1NmsxoQMrmBYg_yR_ZKZKoLiChvlpNqdwXwodXmgw_TRow7RVwYN0Y3CCIyiDdWRwgiMo
 # Get your local Discv5 node info. Other discv5 nodes can bootstrap from this.
 dv5 self
+# Start querying for random nodes in the background
+dv5 random
 # Get nearby nodes
 dv5 lookup
 ```
@@ -110,20 +101,20 @@ dv5 lookup
 ```shell script
 # Log gossip blocks of prysmatic testnet to file
 gossip start
-gossip join /eth2/beacon_block/ssz
+gossip join /eth2/beacon_block/ssz_snappy
 # listening on the topic!
 gossip list
 # Check your peers on the topic
-gossip list-peers /eth2/beacon_block/ssz
+gossip list-peers /eth2/beacon_block/ssz_snappy
 # Subscribe to the topic
-gossip log /eth2/beacon_block/ssz
+gossip log /eth2/beacon_block/ssz_snappy
 # Exit task
 cancel
 # Leave channel
-gossip leave /eth2/beacon_block/ssz
+gossip leave /eth2/beacon_block/ssz_snappy
 
 # Ask a connected node for a Status
-rpc status req 16Uiu2HAmQ9WByeSsnxLb2tBW3MkGYMfg1BQowkwyVdUD9WwMdnrc
+rpc status req raw 16Uiu2HAmQ9WByeSsnxLb2tBW3MkGYMfg1BQowkwyVdUD9WwMdnrc
 ```
 
 And there are commands to make debugging various things easy as well:
@@ -210,7 +201,7 @@ Each log-entry will automatically be stored in the Rumor environment, to retriev
 Example:
 ```
 _my_call alice: host listen
-bob: peer connect _my_call_enr
+bob: peer connect _my_call_addr
 ```
 
 And, the log entry variables of the last call in the session can be referenced with just `_` (and still separated with `_` from the log-entry name):
@@ -218,7 +209,7 @@ And, the log entry variables of the last call in the session can be referenced w
 Example:
 ```
 alice: host listen
-bob: peer connect __enr
+bob: peer connect __addr
 ```
 
 Both the call ID and the log entry name may contain multiple underscores. References to call IDs always start with a `_`.
