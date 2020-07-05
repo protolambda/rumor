@@ -3,6 +3,7 @@
 An interactive shell written in Go, to run the Eth2 network stack, attach to testnets, debug clients, and extract data for tooling.
 
 The shell is built on top of [`mvdan/sh`](https://github.com/mvdan/sh), which aims to be POSIX compatible, and has some Bash features.
+Control flow, multi-line inputs, and command history are all supported.
 
 The core idea of the shell is to start and maintain p2p processes, and make the resulting information available though logs, 
  to auto-fill the environment with anything you would want.

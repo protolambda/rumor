@@ -107,6 +107,9 @@ func (t *TimedWsOut) Write(b []byte) (n int, err error) {
 	return len(b), t.c.WriteMessage(websocket.TextMessage, b)
 }
 
+// Every time some input has been parsed, call-back if parsing got a complete statement. If so, the full data is returned.
+type ParseBufferFn func(complete bool, fail bool) string
+
 func main() {
 
 	mainCmd := cobra.Command{
@@ -115,7 +118,7 @@ func main() {
 	}
 
 	// multi-line inputs end each intermediate line with "\"
-	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine control.NextMultiLineFn)) {
+	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine control.NextMultiLineFn, onParse ParseBufferFn)) {
 		log := logrus.New()
 		log.SetOutput(os.Stdout)
 		log.SetLevel(logrus.TraceLevel)
@@ -157,31 +160,44 @@ func main() {
 			return
 		}
 		defer rl.Close()
-		// re-use commands buffer
-		var cmds []string
+		// re-use buffer, tracking multi-line history
+		var cmdBuf []string
+		onParse := func(complete bool, fail bool) string {
+			if fail { // no history saved
+				// reset data
+				cmdBuf = cmdBuf[:0]
+				// prepare for next command
+				rl.SetPrompt(startPrompt)
+				return ""
+			}
+			if complete {
+				withSeparator := strings.Join(cmdBuf, "; ")
+				multiLine := strings.Join(cmdBuf, "\n")
+				// reset data
+				cmdBuf = cmdBuf[:0]
+				// best effort to fit the command into history as a valid shell command,
+				// the readline library has a bug with line breaks in history
+				_ = rl.SaveHistory(withSeparator)
+				// prepare for next command
+				rl.SetPrompt(startPrompt)
+				return multiLine
+			} else {
+				// just continue parsing
+				rl.SetPrompt(multilinePrompt)
+				return ""
+			}
+		}
 		readMultiLine := control.NextMultiLineFn(func() (string, error) {
 			for {
 				line, err := rl.Readline()
 				if err != nil {
 					return "", err
 				}
-				line = strings.TrimSpace(line)
-				if len(line) == 0 {
-					continue
-				}
-				cmds = append(cmds, line)
-				if strings.HasSuffix(line, " \\") {
-					rl.SetPrompt(multilinePrompt)
-					continue
-				}
-				cmd := strings.Join(cmds, " ")
-				cmds = cmds[:0]
-				rl.SetPrompt(startPrompt)
-				_ = rl.SaveHistory(cmd)
-				return cmd, nil
+				cmdBuf = append(cmdBuf, line)
+				return line, nil
 			}
 		})
-		run(log, readMultiLine)
+		run(log, readMultiLine, onParse)
 	}
 
 	feedLog := func(log logrus.FieldLogger, nextLogLine control.NextSingleLineFn, stopped *bool) {
@@ -246,7 +262,7 @@ func main() {
 			Short: "Attach to a running rumor server",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn) {
+				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn, onParse ParseBufferFn) {
 					var nextLogLine control.NextSingleLineFn
 					var writeLine func(v string) error
 					if wsAddr != "" {
@@ -307,20 +323,32 @@ func main() {
 					go feedLog(log, nextLogLine, &stopped)
 
 					// Take the input of our shell, and feed it to the net connection
+					// Use a locla parser just to get the input consumption right.
+					// Auto-detect things like incomplete commands due to line breaks.
+					localParser := syntax.NewParser()
+					r := &control.LinesReader{Fn: nextLine}
 					for {
-						line, err := nextLine()
-						if err != nil {
-							if err != io.EOF {
-								log.Error(err)
+						if err := localParser.Interactive(r, func(stmts []*syntax.Stmt) bool {
+							if localParser.Incomplete() {
+								onParse(false, false)
+								return true
 							}
-							break
-						}
-						if err := writeLine(line); err != nil {
-							log.Errorf("failed to send command: %v", err)
-							break
-						}
-						if strings.TrimSpace(line) == "exit" {
-							break
+							fullyParsed := onParse(true, false)
+
+							if err := writeLine(fullyParsed); err != nil {
+								log.Errorf("failed to send command: %v", err)
+							}
+							return true
+						}); err != nil {
+							// keep the shell alive after hitting bad inputs,
+							// we don't want a syntax mistake to tear down a session.
+							if err != readline.ErrInterrupt && err != io.EOF {
+								onParse(false, true)
+								log.Error(err)
+								continue
+							} else {
+								break
+							}
 						}
 					}
 					stopped = true
@@ -453,7 +481,7 @@ func main() {
 						if mType != websocket.TextMessage {
 							return "", errors.New("expected text-type websocket messages")
 						}
-						return string(mContent), nil
+						return string(mContent) + "\n", nil
 					}
 
 					r := &control.LinesReader{Fn: timedUserInputLines}
@@ -661,29 +689,39 @@ func main() {
 				return nil
 			},
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn) {
+				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn, onParse ParseBufferFn) {
 					sp := control.NewSessionProcessor(log)
 					sess := sp.NewSession(log)
 					parser := syntax.NewParser()
 					r := &control.LinesReader{Fn: nextLine}
-					if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
-						if parser.Incomplete() {
-							fmt.Printf("incomplete! (%v)\n", stmts)
-							return true
-						}
-						for _, stmt := range stmts {
-							if err := sess.Run(context.Background(), stmt); err != nil {
-								log.WithError(err).Error("error result")
+					for {
+						if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
+							if parser.Incomplete() {
+								onParse(false, false)
 								return true
 							}
-							if sess.Exited() {
-								return false
+							fullyParsed := onParse(true, false)
+							log.Debug(fullyParsed)
+							for _, stmt := range stmts {
+								if err := sess.Run(context.Background(), stmt); err != nil {
+									log.WithError(err).Error("error result")
+									return true
+								}
+								if sess.Exited() {
+									return false
+								}
 							}
-						}
-						return true
-					}); err != nil {
-						if err != readline.ErrInterrupt {
-							log.WithError(err).Error("failed to run input")
+							return true
+						}); err != nil {
+							// keep the shell alive after hitting bad inputs,
+							// we don't want a syntax mistake to tear down a session.
+							if err != readline.ErrInterrupt && !sess.Exited() {
+								onParse(false, true)
+								log.Error(err)
+								continue
+							} else {
+								break
+							}
 						}
 					}
 					sess.Close()
