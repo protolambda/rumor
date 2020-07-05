@@ -57,18 +57,20 @@ func (c *EnrViewCmd) Run(ctx context.Context, args ...string) error {
 	pubkey := enodeRes.Pubkey()
 	peerID := addrutil.PeerIDFromPubkey(pubkey)
 	nodeID := enode.PubkeyToIDV4(pubkey)
-	muAddr, err := addrutil.EnodeToMultiAddr(enodeRes)
-	if err != nil {
-		return err
-	}
-	c.Log.WithFields(logrus.Fields{
+	f := logrus.Fields{
 		"seq":     enodeRes.Seq(),
 		"xy":      fmt.Sprintf("%d %d", pubkey.X, pubkey.Y),
 		"node_id": nodeID.String(),
 		"peer_id": peerID.String(),
 		"enode":   enodeRes.URLv4(),
-		"multi":   muAddr.String(),
 		"enr":     enodeRes.String(), // formats as url-base64 ENR
-	}).Info("ENR parsed successfully")
+	}
+	muAddr, err := addrutil.EnodeToMultiAddr(enodeRes)
+	if err != nil {
+		c.Log.WithError(err).Warn("ENR has invalid multi-addr")
+	} else {
+		f["multi"] = muAddr.String()
+	}
+	c.Log.WithFields(f).Info("ENR parsed successfully")
 	return nil
 }

@@ -3,11 +3,11 @@ package host
 import (
 	"context"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/p2p/addrutil"
 )
 
 type HostViewCmd struct {
 	*base.Base
+	base.WithEnrNode
 }
 
 func (c *HostViewCmd) Help() string {
@@ -21,12 +21,11 @@ func (c *HostViewCmd) Run(ctx context.Context, args ...string) error {
 	}
 	c.Log.WithField("peer_id", h.ID()).Info("Peer ID")
 	for i, a := range h.Addrs() {
-		c.Log.WithField("multi_addr", a.String()+"/p2p/"+h.ID().String()).Infof("Listening address %d", i)
+		c.Log.WithField("addr", a.String()+"/p2p/"+h.ID().String()).Infof("Listening address %d", i)
 	}
-	enr, err := addrutil.EnrToString(c.GetEnr())
-	if err != nil {
-		return err
+	node, ok := c.GetNode()
+	if ok {
+		c.Log.WithField("enr", node.String()).Info("ENR")
 	}
-	c.Log.WithField("enr", enr).Info("ENR")
 	return nil
 }

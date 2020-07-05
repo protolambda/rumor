@@ -2,16 +2,11 @@ package dv5
 
 import (
 	"errors"
-	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
 	"github.com/protolambda/rumor/p2p/track"
 )
-
-type WithPriv interface {
-	GetPriv() crypto.PrivKey
-}
 
 type Dv5State struct {
 	Dv5Node dv5.Discv5
@@ -23,13 +18,13 @@ type Dv5Cmd struct {
 
 	Store track.ExtendedPeerstore
 
-	WithPriv
+	dv5.Dv5Settings
 }
 
 func (c *Dv5Cmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "run":
-		cmd = &Dv5RunCmd{Base: c.Base, Dv5State: c.Dv5State, WithPriv: c.WithPriv}
+		cmd = &Dv5RunCmd{Base: c.Base, Dv5State: c.Dv5State, Dv5Settings: c.Dv5Settings}
 	case "ping":
 		cmd = &Dv5PingCmd{Base: c.Base, Dv5State: c.Dv5State}
 	case "resolve":

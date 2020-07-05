@@ -2,6 +2,10 @@ package actor
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
@@ -19,8 +23,10 @@ import (
 	"github.com/protolambda/rumor/control/actor/peerstore"
 	"github.com/protolambda/rumor/control/actor/rpc"
 	"github.com/protolambda/rumor/control/actor/states"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
+	"sync"
 	"time"
 )
 
@@ -54,6 +60,11 @@ type Actor struct {
 
 	HostState host.HostState
 
+	LazyEnrState enr.LazyEnrState
+
+	privLock sync.Mutex
+	priv     *crypto.Secp256k1PrivateKey
+
 	ActorCtx    context.Context
 	actorCancel context.CancelFunc
 }
@@ -72,6 +83,35 @@ func NewActor(id ActorID, globals *GlobalActorData) *Actor {
 
 func (r *Actor) Close() {
 	r.actorCancel()
+}
+
+func (r *Actor) GetPriv() *crypto.Secp256k1PrivateKey {
+	r.privLock.Lock()
+	defer r.privLock.Unlock()
+	// TODO: could do more here, but ok to return nil
+	return r.priv
+}
+
+func (r *Actor) SetPriv(priv *crypto.Secp256k1PrivateKey) error {
+	r.privLock.Lock()
+	defer r.privLock.Unlock()
+	if r.priv != nil {
+		if ok, err := addrutil.PrivKeysEqual(r.priv, priv); err != nil {
+			return fmt.Errorf("failed priv key conflict check: %v", err)
+		} else if !ok {
+			return errors.New("cannot change private key")
+		}
+	}
+	r.priv = priv
+	return nil
+}
+
+func (r *Actor) GetNode() (n *enode.Node, ok bool) {
+	if current := r.LazyEnrState.Current; current != nil {
+		return current.GetNode(), true
+	} else {
+		return nil, false
+	}
 }
 
 func (r *Actor) MakeCmd(log logrus.FieldLogger, spawnCtx base.SpawnFn) *ActorCmd {
@@ -117,13 +157,14 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &host.HostCmd{
 			Base:             b,
 			WithSetHost:      &c.HostState,
-			WithSetEnr:       &c.HostState,
+			PrivSettings:     c,
+			WithEnrNode:      c,
 			WithCloseHost:    &c.HostState,
 			GlobalPeerstores: c.GlobalPeerstores,
 			CurrentPeerstore: c.CurrentPeerstore,
 		}
 	case "enr":
-		cmd = &enr.EnrCmd{Base: b}
+		cmd = &enr.EnrCmd{Base: b, Lazy: &c.LazyEnrState, PrivSettings: c, WithHostPriv: &c.HostState}
 	case "peer":
 		store := c.CurrentPeerstore
 		if !store.Initialized() {
@@ -142,7 +183,11 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 			CurrentPeerstore: c.CurrentPeerstore,
 		}
 	case "dv5":
-		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, WithPriv: &c.HostState, Store: c.CurrentPeerstore}
+		settings := c.LazyEnrState.Current
+		if settings == nil {
+			return nil, errors.New("Discv5 needs an ENR first. Use 'enr make'.")
+		}
+		cmd = &dv5.Dv5Cmd{Base: b, Dv5State: &c.Dv5State, Dv5Settings: settings, Store: c.CurrentPeerstore}
 	case "gossip":
 		cmd = &gossip.GossipCmd{Base: b, GossipState: &c.GossipState}
 	case "rpc":

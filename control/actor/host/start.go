@@ -26,6 +26,7 @@ import (
 
 type HostStartCmd struct {
 	*base.Base
+	base.PrivSettings
 	WithSetHost
 
 	GlobalPeerstores track.Peerstores
@@ -63,21 +64,37 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	if err == nil {
 		return errors.New("already have a host open")
 	}
-	var priv crypto.PrivKey
+	var priv *crypto.Secp256k1PrivateKey
 	{
-		if c.PrivKey.Priv == nil { // generate new private key if non was specified
-			var err error
-			priv, _, err = crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
-			if err != nil {
-				return err
+		if c.PrivKey.Priv == nil {
+			// Check if we already have a key
+			if current := c.GetPriv(); current == nil {
+				// generate new private key if non was specified
+				genp, _, err := crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
+				if err != nil {
+					return err
+				}
+				priv = genp.(*crypto.Secp256k1PrivateKey)
+				p, err := priv.Raw()
+				if err != nil {
+					return err
+				}
+				// handles race conditions, if we need to, stick with the existing key.
+				if err := c.PrivSettings.SetPriv(priv); err == nil {
+					c.Log.WithField("priv", hex.EncodeToString(p)).Info("Generated random Secp256k1 private key")
+				} else {
+					priv = c.PrivSettings.GetPriv()
+				}
+			} else {
+				priv = current
 			}
-			p, err := priv.Raw()
-			if err != nil {
-				return err
-			}
-			c.Log.WithField("priv", hex.EncodeToString(p)).Info("Generated random Secp256k1 private key")
 		} else {
-			priv = (*crypto.Secp256k1PrivateKey)(c.PrivKey.Priv)
+			// User started a host with explicit private key.
+			// Check if we don't have one currently, or if it's the same anyway.
+			priv = c.PrivKey.Priv
+			if err := c.PrivSettings.SetPriv(priv); err != nil { // checks against existing key for us.
+				return fmt.Errorf("cannot overwrite existing actor private key: %v", err)
+			}
 		}
 	}
 	hostOptions := make([]libp2p.Option, 0)

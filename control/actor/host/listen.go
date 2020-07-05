@@ -6,23 +6,29 @@ import (
 	"fmt"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/p2p/addrutil"
 	"net"
 )
 
 type HostListenCmd struct {
 	*base.Base
-	WithSetEnr
+	base.WithEnrNode
 
 	IP net.IP `ask:"--ip" help:"If no IP is specified, network interfaces are checked for one."`
 
-	TcpPort uint16 `ask:"--tcp" help:"If no tcp port is specified, it defaults to 9000."`
-	UdpPort uint16 `ask:"--udp" help:"If no udp port is specified (= 0), UDP equals TCP."`
+	TcpPort uint16 `ask:"--tcp" help:"If no tcp port is specified, it defaults to the ENR TCP port."`
+	UdpPort uint16 `ask:"--udp" help:"If no udp port is specified, it defaults to the ENR UDP port."`
 }
 
 func (c *HostListenCmd) Default() {
-	c.TcpPort = 9000
-	c.UdpPort = 0
+	node, ok := c.WithEnrNode.GetNode()
+	if !ok {
+		// No ENR available yet? Just use the common eth2 ENR port
+		c.TcpPort = 9000
+		c.UdpPort = 9000
+	} else {
+		c.TcpPort = uint16(node.TCP())
+		c.UdpPort = uint16(node.UDP())
+	}
 }
 
 func (c *HostListenCmd) Help() string {
@@ -36,28 +42,7 @@ func (c *HostListenCmd) Run(ctx context.Context, args ...string) error {
 	}
 	// hack to get a non-loopback address, to be improved.
 	if c.IP == nil {
-		ifaces, err := net.Interfaces()
-		if err != nil {
-			return err
-		}
-		for _, i := range ifaces {
-			addrs, err := i.Addrs()
-			if err != nil {
-				return err
-			}
-			for _, addr := range addrs {
-				var addrIP net.IP
-				switch v := addr.(type) {
-				case *net.IPNet:
-					addrIP = v.IP
-				case *net.IPAddr:
-					addrIP = v.IP
-				}
-				if addrIP.IsGlobalUnicast() {
-					c.IP = addrIP
-				}
-			}
-		}
+		c.IP = net.IPv4zero
 	}
 	if c.IP == nil {
 		return errors.New("no IP found")
@@ -71,7 +56,6 @@ func (c *HostListenCmd) Run(ctx context.Context, args ...string) error {
 	if c.UdpPort == 0 {
 		c.UdpPort = c.TcpPort
 	}
-	c.Log.Infof("ip: %s tcp: %d", ipScheme, c.TcpPort)
 	mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, c.IP.String(), c.TcpPort))
 	if err != nil {
 		return fmt.Errorf("could not construct multi addr: %v", err)
@@ -79,13 +63,12 @@ func (c *HostListenCmd) Run(ctx context.Context, args ...string) error {
 	if err := h.Network().Listen(mAddr); err != nil {
 		return err
 	}
-	c.WithSetEnr.SetIP(c.IP)
-	c.WithSetEnr.SetTCP(c.TcpPort)
-	c.WithSetEnr.SetUDP(c.UdpPort)
-	enr, err := addrutil.EnrToString(c.GetEnr())
+	// Now with p2p, which is more useful to connect to as other node.
+	mAddrWithp2p, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d/p2p/%s",
+		ipScheme, c.IP.String(), c.TcpPort, h.ID().String()))
 	if err != nil {
-		return err
+		return fmt.Errorf("could not construct multi addr: %v", err)
 	}
-	c.Log.WithField("enr", enr).Info("ENR")
+	c.Log.WithField("addr", mAddrWithp2p.String()).Infof("started listening on address")
 	return nil
 }

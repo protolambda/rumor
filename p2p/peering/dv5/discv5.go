@@ -2,12 +2,11 @@ package dv5
 
 import (
 	"crypto/ecdsa"
-	"errors"
-	"github.com/btcsuite/btcd/btcec"
 	geth_log "github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/protolambda/rumor/p2p/types"
 	"github.com/sirupsen/logrus"
 	"net"
 )
@@ -22,6 +21,22 @@ type Discv5 interface {
 	RequestENR(n *enode.Node) (*enode.Node, error)
 }
 
+type Dv5Settings interface {
+	LocalNode() *enode.LocalNode
+	StaticIP() net.IP
+	SetStaticIP(ip net.IP)
+	FallbackIP() net.IP
+	SetFallbackIP(ip net.IP)
+	FallbackUDP() uint16
+	SetFallbackUDP(port uint16)
+	GetPriv() *crypto.Secp256k1PrivateKey
+	SetIP(ip net.IP)
+	SetTCP(port uint16)
+	SetUDP(port uint16)
+	SetEth2Data(dat *types.Eth2Data)
+	SetAttnets(dat *types.AttnetBits)
+}
+
 type Discv5Impl struct {
 	*discover.UDPv5
 	addr *net.UDPAddr
@@ -29,27 +44,22 @@ type Discv5Impl struct {
 	gLog *GethLogger
 }
 
-func NewDiscV5(log logrus.FieldLogger, ip net.IP, port uint16, privKey crypto.PrivKey, bootNodes []*enode.Node) (Discv5, error) {
-	k, ok := privKey.(*crypto.Secp256k1PrivateKey)
-	if !ok {
-		return nil, errors.New("libp2p-crypto private key is not a Secp256k1 key")
-	}
-	ecdsaPrivKey := (*ecdsa.PrivateKey)((*btcec.PrivateKey)(k))
+func NewDiscV5(log logrus.FieldLogger, listenIP net.IP, listenPort uint16,
+	settings Dv5Settings, bootNodes []*enode.Node) (Discv5, error) {
+
+	priv := settings.GetPriv()
+
+	ecdsaPrivKey := (*ecdsa.PrivateKey)(priv)
 
 	udpAddr := &net.UDPAddr{
-		IP:   ip,
-		Port: int(port),
+		IP:   listenIP,
+		Port: int(listenPort),
 	}
 
 	conn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
 		return nil, err
 	}
-
-	localNodeDB, err := enode.OpenDB("") // memory-DB
-	localNode := enode.NewLocalNode(localNodeDB, ecdsaPrivKey)
-	localNode.SetFallbackIP(udpAddr.IP)
-	localNode.SetFallbackUDP(udpAddr.Port)
 
 	gethLogWrap := GethLogger{FieldLogger: log}
 	gethLogger := geth_log.New()
@@ -63,7 +73,7 @@ func NewDiscV5(log logrus.FieldLogger, ip net.IP, port uint16, privKey crypto.Pr
 		Log:          gethLogger,
 		ValidSchemes: enode.ValidSchemes,
 	}
-	udpV5, err := discover.ListenV5(conn, localNode, cfg)
+	udpV5, err := discover.ListenV5(conn, settings.LocalNode(), cfg)
 	if err != nil {
 		return nil, err
 	}

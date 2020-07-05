@@ -21,6 +21,14 @@ import (
 
 type Eth2ENREntry []byte
 
+func NewEth2DataEntry(dat *types.Eth2Data) Eth2ENREntry {
+	var buf bytes.Buffer
+	if _, err := zssz.Encode(&buf, dat, types.Eth2DataSSZ); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
 func (eee Eth2ENREntry) ENRKey() string {
 	return "eth2"
 }
@@ -42,6 +50,14 @@ func (eee Eth2ENREntry) String() string {
 }
 
 type AttnetsENREntry []byte
+
+func NewAttnetsENREntry(dat *types.AttnetBits) AttnetsENREntry {
+	var buf bytes.Buffer
+	if _, err := zssz.Encode(&buf, dat, types.AttnetBitsSSZ); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
 
 func (aee AttnetsENREntry) ENRKey() string {
 	return "attnets"
@@ -204,7 +220,7 @@ func ParseNodeIDOrEnrOrEnode(v string) (enode.ID, error) {
 	}
 }
 
-func ParsePrivateKey(v string) (*ecdsa.PrivateKey, error) {
+func ParsePrivateKey(v string) (*crypto.Secp256k1PrivateKey, error) {
 	if strings.HasPrefix(v, "0x") {
 		v = v[2:]
 	}
@@ -217,11 +233,30 @@ func ParsePrivateKey(v string) (*ecdsa.PrivateKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse private key, invalid private key (Secp256k1): %v", err)
 	}
-	key := (*ecdsa.PrivateKey)((priv).(*crypto.Secp256k1PrivateKey))
-	if !key.Curve.IsOnCurve(key.X, key.Y) {
+	key := (priv).(*crypto.Secp256k1PrivateKey)
+	if !key.Curve.IsOnCurve(key.X, key.Y) { // TODO: should we be checking this?
 		return nil, fmt.Errorf("invalid private key, not on curve")
 	}
 	return key, nil
+}
+
+func PrivKeysEqual(a *crypto.Secp256k1PrivateKey, b *crypto.Secp256k1PrivateKey) (ok bool, err error) {
+	if a == nil {
+		if b == nil {
+			return true, nil
+		} else {
+			return false, nil
+		}
+	}
+	aRaw, err := a.Raw()
+	if err != nil {
+		return false, err
+	}
+	bRaw, err := b.Raw()
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(aRaw, bRaw), nil
 }
 
 func ParsePubkey(v string) (*ecdsa.PublicKey, error) {
@@ -299,7 +334,7 @@ func EnodeToMultiAddr(node *enode.Node) (ma.Multiaddr, error) {
 }
 
 // Create an ENR. All arguments are optional.
-func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *ecdsa.PrivateKey) *enr.Record {
+func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *crypto.Secp256k1PrivateKey) *enr.Record {
 	var rec enr.Record
 	if ip != nil {
 		if len(ip) == net.IPv4len {
@@ -312,7 +347,7 @@ func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *ecdsa.PrivateKey) 
 		rec.Set(enr.IP(ip))
 	}
 	if priv != nil {
-		pub := priv.Public().(*ecdsa.PublicKey)
+		pub := (*ecdsa.PrivateKey)(priv).Public().(*ecdsa.PublicKey)
 		rec.Set(enode.Secp256k1(*pub))
 	}
 	if tcpPort != 0 {
@@ -322,7 +357,7 @@ func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *ecdsa.PrivateKey) 
 		rec.Set(enr.UDP(udpPort))
 	}
 	if priv != nil {
-		_ = enode.SignV4(&rec, priv)
+		_ = enode.SignV4(&rec, (*ecdsa.PrivateKey)(priv))
 	}
 	return &rec
 }

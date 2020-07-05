@@ -19,9 +19,9 @@ dave: host listen --ip=127.0.0.1 --tcp=9004
 _alice_view alice: host view
 _bob_view bob: host view
 
-bob: peer connect $_alice_view_enr
-charlie: peer connect $_alice_view_enr
-dave: peer connect $_alice_view_enr
+bob: peer connect $_alice_view_addr
+charlie: peer connect $_alice_view_addr
+dave: peer connect $_alice_view_addr
 
 # Wait for grace period to pass
 sleep 4s

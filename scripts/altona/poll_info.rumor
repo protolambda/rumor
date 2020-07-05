@@ -1,7 +1,0 @@
-# Exchange status with everyone every slot
-peer status poll --interval=12s  --timeout=3s
-
-# Ping everyone, and update metadata if they have new data for us
-peer metadata poll --interval=30s  --timeout=10s  --update --update-timeout=20s
-
-

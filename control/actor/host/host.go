@@ -5,7 +5,6 @@ import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/track"
-	"net"
 )
 
 type WithSetHost interface {
@@ -16,12 +15,6 @@ type WithCloseHost interface {
 	CloseHost() error
 }
 
-type WithSetEnr interface {
-	SetIP(ip net.IP)
-	SetTCP(port uint16)
-	SetUDP(port uint16)
-}
-
 type HostCmd struct {
 	*base.Base
 
@@ -29,21 +22,22 @@ type HostCmd struct {
 	CurrentPeerstore track.DynamicPeerstore
 
 	WithSetHost
-	WithSetEnr
 	WithCloseHost
+	base.PrivSettings
+	base.WithEnrNode
 }
 
 func (c *HostCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "start":
-		cmd = &HostStartCmd{Base: c.Base, WithSetHost: c.WithSetHost,
+		cmd = &HostStartCmd{Base: c.Base, WithSetHost: c.WithSetHost, PrivSettings: c.PrivSettings,
 			GlobalPeerstores: c.GlobalPeerstores, CurrentPeerstore: c.CurrentPeerstore}
 	case "stop":
 		cmd = &HostStopCmd{Base: c.Base, WithCloseHost: c.WithCloseHost}
 	case "view":
-		cmd = &HostViewCmd{c.Base}
+		cmd = &HostViewCmd{Base: c.Base, WithEnrNode: c.WithEnrNode}
 	case "listen":
-		cmd = &HostListenCmd{Base: c.Base, WithSetEnr: c.WithSetEnr}
+		cmd = &HostListenCmd{Base: c.Base, WithEnrNode: c.WithEnrNode}
 	case "notify":
 		cmd = &HostNotifyCmd{c.Base}
 	default:

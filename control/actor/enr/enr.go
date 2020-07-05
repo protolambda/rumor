@@ -3,10 +3,18 @@ package enr
 import (
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/p2p/peering/enrstate"
 )
+
+type LazyEnrState struct {
+	Current *enrstate.EnrState
+}
 
 type EnrCmd struct {
 	*base.Base
+	Lazy *LazyEnrState
+	base.PrivSettings
+	base.WithHostPriv
 }
 
 func (c *EnrCmd) Cmd(route string) (cmd interface{}, err error) {
@@ -16,7 +24,7 @@ func (c *EnrCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "gen-key":
 		cmd = &EnrGenKeyCmd{Base: c.Base}
 	case "make":
-		cmd = &EnrMakeCmd{Base: c.Base}
+		cmd = &EnrMakeCmd{Base: c.Base, Lazy: c.Lazy, PrivSettings: c.PrivSettings, WithHostPriv: c.WithHostPriv}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

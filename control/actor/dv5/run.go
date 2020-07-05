@@ -2,19 +2,21 @@ package dv5
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
+	"net"
 )
 
 type Dv5RunCmd struct {
 	*base.Base
 	*Dv5State
-	WithPriv
+	dv5.Dv5Settings
+	ListenIP  net.IP   `ask:"--ip" help:"Optional listen IP. Will try 0.0.0.0 otherwise."`
+	ListenUDP uint16   `ask:"--udp" help:"Optional UDP port. Will try ENR port otherwise."`
 	Bootnodes []string `ask:"[bootnodes]" help:"Bootnodes for dv5"`
 }
 
@@ -23,17 +25,6 @@ func (c *Dv5RunCmd) Help() string {
 }
 
 func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
-	_, err := c.Host()
-	if err != nil {
-		return err
-	}
-	ip := c.GetIP()
-	udpPort := c.GetUDP()
-	priv := c.GetPriv()
-
-	if ip == nil {
-		return errors.New("Host has no IP yet. Get with 'host listen'")
-	}
 	if c.Dv5State.Dv5Node != nil {
 		return fmt.Errorf("Already have dv5 open at %s", c.Dv5State.Dv5Node.Self().String())
 	}
@@ -45,7 +36,17 @@ func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 		}
 		bootNodes = append(bootNodes, dv5Addr)
 	}
-	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.Log, ip, udpPort, priv, bootNodes)
+	ip := c.ListenIP
+	if ip == nil {
+		ip = net.IPv4zero
+	}
+	udpPort := c.ListenUDP
+	if udpPort == 0 {
+		localNode := c.LocalNode()
+		udpPort = uint16(localNode.Node().UDP())
+	}
+	var err error
+	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.Log, ip, udpPort, c.Dv5Settings, bootNodes)
 	if err != nil {
 		return err
 	}

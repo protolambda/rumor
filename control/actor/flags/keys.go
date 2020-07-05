@@ -1,7 +1,6 @@
 package flags
 
 import (
-	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -9,14 +8,14 @@ import (
 )
 
 type P2pPrivKeyFlag struct {
-	Priv *ecdsa.PrivateKey
+	Priv *crypto.Secp256k1PrivateKey
 }
 
 func (f P2pPrivKeyFlag) String() string {
 	if f.Priv == nil {
 		return "? (no private key data)"
 	}
-	secpKey := (*crypto.Secp256k1PrivateKey)(f.Priv)
+	secpKey := f.Priv
 	keyBytes, err := secpKey.Raw()
 	if err != nil {
 		return "? (invalid private key)"
@@ -30,7 +29,7 @@ func (f *P2pPrivKeyFlag) Set(value string) error {
 		f.Priv = nil
 		return nil
 	}
-	var priv *ecdsa.PrivateKey
+	var priv *crypto.Secp256k1PrivateKey
 	var err error
 	priv, err = addrutil.ParsePrivateKey(value)
 	if err != nil {

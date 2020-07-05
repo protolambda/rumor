@@ -2,10 +2,10 @@ package base
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/p2p/enr"
+	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/sirupsen/logrus"
-	"net"
 )
 
 // SpawnFn spawns background tasks.
@@ -27,8 +27,18 @@ type Base struct {
 
 type WithHost interface {
 	Host() (h host.Host, err error)
-	GetEnr() *enr.Record
-	GetIP() net.IP
-	GetTCP() uint16
-	GetUDP() uint16
+}
+
+type WithHostPriv interface {
+	GetHostPriv() *crypto.Secp256k1PrivateKey
+}
+
+type WithEnrNode interface {
+	GetNode() (n *enode.Node, ok bool)
+}
+
+type PrivSettings interface {
+	// GetPriv, may be nil
+	GetPriv() *crypto.Secp256k1PrivateKey
+	SetPriv(p *crypto.Secp256k1PrivateKey) error
 }
