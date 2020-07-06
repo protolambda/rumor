@@ -8,6 +8,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -42,7 +43,7 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 		prot += protocol.ID("_" + c.Compression.Compression.Name())
 	}
 	listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
-		req := map[string]interface{}{
+		req := logrus.Fields{
 			"from":     peerId.String(),
 			"protocol": prot,
 		}
@@ -66,7 +67,7 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 		}
 
 		if c.Drop {
-			c.Log.WithField("req", req).Infof("Received request, dropping it!")
+			c.Log.WithFields(req).Infof("Received request, dropping it!")
 		} else {
 			ctx, cancel := context.WithCancel(ctx)
 			reqId := c.Responder.AddRequest(&RequestEntry{
@@ -76,7 +77,7 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 			})
 			req["req_id"] = reqId
 
-			c.Log.WithField("req", req).Infof("Received request, queued it to respond to!")
+			c.Log.WithFields(req).Infof("Received request, queued it to respond to!")
 
 			// Wait for context to stop processing the request (stream will be closed after return)
 			<-ctx.Done()

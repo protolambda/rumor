@@ -45,7 +45,7 @@ func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *ChainOnCmd) Routes() []string {
-	return []string{"attestation", "block", "hot", "cold", "head", "serve", "votes"}
+	return []string{"attestation", "block", "hot", "cold", "head", "serve", "sync", "votes"}
 }
 
 func (c *ChainOnCmd) Help() string {
