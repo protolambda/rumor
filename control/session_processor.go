@@ -207,7 +207,7 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 
 	callCmd := rep.MakeCmd(cmdLogger, call.Spawn)
 
-	cmdLogger.WithField("args", cmdArgs).Trace("Started")
+	sp.log.WithField("args", cmdArgs).Tracef("Started %s", callID)
 
 	loadedCmd, err := ask.Load(callCmd)
 	if err != nil {
@@ -227,7 +227,7 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 				if isHelp {
 					cmdLogger.Info(fCmd.Usage())
 				}
-				cmdLogger.WithField("success", "true").Trace("completed call")
+				cmdLogger.WithField("__success", "true").Trace("completed call")
 			}
 			doneCancel()
 			// If nothing was spawned, we can free the command early
@@ -237,6 +237,7 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 				// Waiting for background tasks to be freed
 				<-freeCtx.Done()
 			}
+			cmdLogger.WithField("__freed", "true").Trace("freed call resources")
 			// Finished, including optional spawned resources, removing call now
 			sp.RemoveInterests(callID)
 			sp.ongoingCalls.Delete(callID)

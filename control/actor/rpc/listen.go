@@ -42,6 +42,8 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 	if c.Compression.Compression != nil {
 		prot += protocol.ID("_" + c.Compression.Compression.Name())
 	}
+	spCtx, freed := c.SpawnContext()
+
 	listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
 		req := logrus.Fields{
 			"from":     peerId.String(),
@@ -69,7 +71,7 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 		if c.Drop {
 			c.Log.WithFields(req).Infof("Received request, dropping it!")
 		} else {
-			ctx, cancel := context.WithCancel(ctx)
+			ctx, cancel := context.WithCancel(spCtx)  // responses are also shut down when the listener is shut down.
 			reqId := c.Responder.AddRequest(&RequestEntry{
 				From:    peerId,
 				Handler: handler,
@@ -81,16 +83,18 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 
 			// Wait for context to stop processing the request (stream will be closed after return)
 			<-ctx.Done()
+
+			c.Log.WithField("req_id", reqId).Infof("Responded!")
 		}
 	}
 	streamHandler := c.Method.MakeStreamHandler(sCtxFn, c.Compression.Compression, listenReq)
 	h.SetStreamHandler(prot, streamHandler)
-	c.Log.WithField("started", true).Infof("Opened listener")
-	spCtx, freed := c.SpawnContext()
+	c.Log.Infof("Opened listener")
+
 	go func() {
 		<-spCtx.Done()
 		h.RemoveStreamHandler(prot)
-		c.Log.WithField("stopped", true).Infof("Stopped listener")
+		c.Log.Infof("Stopped listener")
 		freed()
 	}()
 	return nil
