@@ -368,7 +368,7 @@ func main() {
 					log := logrus.New()
 					log.SetOutput(w)
 					log.SetLevel(logrus.TraceLevel)
-					log.SetFormatter(&logrus.JSONFormatter{})
+					log.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
 
 					adminLog.WithField("addr", addr).Info("new user session")
 
@@ -519,7 +519,7 @@ func main() {
 				log := logrus.New()
 				log.SetOutput(os.Stdout)
 				log.SetLevel(logrus.TraceLevel)
-				log.SetFormatter(&logrus.JSONFormatter{})
+				log.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
 
 				if level != "" {
 					logLevel, err := logrus.ParseLevel(level)
@@ -569,7 +569,7 @@ func main() {
 				log := logrus.New()
 				log.SetOutput(os.Stdout)
 				log.SetLevel(logrus.TraceLevel)
-				log.SetFormatter(&logrus.JSONFormatter{})
+				log.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
 
 				if level != "" {
 					logLevel, err := logrus.ParseLevel(level)

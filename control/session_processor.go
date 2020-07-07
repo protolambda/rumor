@@ -189,23 +189,27 @@ func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmd
 	cmdLogger := sp.log.WithField("actor", actorName).WithField("call_id", callID)
 
 	call := &Call{
-		id:         callID,
-		args:       cmdArgs,
-		ctx:        cmdCtx,
-		cancel:     cmdCancel,
-		doneCtx:    doneCtx,
-		done:       doneCancel,
-		spawnCtx:   spawnCtx,
-		closeSpawn: spawnCancel,
-		freeCtx:    freeCtx,
-		free:       freeCancel,
-		logger:     cmdLogger,
-		actorName:  actorName,
-		spawned:    false,
-		exitReason: SuccessDone,
+		id:            callID,
+		args:          cmdArgs,
+		ctx:           cmdCtx,
+		cancel:        cmdCancel,
+		doneCtx:       doneCtx,
+		done:          doneCancel,
+		spawnCtx:      spawnCtx,
+		closeSpawn:    spawnCancel,
+		nextComplete:  nil,
+		nextCompleter: nil,
+		nextRequest:   nil,
+		nextRequester: nil,
+		freeCtx:       freeCtx,
+		free:          freeCancel,
+		logger:        cmdLogger,
+		actorName:     actorName,
+		spawned:       false,
+		exitReason:    SuccessDone,
 	}
 
-	callCmd := rep.MakeCmd(cmdLogger, call.Spawn)
+	callCmd := rep.MakeCmd(cmdLogger, call.Spawn, call.Step)
 
 	sp.log.WithField("args", cmdArgs).Tracef("Started %s", callID)
 

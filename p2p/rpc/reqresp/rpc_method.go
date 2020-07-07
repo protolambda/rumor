@@ -165,7 +165,7 @@ func (c *chRespHandler) ReadObj(dest interface{}) error {
 }
 
 func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req RequestInput, maxRespChunks uint64, onResponse OnResponseListener) error {
+	peerId peer.ID, comp Compression, req RequestInput, maxRespChunks uint64, madeRequest func(), onResponse OnResponseListener) error {
 
 	handleChunks := ResponseChunkHandler(func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result ResponseCode, r io.Reader, w io.Writer) error {
 		return onResponse(&chRespHandler{
@@ -192,14 +192,17 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 			maxChunkContentSize = s
 		}
 	}
-	// TODO: make compression optional, depending on if the other peer supports it.
-	// Pass multiple protocol ids, then check the protocol of the stream, and pick the suitable compression.
 
 	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, comp)
 
+	handler := ResponseHandler(func(ctx context.Context, r io.Reader, w io.WriteCloser) error {
+		madeRequest()
+		return respHandler(ctx, r, w)
+	})
+
 	// Runs the request in sync, which processes responses,
 	// and then finally closes the channel through the earlier deferred close.
-	return newStreamFn.Request(ctx, peerId, protocolId, reqR, comp, respHandler)
+	return newStreamFn.Request(ctx, peerId, protocolId, reqR, comp, handler)
 }
 
 type ReadRequestFn func(dest interface{}) error
@@ -243,7 +246,7 @@ func (h *chReqHandler) ReadRequest(dest interface{}) error {
 	if h.invalidInputErr != nil {
 		return h.invalidInputErr
 	}
-	return h.m.RequestCodec.Decode(h.r, h.reqLen, dest)
+	return h.m.RequestCodec.Decode(h.comp.Decompress(h.r), h.reqLen, dest)
 }
 
 func (h *chReqHandler) RawRequest() ([]byte, error) {
@@ -251,7 +254,7 @@ func (h *chReqHandler) RawRequest() ([]byte, error) {
 		return nil, h.invalidInputErr
 	}
 	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(io.LimitReader(h.r, int64(h.reqLen))); err != nil {
+	if _, err := buf.ReadFrom(io.LimitReader(h.comp.Decompress(h.r), int64(h.reqLen))); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -286,7 +289,7 @@ func (h *chReqHandler) WriteErrorChunk(code ResponseCode, msg string) error {
 type OnRequestListener func(ctx context.Context, peerId peer.ID, handler ChunkedRequestHandler)
 
 func (m *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, listener OnRequestListener) network.StreamHandler {
-	return RequestPayloadHandler(func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer, invalidInputErr error) {
+	return RequestPayloadHandler(func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer, comp Compression, invalidInputErr error) {
 		listener(ctx, peerId, &chReqHandler{
 			m: m, comp: comp, reqLen: requestLen, r: r, w: w, invalidInputErr: invalidInputErr,
 		})

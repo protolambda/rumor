@@ -8,19 +8,16 @@ import (
 
 // Reader implements buffering for an io.Reader object.
 type BufLimitReader struct {
-	buf  []byte
-	rd   io.Reader // reader provided by the client
-	r, w int       // buf read and write positions
-	N    int       // max bytes remaining
+	buf     []byte
+	rd      io.Reader // reader provided by the client
+	r, w    int       // buf read and write positions
+	N       int       // max bytes remaining
+	PerRead bool      // Limit applies per read, i.e. it is not affected at the end of the read.
 }
 
 // NewBufLimitReader returns a new Reader whose buffer has the specified size.
 // The reader will return an error if Read crosses the limit.
-// If the size is bigger than the limit, it will be constrained to equal the limit.
 func NewBufLimitReader(rd io.Reader, size int, limit int) *BufLimitReader {
-	if size > limit {
-		size = limit
-	}
 	r := &BufLimitReader{
 		buf: make([]byte, size, size),
 		rd:  rd,
@@ -38,7 +35,9 @@ var errNegativeRead = errors.New("reader returned negative count from Read")
 // At EOF, the count will be zero and err will be io.EOF.
 func (b *BufLimitReader) Read(p []byte) (n int, err error) {
 	defer func() {
-		b.N -= n
+		if !b.PerRead {
+			b.N -= n
+		}
 	}()
 	if b.N <= 0 {
 		return 0, io.EOF
@@ -53,6 +52,7 @@ func (b *BufLimitReader) Read(p []byte) (n int, err error) {
 	if n == 0 {
 		return 0, nil
 	}
+	// if all buffered bytes have been written
 	if b.r == b.w {
 		if len(p) >= len(b.buf) {
 			// Large read, empty buffer.
@@ -65,7 +65,7 @@ func (b *BufLimitReader) Read(p []byte) (n int, err error) {
 		}
 		b.r = 0
 		b.w = 0
-		n, err = b.rd.Read(b.buf)
+		n, err = b.rd.Read(b.buf[:b.N]) // read no more than allowed.
 		if n < 0 {
 			panic(errNegativeRead)
 		}

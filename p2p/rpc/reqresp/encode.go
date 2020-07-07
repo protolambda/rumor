@@ -33,11 +33,11 @@ type noCloseWriter struct {
 	w io.Writer
 }
 
-func (nw noCloseWriter) Write(p []byte) (n int, err error) {
+func (nw *noCloseWriter) Write(p []byte) (n int, err error) {
 	return nw.w.Write(p)
 }
 
-func (nw noCloseWriter) Close() error {
+func (nw *noCloseWriter) Close() error {
 	return nil
 }
 
@@ -52,7 +52,7 @@ func EncodeHeaderAndPayload(r io.Reader, w io.Writer, comp Compression) error {
 		return err
 	}
 	if comp != nil {
-		compressedWriter := comp.Compress(noCloseWriter{w: w})
+		compressedWriter := comp.Compress(&noCloseWriter{w: w})
 		defer compressedWriter.Close()
 		if _, err := buf.WriteTo(compressedWriter); err != nil {
 			return err
@@ -70,12 +70,15 @@ func EncodeHeaderAndPayload(r io.Reader, w io.Writer, comp Compression) error {
 func StreamHeaderAndPayload(size uint64, r io.Reader, w io.Writer, comp Compression) error {
 	sizeBytes := [binary.MaxVarintLen64]byte{}
 	sizeByteLen := binary.PutUvarint(sizeBytes[:], size)
-	_, err := w.Write(sizeBytes[:sizeByteLen])
+	n, err := w.Write(sizeBytes[:sizeByteLen])
 	if err != nil {
 		return fmt.Errorf("failed to write size bytes: %v", err)
 	}
+	if n != sizeByteLen {
+		return fmt.Errorf("failed to write size bytes fully: %d/%d", n, sizeByteLen)
+	}
 	if comp != nil {
-		compressedWriter := comp.Compress(noCloseWriter{w: w})
+		compressedWriter := comp.Compress(&noCloseWriter{w: w})
 		defer compressedWriter.Close()
 		if _, err := io.Copy(compressedWriter, r); err != nil {
 			return fmt.Errorf("failed to write payload through compressed writer: %v", err)

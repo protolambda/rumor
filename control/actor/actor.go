@@ -114,11 +114,12 @@ func (r *Actor) GetNode() (n *enode.Node, ok bool) {
 	}
 }
 
-func (r *Actor) MakeCmd(log logrus.FieldLogger, spawnCtx base.SpawnFn) *ActorCmd {
+func (r *Actor) MakeCmd(log logrus.FieldLogger, spawnCtx base.SpawnFn, stepFn base.StepFn) *ActorCmd {
 	return &ActorCmd{
 		Actor:        r,
 		Log:          log,
 		SpawnContext: spawnCtx,
+		StepContext:  stepFn,
 	}
 }
 
@@ -128,6 +129,8 @@ type ActorCmd struct {
 	Log logrus.FieldLogger
 	// For non-blocking tasks to end later. E.g. serving data in the background.
 	SpawnContext base.SpawnFn
+	// Step through long running tasks. E.g. each chunk of a RPC response.
+	StepContext base.StepFn
 }
 
 func (c *ActorCmd) Help() string {
@@ -150,6 +153,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 		GlobalContext: c.GlobalCtx,
 		ActorContext:  c.ActorCtx,
 		SpawnContext:  c.SpawnContext,
+		StepContext:   c.StepContext,
 		Log:           c.Log,
 	}
 	switch route {

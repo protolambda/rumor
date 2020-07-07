@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
@@ -227,9 +228,37 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		return sess.RunInclude(ctx, scriptPath)
 	}
 
+	if len(args) == 1 && args[0] == "next" {
+		var call *Call
+		if customCallID != "" {
+			call = sess.global.GetCall(customCallID)
+		} else {
+			call = sess.lastCall
+		}
+		if call != nil {
+			noStep := call.RequestStep()
+			if noStep {
+				return errors.New("no remaining steps")
+			}
+			return nil
+		} else {
+			return errors.New("call not available for stepping")
+		}
+	}
+
 	if len(args) == 1 && args[0] == "cancel" {
-		sess.lastCall.Close()
-		return sess.lastCall.exitReason.ExitErr()
+		var call *Call
+		if customCallID != "" {
+			call = sess.global.GetCall(customCallID)
+		} else {
+			call = sess.lastCall
+		}
+		if call != nil {
+			call.Close()
+			return call.exitReason.ExitErr()
+		} else {
+			return errors.New("nothing to cancel")
+		}
 	}
 
 	if len(args) == 1 && args[0] == "kill" {

@@ -3,6 +3,7 @@ package reqresp
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -22,6 +23,10 @@ func (newStreamFn NewStreamFn) Request(ctx context.Context, peerId peer.ID, prot
 	}
 	if _, err := stream.Write(buf.Bytes()); err != nil {
 		return err
+	}
+	// close writing side
+	if err := stream.Close(); err != nil {
+		return fmt.Errorf("failed to close writing side: %v", err)
 	}
 	return handle(ctx, stream, stream)
 }

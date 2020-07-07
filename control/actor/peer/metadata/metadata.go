@@ -57,6 +57,9 @@ func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStream
 	resCode reqresp.ResponseCode, errMsg string, data *methods.MetaData, err error) {
 
 	err = methods.MetaDataRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: nil}, 1,
+		func() {
+			// TODO
+		},
 		func(chunk reqresp.ChunkedResponseHandler) error {
 			resCode = chunk.ResultCode()
 			switch resCode {
@@ -84,6 +87,9 @@ func (c *PeerMetadataState) ping(sFn reqresp.NewStreamFn, ctx context.Context, p
 
 	p := methods.Ping(c.Local.SeqNumber)
 	err = methods.PingRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: &p}, 1,
+		func() {
+			// TODO
+		},
 		func(chunk reqresp.ChunkedResponseHandler) error {
 			resCode = chunk.ResultCode()
 			switch resCode {

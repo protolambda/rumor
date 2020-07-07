@@ -14,7 +14,7 @@ const requestBufferSize = 2048
 // RequestPayloadHandler processes a request (decompressed if previously compressed), read from r.
 // The handler can respond by writing to w. After returning the writer will automatically be closed.
 // If the input is already known to be invalid, e.g. the request size is invalid, then `invalidInputErr != nil`, and r will not read anything more.
-type RequestPayloadHandler func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer, invalidInputErr error)
+type RequestPayloadHandler func(ctx context.Context, peerId peer.ID, requestLen uint64, r io.Reader, w io.Writer, comp Compression, invalidInputErr error)
 
 type StreamCtxFn func() context.Context
 
@@ -34,8 +34,10 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 
 		// TODO: pool this
 		blr := NewBufLimitReader(stream, requestBufferSize, 0)
-		blr.N = 10 // var ints should be small
+		blr.N = 1 // var ints need to be read byte by byte
+		blr.PerRead = true
 		reqLen, err := binary.ReadUvarint(blr)
+		blr.PerRead = false
 		if err != nil {
 			invalidInputErr = err
 		} else if reqLen > maxRequestContentSize {
@@ -57,11 +59,6 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 		blr.N = int(maxRequestContentSize)
 		r := io.Reader(blr)
 		w := io.WriteCloser(stream)
-		if comp != nil {
-			r = comp.Decompress(r)
-			w = comp.Compress(w)
-			defer w.Close()
-		}
-		handle(ctx, peerId, reqLen, r, w, invalidInputErr)
+		handle(ctx, peerId, reqLen, r, w, comp, invalidInputErr)
 	}
 }

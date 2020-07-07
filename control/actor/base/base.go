@@ -13,6 +13,9 @@ import (
 // Done is called after the spawned resources are fully freed.
 type SpawnFn func() (ctx context.Context, done context.CancelFunc)
 
+// StepFn, ctx blocks until step requested. Done should be called when the next step completes.
+type StepFn func() (ctx context.Context, done context.CancelFunc)
+
 type Base struct {
 	WithHost
 	// Shared between actors
@@ -21,6 +24,8 @@ type Base struct {
 	ActorContext context.Context
 	// For non-blocking tasks to end later. E.g. serving data in the background.
 	SpawnContext SpawnFn
+	// For step-wise non blocking tasks
+	StepContext StepFn
 	// For command
 	Log logrus.FieldLogger
 }

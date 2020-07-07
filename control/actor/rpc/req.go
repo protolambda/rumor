@@ -3,12 +3,12 @@ package rpc
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -74,53 +74,74 @@ func (c *RpcMethodReqRawCmd) Run(ctx context.Context, args ...string) error {
 	if c.Compression.Compression != nil {
 		protocolId += protocol.ID("_" + c.Compression.Compression.Name())
 	}
-	peers := h.Peerstore()
-	if protocols, err := peers.SupportsProtocols(c.PeerID.PeerID, string(protocolId)); err != nil {
-		return fmt.Errorf("failed to check protocol support of peer %s: %v", c.PeerID.PeerID.String(), err)
-	} else if len(protocols) == 0 {
-		return fmt.Errorf("peer %s does not support protocol %s", c.PeerID.PeerID.String(), protocolId)
-	}
 
-	return c.Method.RunRequest(reqCtx, sFn, c.PeerID.PeerID, c.Compression.Compression,
-		reqresp.RequestBytesInput(c.Data), c.MaxChunks,
-		func(chunk reqresp.ChunkedResponseHandler) error {
-			resultCode := chunk.ResultCode()
-			f := map[string]interface{}{
-				"protocol":    protocolId,
-				"from":        c.PeerID.PeerID.String(),
-				"chunk_index": chunk.ChunkIndex(),
-				"chunk_size":  chunk.ChunkSize(),
-				"result_code": resultCode,
-			}
-			if c.Raw {
-				bytez, err := chunk.ReadRaw()
-				if err != nil {
-					return err
+	reqStartCtx, reqStarted := context.WithCancel(ctx)
+
+	_, freed := c.SpawnContext()
+	go func() {
+		var stepCtx context.Context
+		var stepComplete context.CancelFunc
+		reqErr := c.Method.RunRequest(reqCtx, sFn, c.PeerID.PeerID, c.Compression.Compression,
+			reqresp.RequestBytesInput(c.Data), c.MaxChunks,
+			func() {
+				stepCtx, stepComplete = c.StepContext()
+				// unblock call here
+				reqStarted()
+			},
+			func(chunk reqresp.ChunkedResponseHandler) error {
+
+				// Don't read the next response, unless asked to with "next"
+				<-stepCtx.Done()
+
+				resultCode := chunk.ResultCode()
+				f := logrus.Fields{
+					"protocol":    protocolId,
+					"from":        c.PeerID.PeerID.String(),
+					"chunk_index": chunk.ChunkIndex(),
+					"chunk_size":  chunk.ChunkSize(),
+					"result_code": resultCode,
 				}
-				f["data"] = hex.EncodeToString(bytez)
-			} else {
-				switch resultCode {
-				case reqresp.ServerErrCode, reqresp.InvalidReqCode:
-					msg, err := chunk.ReadErrMsg()
-					if err != nil {
-						return err
-					}
-					f["msg"] = msg
-				case reqresp.SuccessCode:
-					data := c.Method.ResponseChunkCodec.Alloc()
-					if err := chunk.ReadObj(data); err != nil {
-						return err
-					}
-					f["data"] = data
-				default:
+				if c.Raw {
 					bytez, err := chunk.ReadRaw()
 					if err != nil {
 						return err
 					}
 					f["data"] = hex.EncodeToString(bytez)
+				} else {
+					switch resultCode {
+					case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+						msg, err := chunk.ReadErrMsg()
+						if err != nil {
+							return err
+						}
+						f["msg"] = msg
+					case reqresp.SuccessCode:
+						data := c.Method.ResponseChunkCodec.Alloc()
+						if err := chunk.ReadObj(data); err != nil {
+							return err
+						}
+						f["data"] = data
+					default:
+						bytez, err := chunk.ReadRaw()
+						if err != nil {
+							return err
+						}
+						f["data"] = hex.EncodeToString(bytez)
+					}
 				}
-			}
-			c.Log.WithField("chunk", f).Info("Received chunk")
-			return nil
-		})
+				c.Log.WithFields(f).Info("Received chunk")
+
+				// Complete previous step, start next step
+				stepCtx, stepComplete = c.StepContext()
+				return nil
+			})
+		if reqErr != nil {
+			c.Log.WithError(reqErr).Error("failed to make request")
+		} else {
+			c.Log.Infof("Completed request")
+		}
+		freed()
+	}()
+	<-reqStartCtx.Done()
+	return nil
 }

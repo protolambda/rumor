@@ -54,6 +54,9 @@ func (c *PeerStatusState) fetch(book track.StatusBook, sFn reqresp.NewStreamFn, 
 
 	err = methods.StatusRPCv1.RunRequest(ctx, sFn, peerID, comp,
 		reqresp.RequestSSZInput{Obj: &c.Local}, 1,
+		func() {
+			// TODO
+		},
 		func(chunk reqresp.ChunkedResponseHandler) error {
 			resCode = chunk.ResultCode()
 			switch resCode {

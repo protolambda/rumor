@@ -25,7 +25,7 @@ func (c *RpcMethodData) checkAndGetReq(reqKeyStr string) (key RequestKey, req *R
 	key = RequestKey(reqId)
 	req = c.Responder.GetRequest(key)
 	if req == nil {
-		return 0, nil, fmt.Errorf("Could not find request corresponding to key '%s'", key)
+		return 0, nil, fmt.Errorf("Could not find request corresponding to key '%d'", key)
 	}
 	return key, req, nil
 }

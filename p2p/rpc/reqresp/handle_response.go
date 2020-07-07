@@ -15,6 +15,8 @@ type ResponseChunkHandler func(ctx context.Context, chunkIndex uint64, chunkSize
 // ResponseHandler processes a response by internally processing chunks, any error is propagated up.
 type ResponseHandler func(ctx context.Context, r io.Reader, w io.WriteCloser) error
 
+type OnRequested func()
+
 // MakeResponseHandler builds a ResponseHandler, which won't take more than maxChunkCount chunks, or chunk contents larger than maxChunkContentSize.
 // Compression is optional and may be nil. Chunks are processed by the given ResponseChunkHandler.
 func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64, maxChunkContentSize uint64, comp Compression) ResponseHandler {
@@ -36,8 +38,11 @@ func (handleChunk ResponseChunkHandler) MakeResponseHandler(maxChunkCount uint64
 			if err != nil {
 				return fmt.Errorf("failed to read chunk %d result byte: %v", chunkIndex, err)
 			}
-			blr.N = 10
+			// varints need to be read byte by byte.
+			blr.N = 1
+			blr.PerRead = true
 			chunkSize, err := binary.ReadUvarint(blr)
+			blr.PerRead = false
 			// TODO when input is incorrect, return a different type of error.
 			if err != nil {
 				return err

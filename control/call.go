@@ -5,6 +5,7 @@ import (
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/interp"
+	"sync"
 )
 
 type CallID string
@@ -37,6 +38,12 @@ type Call struct {
 	doneCtx context.Context
 	done    context.CancelFunc
 
+	stepLock      sync.Mutex
+	nextComplete  context.Context
+	nextCompleter context.CancelFunc
+	nextRequest   context.Context
+	nextRequester context.CancelFunc
+
 	// context for spawned background processes
 	spawnCtx   context.Context
 	closeSpawn context.CancelFunc
@@ -58,6 +65,33 @@ type Call struct {
 func (c *Call) Spawn() (ctx context.Context, done context.CancelFunc) {
 	c.spawned = true
 	return c.spawnCtx, c.free
+}
+
+// Step blocks if there is already a step in progress.
+func (c *Call) Step() (ctx context.Context, done context.CancelFunc) {
+	c.stepLock.Lock()
+	defer c.stepLock.Unlock()
+	// complete previous step, if any.
+	if c.nextComplete != nil {
+		c.nextCompleter()
+	}
+	c.nextComplete, c.nextCompleter = context.WithCancel(c.freeCtx)
+	c.nextRequest, c.nextRequester = context.WithCancel(c.nextComplete)
+	return c.nextRequest, c.nextCompleter
+}
+
+// RequestStep steps into any open step, and waits for the step to complete.
+func (c *Call) RequestStep() (noStep bool) {
+	c.stepLock.Lock()
+	nextFn := c.nextRequester
+	compl := c.nextComplete
+	c.stepLock.Unlock()
+	if nextFn == nil {
+		return true
+	}
+	nextFn()
+	<-compl.Done()
+	return false
 }
 
 // Close the call gracefully, blocking until it is freed

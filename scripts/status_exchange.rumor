@@ -1,0 +1,38 @@
+alice: me
+host start
+
+host listen
+host view
+
+alice_id="$__peer_id"
+alice_addr="$__addr"
+
+_listener rpc status listen --timeout=300s
+
+sleep 3s
+
+bob: me
+host start
+
+host listen --tcp=9001
+peer connect $alice_addr
+echo "Connected! requesting now"
+
+# Just send an empty status (or generate one with pyspec/client)
+_requester rpc status req raw --raw --timeout=300s $alice_id "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007b00000000000000"
+echo "request started, back to response"
+
+# Respond back
+alice: me
+_listener next  # wait for the request
+rpc status resp chunk raw $_listener_req_id "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007b00000000000000"
+
+echo "responded!"
+
+# Handle the response
+bob: me
+# Await and process the first response chunk
+_requester next
+echo "Got request data!"
+
+echo "Response data: $_requester_data"
