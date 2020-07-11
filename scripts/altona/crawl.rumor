@@ -41,10 +41,11 @@ peer metadata poll --interval=30s  --timeout=10s  --update=true --update-timeout
 # Serve pong requests, also update if we get a higher ping than known
 peer metadata pong --update=true
 
-## Start discv5, and keep querying random nodes
-#dv5 run
-## Add whatever we see to the peerstore
-#dv5 random --add --filter-digest="0xfdca39b0"
+# Start discv5, and keep querying random nodes
+dv5 run
+# Add whatever we see to the peerstore
+dv5 random --add --filter-digest="0xfdca39b0"
+
 #
 #while 1; do
 #  host peer list all
