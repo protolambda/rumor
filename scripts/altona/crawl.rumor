@@ -3,7 +3,17 @@ p2p_port=9030
 
 echo "External IP used in ENRs: $external_ip"
 
-enr make --ip="$external_ip" --tcp=$p2p_port --udp=$p2p_port
+enr make \
+  --ip="$external_ip" \
+  --tcp=$p2p_port \
+  --udp=$p2p_port \
+  --attnets="0xffffffffffffffff" \
+  --fork-digest="0xfdca39b0" \
+  --next-fork-version="0x00000121" \
+  --next-fork-epoch="0xffffffffffffffff"
+
+
+
 
 # create a shared peerstore, we can hook more actors to it later.
 peerstore create crawler

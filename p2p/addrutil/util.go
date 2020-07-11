@@ -46,7 +46,8 @@ func (eee Eth2ENREntry) String() string {
 	if err != nil {
 		return fmt.Sprintf("invalid eth2 data! Raw: %x", eee[:])
 	}
-	return fmt.Sprintf("digest: %x, next fork version: %x, next fork epoch: %d", dat.ForkDigest, dat.NextForkVersion, dat.NextForkEpoch)
+	return fmt.Sprintf("digest: %s, next fork version: %s, next fork epoch: %d",
+		dat.ForkDigest.String(), dat.NextForkVersion.String(), dat.NextForkEpoch)
 }
 
 type AttnetsENREntry []byte
