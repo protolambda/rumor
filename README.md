@@ -221,13 +221,24 @@ To flush it, run `clear_log_data` to clear every entry, except those prefixed wi
 ### Cancel long-running calls
 
 To close a long-running call (which may run in the background), you can:
-- Move it to foreground if it is not already, then cancel it:
-```
-cancel
-```
+- If it is the latest call, just run `cancel`
 - Cancel it directly by its call ID:
 ```
 _my_call_ cancel
+```
+
+Optionally, provide a duration, like `3s`, to set a timeout on the cancellation.
+```
+_my_call_ cancel 3s
+```
+
+### Stepping through long-running calls
+
+Some long-running calls can be stepped through: by running `next` you enable the call to progress.
+Optionally, provide a duration as timeout, to not indefinitely wait for the next step of the call,
+ or to stop steps that take too long to complete.
+```
+_my_call_ next 3s
 ```
 
 ### Stopping an actor

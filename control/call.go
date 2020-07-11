@@ -82,6 +82,8 @@ func (c *Call) Step(step base.Step) error {
 // RequestStep wait for the next step, and waits for the step to complete, or for the call to finish.
 func (c *Call) RequestStep(ctx context.Context) (noStep bool, finish bool, err error) {
 	select {
+	case <-ctx.Done():
+		return false, false, errors.New("step request stopped")
 	case step, ok := <-c.steps:
 		err = step(ctx)
 		return !ok, false, err

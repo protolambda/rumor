@@ -89,7 +89,6 @@ func (c *PeerMetadataState) ping(sFn reqresp.NewStreamFn, ctx context.Context, p
 	p := methods.Ping(c.Local.SeqNumber)
 	err = methods.PingRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: &p}, 1,
 		func() error {
-			// TODO
 			return nil
 		},
 		func(chunk reqresp.ChunkedResponseHandler) error {

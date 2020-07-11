@@ -217,7 +217,11 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		return sess.RunInclude(ctx, scriptPath)
 	}
 
-	if len(args) == 1 && args[0] == "next" {
+	if len(args) >= 1 && args[0] == "next" {
+		if len(args) > 2 {
+			return fmt.Errorf("too many arguments, got %d, expected 2", len(args))
+		}
+
 		var call *Call
 		if customCallID != "" {
 			call = sess.global.GetCall(customCallID)
@@ -225,7 +229,15 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			call = sess.lastCall
 		}
 		if call != nil {
-			noStep, finished, err := call.RequestStep(ctx) // TODO timeout
+			if len(args) == 2 {
+				timeout, err := time.ParseDuration(args[1])
+				if err != nil {
+					return fmt.Errorf("step timeout could not be parsed: %v", err)
+				}
+				ctx, _ = context.WithTimeout(ctx, timeout)
+			}
+
+			noStep, finished, err := call.RequestStep(ctx)
 			if err != nil {
 				return fmt.Errorf("step failed: %v", err)
 			}
@@ -241,12 +253,22 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		}
 	}
 
-	if len(args) == 1 && args[0] == "cancel" {
+	if len(args) >= 1 && args[0] == "cancel" {
+		if len(args) > 2 {
+			return fmt.Errorf("too many arguments, got %d, expected 2", len(args))
+		}
 		var call *Call
 		if customCallID != "" {
 			call = sess.global.GetCall(customCallID)
 		} else {
 			call = sess.lastCall
+		}
+		if len(args) == 2 {
+			timeout, err := time.ParseDuration(args[1])
+			if err != nil {
+				return fmt.Errorf("cancel timeout could not be parsed: %v", err)
+			}
+			ctx, _ = context.WithTimeout(ctx, timeout)
 		}
 		if call != nil {
 			return call.RequestStop(ctx)
