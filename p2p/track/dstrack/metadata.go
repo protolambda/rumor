@@ -32,7 +32,12 @@ type dsMetadataBook struct {
 var _ track.MetadataBook = (*dsMetadataBook)(nil)
 
 func NewMetadataBook(store ds.Datastore) (*dsMetadataBook, error) {
-	return &dsMetadataBook{ds: store}, nil
+	return &dsMetadataBook{
+		ds:        store,
+		metadatas: make(map[peer.ID]methods.MetaData),
+		claims:    make(map[peer.ID]methods.SeqNr),
+		fetches:   make(map[peer.ID]uint64),
+	}, nil
 }
 
 func (mb *dsMetadataBook) loadMetadata(p peer.ID) (*methods.MetaData, error) {

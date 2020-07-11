@@ -85,7 +85,7 @@ func (c *PeerMetadataPollCmd) Run(ctx context.Context, args ...string) error {
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		stopping = true
 		bgCancel()
-		c.Log.WithField("stopped", true).Infof("Stopped polling")
+		c.Log.Infof("Stopped polling")
 		return nil
 	})
 

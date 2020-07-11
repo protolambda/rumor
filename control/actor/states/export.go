@@ -29,7 +29,7 @@ func (c *StatesExportCmd) Run(ctx context.Context, args ...string) (err error) {
 		return err
 	}
 	if !exists {
-		return fmt.Errorf("state %x does not exist", c.StateRoot[:])
+		return fmt.Errorf("state %s does not exist", c.StateRoot)
 	}
 	var w io.Writer
 	if c.Output == "" {

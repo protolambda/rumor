@@ -172,7 +172,8 @@ func (f *FinalizedChain) BySlot(slot Slot) (ChainEntry, error) {
 
 func (f *FinalizedChain) OnFinalizedEntry(entry *HotEntry) error {
 	if end := f.End(); entry.slot != end {
-		return fmt.Errorf("expected next finalized entry to have slot %d, but got %d from entry with block root %x", end, entry.slot, entry.blockRoot)
+		return fmt.Errorf("expected next finalized entry to have slot %d, but got %d from entry with block root %s",
+			end, entry.slot, entry.blockRoot.String())
 	}
 	postStateRoot := entry.state.HashTreeRoot(tree.GetHashFn())
 	f.BlockRoots = append(f.BlockRoots, entry.blockRoot)

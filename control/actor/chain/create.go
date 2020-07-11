@@ -28,7 +28,7 @@ func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("failed to get state: %v", err)
 	}
 	if !exists {
-		return fmt.Errorf("state %x was not found", c.StateRoot)
+		return fmt.Errorf("state %s was not found", c.StateRoot)
 	}
 	slot, err := state.Slot()
 	if err != nil {

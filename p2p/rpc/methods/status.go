@@ -28,8 +28,8 @@ func (s *Status) Data() map[string]interface{} {
 }
 
 func (s *Status) String() string {
-	return fmt.Sprintf("Status(fork_digest: %x, finalized_root: %x, finalized_epoch: %d, head_root: %x, head_slot: %d)",
-		s.ForkDigest, s.FinalizedRoot, s.FinalizedEpoch, s.HeadRoot, s.HeadSlot)
+	return fmt.Sprintf("Status(fork_digest: %s, finalized_root: %s, finalized_epoch: %d, head_root: %s, head_slot: %d)",
+		s.ForkDigest.String(), s.FinalizedRoot.String(), s.FinalizedEpoch, s.HeadRoot.String(), s.HeadSlot)
 }
 
 var StatusRPCv1 = reqresp.RPCMethod{

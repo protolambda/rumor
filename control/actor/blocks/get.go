@@ -33,7 +33,7 @@ func (c *BlocksGetCmd) Run(ctx context.Context, args ...string) error {
 			"signature": hex.EncodeToString(block.Signature[:]),
 		}).Info("got block")
 	} else {
-		c.Log.Warnf("block %x is not known", c.BlockRoot[:])
+		c.Log.Warnf("block %s is not known", c.BlockRoot)
 	}
 	return nil
 }

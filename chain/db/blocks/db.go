@@ -91,7 +91,7 @@ func (db *MemDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool, 
 	buf := getPoolBlockBuf()
 	_, err = zssz.Encode(buf, block.Block, beacon.SignedBeaconBlockSSZ)
 	if err != nil {
-		return false, fmt.Errorf("failed to store block %x: %v", block.Root, err)
+		return false, fmt.Errorf("failed to store block %s: %v", block.Root, err)
 	}
 	existing, loaded := db.data.LoadOrStore(block.Root, buf.Bytes())
 	if loaded {
@@ -99,8 +99,8 @@ func (db *MemDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool, 
 		sigDifference := existingBlock.Signature != block.Block.Signature
 		dbBlockPool.Put(buf) // put it back, we didn't store it
 		if sigDifference {
-			return true, fmt.Errorf("block %x already exists, but its signature %x does not match new signature %x",
-				block.Root[:], existingBlock.Signature[:], block.Block.Signature[:])
+			return true, fmt.Errorf("block %s already exists, but its signature %x does not match new signature %s",
+				block.Root, existingBlock.Signature, block.Block.Signature)
 		}
 	} else {
 		atomic.AddInt64(&db.stats.Count, 1)
@@ -128,8 +128,8 @@ func (db *MemDB) Import(r io.Reader) (exists bool, err error) {
 		sigDifference := existingBlock.Signature != dest.Signature
 		dbBlockPool.Put(buf) // put it back, we didn't store it
 		if sigDifference {
-			return true, fmt.Errorf("block %x already exists, but its signature %x does not match new signature %x",
-				root[:], existingBlock.Signature[:], dest.Signature[:])
+			return true, fmt.Errorf("block %s already exists, but its signature %s does not match new signature %s",
+				root, existingBlock.Signature, dest.Signature)
 		}
 	} else {
 		atomic.AddInt64(&db.stats.Count, 1)

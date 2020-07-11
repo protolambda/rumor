@@ -108,12 +108,12 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 			r, size, exists, err := c.Blocks.Stream(root)
 			if err != nil {
 				c.Log.WithFields(f).WithField("block", hex.EncodeToString(root[:])).WithError(err).Warn("failed to load block")
-				respondErr(reqresp.ServerErrCode, fmt.Sprintf("failed to load block %x", root))
+				respondErr(reqresp.ServerErrCode, fmt.Sprintf("failed to load block %s", root))
 				return
 			}
 			if !exists {
 				c.Log.WithFields(f).WithField("block", hex.EncodeToString(root[:])).WithError(err).Warn("failed to find block")
-				respondErr(reqresp.ServerErrCode, fmt.Sprintf("failed to find block %x", root))
+				respondErr(reqresp.ServerErrCode, fmt.Sprintf("failed to find block %s", root))
 				return
 			}
 			if err := handler.StreamResponseChunk(reqresp.SuccessCode, size, r); err != nil {
@@ -129,7 +129,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		bgCancel()
 		h.RemoveStreamHandler(prot)
-		c.Log.WithField("stopped", true).Infof("Stopped by-range serving")
+		c.Log.Infof("Stopped by-range serving")
 		return nil
 	})
 	return nil

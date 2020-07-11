@@ -7,12 +7,12 @@ enr make \
   --ip="$external_ip" \
   --tcp=$p2p_port \
   --udp=$p2p_port \
+  --static-ip="$external_ip" \
+  --fallback-udp=$p2p_port \
   --attnets="0xffffffffffffffff" \
   --fork-digest="0xfdca39b0" \
   --next-fork-version="0x00000121" \
   --next-fork-epoch="0xffffffffffffffff"
-
-
 
 
 # create a shared peerstore, we can hook more actors to it later.

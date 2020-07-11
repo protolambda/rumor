@@ -57,7 +57,7 @@ func (c *StatesGetCmd) Run(ctx context.Context, args ...string) error {
 			"parent_block": hex.EncodeToString(parentRoot[:]),
 		}).Info("got state")
 	} else {
-		c.Log.Warnf("state %x is not known", c.StateRoot[:])
+		c.Log.Warnf("state %s is not known", c.StateRoot)
 	}
 	return nil
 }

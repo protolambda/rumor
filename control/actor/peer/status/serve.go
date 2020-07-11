@@ -76,7 +76,7 @@ func (c *PeerStatusServeCmd) Run(ctx context.Context, args ...string) error {
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		bgCancel()
 		h.RemoveStreamHandler(prot)
-		c.Log.WithField("stopped", true).Infof("Stopped serving status")
+		c.Log.Infof("Stopped serving status")
 		return nil
 	})
 	return nil

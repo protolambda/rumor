@@ -104,7 +104,7 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		bgCancel()
 		h.RemoveStreamHandler(prot)
-		c.Log.WithField("stopped", true).Infof("Stopped serving pongs")
+		c.Log.Infof("Stopped serving pongs")
 		return nil
 	})
 	return nil

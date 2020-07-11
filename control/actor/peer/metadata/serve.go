@@ -71,7 +71,7 @@ func (c *PeerMetadataServeCmd) Run(ctx context.Context, args ...string) error {
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		bgCancel()
 		h.RemoveStreamHandler(prot)
-		c.Log.WithField("stopped", true).Infof("Stopped serving metadata")
+		c.Log.Infof("Stopped serving metadata")
 		return nil
 	})
 	return nil

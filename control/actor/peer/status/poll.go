@@ -55,6 +55,7 @@ func (c *PeerStatusPollCmd) Run(ctx context.Context, args ...string) error {
 					pingCmd := &PeerStatusReqCmd{
 						Base:            c.Base,
 						PeerStatusState: c.PeerStatusState,
+						Book:            c.Book,
 						Timeout:         c.Timeout,
 						Compression:     c.Compression,
 						PeerID:          flags.PeerIDFlag{PeerID: peerID},
@@ -76,7 +77,7 @@ func (c *PeerStatusPollCmd) Run(ctx context.Context, args ...string) error {
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		stopping = true
 		bgCancel()
-		c.Log.WithField("stopped", true).Infof("Stopped polling")
+		c.Log.Infof("Stopped polling")
 		return nil
 	})
 

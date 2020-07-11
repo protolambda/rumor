@@ -212,7 +212,7 @@ func (uc *UnfinalizedChain) OnPrunedBlock(node *forkchoice.ProtoNode, canonical 
 func (uc *UnfinalizedChain) ByStateRoot(root Root) (ChainEntry, error) {
 	key, ok := uc.State2Key[root]
 	if !ok {
-		return nil, fmt.Errorf("unknown state %x", root)
+		return nil, fmt.Errorf("unknown state %s", root)
 	}
 	return uc.ByBlockSlot(key)
 }
@@ -220,7 +220,7 @@ func (uc *UnfinalizedChain) ByStateRoot(root Root) (ChainEntry, error) {
 func (uc *UnfinalizedChain) ByBlockSlot(key BlockSlotKey) (ChainEntry, error) {
 	entry, ok := uc.Entries[key]
 	if !ok {
-		return nil, fmt.Errorf("unknown block slot, root: %x slot: %d", key.Root(), key.Slot())
+		return nil, fmt.Errorf("unknown block slot, root: %s slot: %d", key.Root(), key.Slot())
 	}
 	return entry, nil
 }
@@ -228,7 +228,7 @@ func (uc *UnfinalizedChain) ByBlockSlot(key BlockSlotKey) (ChainEntry, error) {
 func (uc *UnfinalizedChain) ByBlockRoot(root Root) (ChainEntry, error) {
 	ref, ok := uc.ForkChoice.GetBlock(root)
 	if !ok {
-		return nil, fmt.Errorf("unknown block %x", root)
+		return nil, fmt.Errorf("unknown block %s", root)
 	}
 	return uc.ByBlockSlot(NewBlockSlotKey(root, ref.Slot))
 }
@@ -248,7 +248,7 @@ func (uc *UnfinalizedChain) ClosestFrom(fromBlockRoot Root, toSlot Slot) (ChainE
 			return entry, nil
 		}
 	}
-	return nil, fmt.Errorf("could not find closest hot block starting from root %x, up to slot %d", fromBlockRoot, toSlot)
+	return nil, fmt.Errorf("could not find closest hot block starting from root %s, up to slot %d", fromBlockRoot, toSlot)
 }
 
 func (uc *UnfinalizedChain) BySlot(slot Slot) (ChainEntry, error) {
@@ -288,7 +288,7 @@ func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.Si
 	}
 
 	if root := pre.BlockRoot(); root != block.ParentRoot {
-		return fmt.Errorf("unknown parent root %x, found other root %x", block.ParentRoot, root)
+		return fmt.Errorf("unknown parent root %s, found other root %s", block.ParentRoot, root)
 	}
 
 	epc, err := pre.EpochsContext(ctx)

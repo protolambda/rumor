@@ -118,7 +118,7 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 					withRoot := bdb.WithRoot(&block)
 					expectedRoot := req[chunk.ChunkIndex()]
 					if withRoot.Root != expectedRoot {
-						return fmt.Errorf("bad block, expected root %x, got %x", withRoot.Root, expectedRoot)
+						return fmt.Errorf("bad block, expected root %s, got %s", withRoot.Root, expectedRoot)
 					}
 					c.Log.WithField("chunk", f).Debug("Received block")
 					blocksCh <- &block
