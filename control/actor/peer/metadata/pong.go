@@ -40,11 +40,12 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	sCtxFn := func() context.Context {
 		if c.Timeout == 0 {
-			return ctx
+			return bgCtx
 		}
-		reqCtx, _ := context.WithTimeout(ctx, c.Timeout)
+		reqCtx, _ := context.WithTimeout(bgCtx, c.Timeout)
 		return reqCtx
 	}
 	comp := c.Compression.Compression
@@ -100,13 +101,11 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 	h.SetStreamHandler(prot, streamHandler)
 	c.Log.WithField("started", true).Info("Started serving pongs")
 
-	spCtx, freed := c.SpawnContext()
-	go func() {
-		<-spCtx.Done()
+	c.Control.RegisterStop(func(ctx context.Context) error {
+		bgCancel()
 		h.RemoveStreamHandler(prot)
 		c.Log.WithField("stopped", true).Infof("Stopped serving pongs")
-		freed()
-	}()
-
+		return nil
+	})
 	return nil
 }

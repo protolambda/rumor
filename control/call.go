@@ -2,7 +2,10 @@ package control
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"github.com/protolambda/rumor/control/actor"
+	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/interp"
 	"sync"
@@ -31,78 +34,72 @@ type Call struct {
 	id   CallID
 	args []string
 
-	// context for immediate resources of the command
-	ctx    context.Context
-	cancel context.CancelFunc
-	// context that completes after the command finishes running (excludes spawned processes)
-	doneCtx context.Context
-	done    context.CancelFunc
-
-	stepLock      sync.Mutex
-	nextComplete  context.Context
-	nextCompleter context.CancelFunc
-	nextRequest   context.Context
-	nextRequester context.CancelFunc
-
-	// context for spawned background processes
-	spawnCtx   context.Context
-	closeSpawn context.CancelFunc
+	onStopLock sync.Mutex
+	onStop     base.OnStop
+	steps      chan base.Step
 
 	spawned bool
 
-	// Only applies to the immediate running, not later background tasks
-	exitReason CallExitReason
-
-	// Used to wait for resources to be completely free (including spawned processes)
-	freeCtx context.Context
+	// Used to wait for resources to be completely bgCancel (including spawned processes)
+	bgCtx context.Context
 	// To indicate resources are freed
-	free context.CancelFunc
+	bgCancel context.CancelFunc
 
 	logger    logrus.FieldLogger
 	actorName actor.ActorID
 }
 
-func (c *Call) Spawn() (ctx context.Context, done context.CancelFunc) {
+func (c *Call) RegisterStop(onStop base.OnStop) {
+	c.onStopLock.Lock()
+	defer c.onStopLock.Unlock()
+	if c.onStop != nil {
+		prev := c.onStop
+		c.onStop = func(ctx context.Context) error {
+			// Try to stop both tasks
+			err1 := prev(ctx)
+			err2 := onStop(ctx)
+			if err1 != nil || err2 != nil {
+				return fmt.Errorf("err1: %v err2: %v", err1, err2)
+			}
+			return nil
+		}
+	} else {
+		c.onStop = onStop
+	}
 	c.spawned = true
-	return c.spawnCtx, c.free
 }
 
-// Step blocks if there is already a step in progress.
-func (c *Call) Step() (ctx context.Context, done context.CancelFunc) {
-	c.stepLock.Lock()
-	defer c.stepLock.Unlock()
-	// complete previous step, if any.
-	if c.nextComplete != nil {
-		c.nextCompleter()
+// Blocks until the step is consumed by the caller
+func (c *Call) Step(step base.Step) error {
+	select {
+	case c.steps <- step:
+		return nil
+	case <-c.bgCtx.Done():
+		return errors.New("call is over, no more steps")
 	}
-	c.nextComplete, c.nextCompleter = context.WithCancel(c.freeCtx)
-	c.nextRequest, c.nextRequester = context.WithCancel(c.nextComplete)
-	return c.nextRequest, c.nextCompleter
 }
 
-// RequestStep steps into any open step, and waits for the step to complete.
-func (c *Call) RequestStep() (noStep bool) {
-	c.stepLock.Lock()
-	nextFn := c.nextRequester
-	compl := c.nextComplete
-	c.stepLock.Unlock()
-	if nextFn == nil {
-		return true
+// RequestStep wait for the next step, and waits for the step to complete, or for the call to finish.
+func (c *Call) RequestStep(ctx context.Context) (noStep bool, finish bool, err error) {
+	select {
+	case step, ok := <-c.steps:
+		err = step(ctx)
+		return !ok, false, err
+	case <-c.bgCtx.Done():
+		return true, true, nil
 	}
-	nextFn()
-	<-compl.Done()
-	return false
 }
 
-// Close the call gracefully, blocking until it is freed
-func (c *Call) Close() {
-	if c == nil {
-		return
+func (c *Call) RequestStop(ctx context.Context) error {
+	c.onStopLock.Lock()
+	defer c.onStopLock.Unlock()
+	if c.onStop != nil {
+		err := c.onStop(ctx)
+		if err == nil {
+			// only clean up the stop function if it did not error.
+			c.onStop = nil
+		}
+		return err
 	}
-	// stop command, and wait gracefully for it to be done
-	c.cancel()
-	<-c.doneCtx.Done()
-	// Stop background processes, and wait gracefully for them to be done
-	c.closeSpawn()
-	<-c.freeCtx.Done()
+	return nil
 }

@@ -41,14 +41,18 @@ func (c *PeerMetadataPollCmd) Run(ctx context.Context, args ...string) error {
 		return err
 	}
 
-	spCtx, freed := c.SpawnContext()
+	stopping := false
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	go func() {
 		for {
+			if stopping {
+				return
+			}
 			start := time.Now()
 			var wg sync.WaitGroup
 
 			// apply timeout to each poll target in this round
-			reqCtx, _ := context.WithTimeout(ctx, c.Interval)
+			reqCtx, _ := context.WithTimeout(bgCtx, c.Interval)
 
 			for _, p := range h.Network().Peers() {
 				wg.Add(1)
@@ -76,16 +80,14 @@ func (c *PeerMetadataPollCmd) Run(ctx context.Context, args ...string) error {
 			if pollStepDuration < c.Interval {
 				time.Sleep(c.Interval - pollStepDuration)
 			}
-
-			select {
-			case <-spCtx.Done():
-				c.Log.WithField("stopped", true).Infof("Stopped polling")
-				freed()
-				return
-			default:
-				// next interval
-			}
 		}
 	}()
+	c.Control.RegisterStop(func(ctx context.Context) error {
+		stopping = true
+		bgCancel()
+		c.Log.WithField("stopped", true).Infof("Stopped polling")
+		return nil
+	})
+
 	return nil
 }

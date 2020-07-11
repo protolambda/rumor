@@ -120,12 +120,10 @@ func (c *HostNotifyCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 	h.Network().Notify(bundle)
-	spCtx, freed := c.SpawnContext()
-	go func() {
-		<-spCtx.Done()
+	c.Control.RegisterStop(func(ctx context.Context) error {
 		h.Network().StopNotify(bundle)
-		freed()
-	}()
+		return nil
+	})
 	return nil
 }
 

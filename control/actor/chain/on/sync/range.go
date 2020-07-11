@@ -90,8 +90,9 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 	}.handle(procCtx, func(blocksCh chan<- *beacon.SignedBeaconBlock) error {
 
 		return method.RunRequest(reqCtx, sFn, peerId, c.Compression.Compression, reqresp.RequestSSZInput{Obj: &req}, req.Count,
-			func() {
+			func() error {
 				// TODO
+				return nil
 			},
 			func(chunk reqresp.ChunkedResponseHandler) error {
 				resultCode := chunk.ResultCode()

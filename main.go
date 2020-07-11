@@ -559,7 +559,6 @@ func main() {
 
 	{
 		var level string
-		var asyncMode bool
 		var stopOnErr bool
 		bareCmd := &cobra.Command{
 			Use:   "bare",
@@ -582,9 +581,6 @@ func main() {
 				r := io.Reader(os.Stdin)
 				sp := control.NewSessionProcessor(log)
 				sess := sp.NewSession(log)
-				if asyncMode {
-					sess.SetBlocking(false)
-				}
 				parser := syntax.NewParser()
 				exitCode := uint8(0)
 				if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
@@ -620,7 +616,6 @@ func main() {
 			},
 		}
 		bareCmd.Flags().StringVar(&level, "level", "debug", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
-		bareCmd.Flags().BoolVar(&asyncMode, "async", false, "When async is on, rumor commands do not block until they are done, making async commands with a single session possible. A trace-level log entry with success=true is logged to notify when an async call completed.")
 		bareCmd.Flags().BoolVar(&stopOnErr, "stop-on-err", false, "When a command exits with an error, stop processing input.")
 
 		mainCmd.AddCommand(bareCmd)
@@ -670,6 +665,9 @@ func main() {
 							} else {
 								break
 							}
+						}
+						if sess.Exited() {
+							break
 						}
 					}
 					sess.Close()

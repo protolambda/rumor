@@ -9,7 +9,6 @@ import (
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/sirupsen/logrus"
-	"sync"
 	"time"
 )
 
@@ -36,19 +35,16 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 	if c.Compression.Compression != nil {
 		prot += protocol.ID("_" + c.Compression.Compression.Name())
 	}
-	spCtx, freed := c.SpawnContext()
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 
 	// time out, or when listener stops.
 	sCtxFn := func() context.Context {
 		if c.Timeout == 0 {
-			return spCtx
+			return bgCtx
 		}
-		reqCtx, _ := context.WithTimeout(spCtx, c.Timeout)
+		reqCtx, _ := context.WithTimeout(bgCtx, c.Timeout)
 		return reqCtx
 	}
-
-	nextStep, nextStepComplete := c.StepContext()
-	var nextLock sync.Mutex
 
 	listenReq := func(ctx context.Context, peerId peer.ID, handler reqresp.ChunkedRequestHandler) {
 		c.Log.Info("Received a request, run 'next' to start processing it.")
@@ -78,42 +74,38 @@ func (c *RpcMethodListenCmd) Run(ctx context.Context, args ...string) error {
 		if c.Drop {
 			c.Log.WithFields(req).Infof("Received request, dropping it!")
 		} else {
-			ctx, cancel := context.WithCancel(spCtx) // responses are also shut down when the listener is shut down.
+			respCtx, respCancel := context.WithCancel(bgCtx) // responses are also shut down when the listener is shut down.
 			reqId := c.Responder.AddRequest(&RequestEntry{
 				From:    peerId,
 				Handler: handler,
-				Cancel:  cancel,
+				Cancel:  respCancel,
 			})
 			req["req_id"] = reqId
 
-			// The reporting of requests is concurrent with the queueing, but sync and step-wise with itself.
-			go func() {
-				// Sync: Only lock-in one request report at a time.
-				nextLock.Lock()
-				defer nextLock.Unlock()
-
-				<-nextStep.Done()
+			if err := c.Base.Control.Step(func(ctx context.Context) error {
+				// report it within the step: we want the latest req-id to be this when the controller steps into it.
 				c.Log.WithFields(req).Infof("Received request, queued it to respond to!")
+				return nil
+			}); err != nil {
+				c.Log.WithField("req_id", reqId).WithError(err).Warn(
+					"Shutting down request without response!")
+			} else {
+				// Wait for context to stop processing the request (stream will be closed after return)
+				<-respCtx.Done()
 
-				// Completes the last step, prepares next step
-				nextStep, nextStepComplete = c.StepContext()
-			}()
-
-			// Wait for context to stop processing the request (stream will be closed after return)
-			<-ctx.Done()
-
-			c.Log.WithField("req_id", reqId).Infof("Responded!")
+				c.Log.WithField("req_id", reqId).Info("Responded!")
+			}
 		}
 	}
 	streamHandler := c.Method.MakeStreamHandler(sCtxFn, c.Compression.Compression, listenReq)
 	h.SetStreamHandler(prot, streamHandler)
 	c.Log.Infof("Opened listener")
 
-	go func() {
-		<-spCtx.Done()
+	c.Control.RegisterStop(func(ctx context.Context) error {
+		bgCancel()
 		h.RemoveStreamHandler(prot)
 		c.Log.Infof("Stopped listener")
-		freed()
-	}()
+		return nil
+	})
 	return nil
 }

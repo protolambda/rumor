@@ -18,6 +18,7 @@ echo "Connected! requesting now"
 
 # Just send an empty status (or generate one with pyspec/client)
 _requester rpc status req raw --raw --timeout=300s $alice_id "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007b00000000000000"
+_requester next  # request written
 echo "requested status!"
 
 # Respond back

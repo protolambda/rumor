@@ -49,15 +49,12 @@ func (c *Dv5RandomCmd) Run(ctx context.Context, args ...string) error {
 		finished <- struct{}{}
 	}()
 
-	spCtx, freed := c.SpawnContext()
-	go func() {
-		<-spCtx.Done()
-
+	c.Control.RegisterStop(func(ctx context.Context) error {
 		randomNodes.Close()
 		<-finished
 
 		c.Log.Infof("Stopped looking for random nodes: %s", time.Now().String())
-		freed()
-	}()
+		return nil
+	})
 	return nil
 }

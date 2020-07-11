@@ -21,7 +21,8 @@ import (
 
 type EnvGlobal interface {
 	GetCall(id CallID) *Call
-	MakeCall(actorID actor.ActorID, callID CallID, args []string) *Call
+	// Runs the call in sync
+	MakeCall(callCtx context.Context, actorID actor.ActorID, callID CallID, args []string) (*Call, error)
 	IsClosing() bool
 	KillActor(id actor.ActorID)
 	GetCalls(id actor.ActorID) map[CallID]CallSummary
@@ -48,9 +49,6 @@ type Session struct {
 
 	defaultActorID actor.ActorID
 
-	// if commands block, i.e. nicely wait for them to finish before freeing the runner for the next command.
-	blocking bool
-
 	callCounter   uint64
 	requestedExit bool
 }
@@ -67,7 +65,6 @@ func newSession(id SessionID, ctx context.Context, parentEnv expand.Environ, log
 		ctx:            ctx,
 		cancelSelf:     cancel,
 		parentEnv:      parentEnv,
-		blocking:       true,
 		defaultActorID: "DEFAULT_ACTOR_ID",
 		includesParser: syntax.NewParser(),
 	}
@@ -113,17 +110,9 @@ func (sess *Session) Run(ctx context.Context, node syntax.Node) error {
 	return err
 }
 
-func (sess *Session) SetBlocking(blocking bool) {
-	sess.blocking = blocking
-}
-
 func (sess *Session) Close() error {
 	sess.requestedExit = true
 	sess.cancelSelf()
-	if sess.lastCall != nil {
-		sess.lastCall.Close()
-		sess.lastCall = nil
-	}
 	return nil
 }
 
@@ -236,9 +225,15 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			call = sess.lastCall
 		}
 		if call != nil {
-			noStep := call.RequestStep()
+			noStep, finished, err := call.RequestStep(ctx) // TODO timeout
+			if err != nil {
+				return fmt.Errorf("step failed: %v", err)
+			}
 			if noStep {
 				return errors.New("no remaining steps")
+			}
+			if finished {
+				return errors.New("call finished, no more steps")
 			}
 			return nil
 		} else {
@@ -254,8 +249,7 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			call = sess.lastCall
 		}
 		if call != nil {
-			call.Close()
-			return call.exitReason.ExitErr()
+			return call.RequestStop(ctx)
 		} else {
 			return errors.New("nothing to cancel")
 		}
@@ -297,12 +291,11 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 
 	// We remember the last call, even though we wait for it to be done,
 	// since we may want to cancel/modify its spawned background processes, without having to specify the call ID again.
-	sess.lastCall = sess.global.MakeCall(actorName, callID, args)
-	if sess.blocking {
-		<-sess.lastCall.doneCtx.Done()
-	}
+	call, callErr := sess.global.MakeCall(ctx, actorName, callID, args)
 
-	return sess.lastCall.exitReason.ExitErr()
+	sess.lastCall = call
+
+	return callErr
 }
 
 func (sess *Session) RunInclude(ctx context.Context, includePath string) error {

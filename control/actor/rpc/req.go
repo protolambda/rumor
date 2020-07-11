@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
@@ -75,73 +76,70 @@ func (c *RpcMethodReqRawCmd) Run(ctx context.Context, args ...string) error {
 		protocolId += protocol.ID("_" + c.Compression.Compression.Name())
 	}
 
-	reqStartCtx, reqStarted := context.WithCancel(ctx)
-
-	_, freed := c.SpawnContext()
 	go func() {
-		var stepCtx context.Context
-		var stepComplete context.CancelFunc
 		reqErr := c.Method.RunRequest(reqCtx, sFn, c.PeerID.PeerID, c.Compression.Compression,
 			reqresp.RequestBytesInput(c.Data), c.MaxChunks,
-			func() {
-				stepCtx, stepComplete = c.StepContext()
-				// unblock call here
-				reqStarted()
+			func() error {
+				return c.Control.Step(func(ctx context.Context) error {
+					c.Log.Debug("made request")
+					return nil
+				})
 			},
 			func(chunk reqresp.ChunkedResponseHandler) error {
-
-				// Don't read the next response, unless asked to with "next"
-				<-stepCtx.Done()
-
-				resultCode := chunk.ResultCode()
-				f := logrus.Fields{
-					"protocol":    protocolId,
-					"from":        c.PeerID.PeerID.String(),
-					"chunk_index": chunk.ChunkIndex(),
-					"chunk_size":  chunk.ChunkSize(),
-					"result_code": resultCode,
-				}
-				if c.Raw {
-					bytez, err := chunk.ReadRaw()
-					if err != nil {
-						return err
+				return c.Control.Step(func(ctx context.Context) error {
+					resultCode := chunk.ResultCode()
+					f := logrus.Fields{
+						"protocol":    protocolId,
+						"from":        c.PeerID.PeerID.String(),
+						"chunk_index": chunk.ChunkIndex(),
+						"chunk_size":  chunk.ChunkSize(),
+						"result_code": resultCode,
 					}
-					f["data"] = hex.EncodeToString(bytez)
-				} else {
-					switch resultCode {
-					case reqresp.ServerErrCode, reqresp.InvalidReqCode:
-						msg, err := chunk.ReadErrMsg()
-						if err != nil {
-							return err
-						}
-						f["msg"] = msg
-					case reqresp.SuccessCode:
-						data := c.Method.ResponseChunkCodec.Alloc()
-						if err := chunk.ReadObj(data); err != nil {
-							return err
-						}
-						f["data"] = data
-					default:
+					if c.Raw {
 						bytez, err := chunk.ReadRaw()
 						if err != nil {
 							return err
 						}
 						f["data"] = hex.EncodeToString(bytez)
+					} else {
+						switch resultCode {
+						case reqresp.ServerErrCode, reqresp.InvalidReqCode:
+							msg, err := chunk.ReadErrMsg()
+							if err != nil {
+								return err
+							}
+							f["msg"] = msg
+						case reqresp.SuccessCode:
+							data := c.Method.ResponseChunkCodec.Alloc()
+							if err := chunk.ReadObj(data); err != nil {
+								return err
+							}
+							f["data"] = data
+						default:
+							bytez, err := chunk.ReadRaw()
+							if err != nil {
+								return err
+							}
+							f["data"] = hex.EncodeToString(bytez)
+						}
 					}
-				}
-				c.Log.WithFields(f).Info("Received chunk")
-
-				// Complete previous step, start next step
-				stepCtx, stepComplete = c.StepContext()
-				return nil
+					c.Log.WithFields(f).Info("Received chunk")
+					if resultCode == reqresp.SuccessCode {
+						return nil
+					} else {
+						return fmt.Errorf("got %d reqresp result code", resultCode)
+					}
+				})
 			})
 		if reqErr != nil {
 			c.Log.WithError(reqErr).Error("failed to make request")
 		} else {
 			c.Log.Infof("Completed request")
 		}
-		freed()
 	}()
-	<-reqStartCtx.Done()
+
+	c.Control.RegisterStop(func(ctx context.Context) error {
+		return nil
+	})
 	return nil
 }

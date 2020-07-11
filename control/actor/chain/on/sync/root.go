@@ -89,8 +89,9 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 		Process: c.Process,
 	}.handle(procCtx, func(blocksCh chan<- *beacon.SignedBeaconBlock) error {
 		return method.RunRequest(reqCtx, sFn, peerId, c.Compression.Compression, reqresp.RequestSSZInput{Obj: &req}, uint64(len(req)),
-			func() {
+			func() error {
 				// TODO
+				return nil
 			},
 			func(chunk reqresp.ChunkedResponseHandler) error {
 				resultCode := chunk.ResultCode()

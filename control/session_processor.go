@@ -8,6 +8,7 @@ import (
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
 	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor"
+	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/expand"
@@ -179,76 +180,63 @@ func (sp *SessionProcessor) ClearLogData() {
 	})
 }
 
-func (sp *SessionProcessor) MakeCall(actorName actor.ActorID, callID CallID, cmdArgs []string) *Call {
+func (sp *SessionProcessor) MakeCall(callCtx context.Context, actorName actor.ActorID, callID CallID, cmdArgs []string) (*Call, error) {
 	rep := sp.GetActor(actorName)
-	freeCtx, freeCancel := context.WithCancel(rep.ActorCtx)
-	doneCtx, doneCancel := context.WithCancel(freeCtx)
-	cmdCtx, cmdCancel := context.WithCancel(doneCtx)
-	spawnCtx, spawnCancel := context.WithCancel(freeCtx)
+	bgCtx, bgCancel := context.WithCancel(rep.ActorCtx)
 
 	cmdLogger := sp.log.WithField("actor", actorName).WithField("call_id", callID)
 
 	call := &Call{
-		id:            callID,
-		args:          cmdArgs,
-		ctx:           cmdCtx,
-		cancel:        cmdCancel,
-		doneCtx:       doneCtx,
-		done:          doneCancel,
-		spawnCtx:      spawnCtx,
-		closeSpawn:    spawnCancel,
-		nextComplete:  nil,
-		nextCompleter: nil,
-		nextRequest:   nil,
-		nextRequester: nil,
-		freeCtx:       freeCtx,
-		free:          freeCancel,
-		logger:        cmdLogger,
-		actorName:     actorName,
-		spawned:       false,
-		exitReason:    SuccessDone,
+		id:        callID,
+		args:      cmdArgs,
+		steps:     make(chan base.Step, 0),
+		bgCtx:     bgCtx,
+		bgCancel:  bgCancel,
+		logger:    cmdLogger,
+		actorName: actorName,
+		spawned:   false,
 	}
 
-	callCmd := rep.MakeCmd(cmdLogger, call.Spawn, call.Step)
+	callCmd := rep.MakeCmd(cmdLogger, call)
 
 	sp.log.WithField("args", cmdArgs).Tracef("Started %s", callID)
 
 	loadedCmd, err := ask.Load(callCmd)
 	if err != nil {
-		cmdLogger.WithError(err).Error("failed to parse command")
-		call.exitReason = ParseError
-		freeCancel()
+		bgCancel()
 		sp.RemoveInterests(callID)
+		return nil, fmt.Errorf("failed to parse command: %v", err)
 	} else {
 		sp.ongoingCalls.Store(callID, call)
-		go func() {
-			fCmd, isHelp, err := loadedCmd.Execute(cmdCtx, cmdArgs...)
-			if err != nil {
-				cmdLogger.WithError(err).Error("exited with error")
-				call.exitReason = RuntimeError
-			} else {
-				call.exitReason = SuccessDone
-				if isHelp {
-					cmdLogger.Info(fCmd.Usage())
-				}
-				cmdLogger.WithField("__success", "true").Trace("completed call")
-			}
-			doneCancel()
-			// If nothing was spawned, we can free the command early
-			if !call.spawned {
-				freeCancel() // just cancel, no need to wait, nothing is blocked
-			} else {
-				// Waiting for background tasks to be freed
-				<-freeCtx.Done()
-			}
-			cmdLogger.WithField("__freed", "true").Trace("freed call resources")
-			// Finished, including optional spawned resources, removing call now
-			sp.RemoveInterests(callID)
-			sp.ongoingCalls.Delete(callID)
-		}()
-	}
 
-	return call
+		defer func() {
+			go func() {
+				// If nothing was spawned, we can bgCancel the command early
+				if !call.spawned {
+					bgCancel() // just cancel, no need to wait, nothing is blocked
+				} else {
+					// Waiting for background tasks to be freed
+					<-bgCtx.Done()
+				}
+				cmdLogger.WithField("__freed", "true").Trace("freed call resources")
+				// Finished, including optional spawned resources, removing call now
+				sp.RemoveInterests(callID)
+				sp.ongoingCalls.Delete(callID)
+			}()
+		}()
+
+		fCmd, isHelp, err := loadedCmd.Execute(callCtx, cmdArgs...)
+		if err != nil {
+			cmdLogger.WithField("__error", err).Trace("call failed with error")
+			return call, fmt.Errorf("command failed: %v", err)
+		} else {
+			if isHelp {
+				cmdLogger.Info(fCmd.Usage())
+			}
+			cmdLogger.WithField("__success", "true").Trace("completed call")
+			return call, nil
+		}
+	}
 }
 
 func (sp *SessionProcessor) RemoveInterests(id CallID) {
@@ -286,11 +274,9 @@ func (sp *SessionProcessor) Close() {
 	sp.ongoingCalls.Range(func(ki, vi interface{}) bool {
 		v := vi.(*Call)
 		v.logger.Debug("Closing job with 5 second timeout...")
-		v.cancel()
 		wg.Add(1)
-		closeCtx, _ := context.WithTimeout(v.freeCtx, time.Second*5)
-		<-closeCtx.Done()
-		if err := closeCtx.Err(); err != nil {
+		closeCtx, _ := context.WithTimeout(v.bgCtx, time.Second*5)
+		if err := v.RequestStop(closeCtx); err != nil {
 			v.logger.Error("Failed to close job with timeout")
 		}
 		wg.Done()

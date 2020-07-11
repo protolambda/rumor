@@ -165,7 +165,8 @@ func (c *chRespHandler) ReadObj(dest interface{}) error {
 }
 
 func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
-	peerId peer.ID, comp Compression, req RequestInput, maxRespChunks uint64, madeRequest func(), onResponse OnResponseListener) error {
+	peerId peer.ID, comp Compression, req RequestInput, maxRespChunks uint64, madeRequest func() error,
+	onResponse OnResponseListener) error {
 
 	handleChunks := ResponseChunkHandler(func(ctx context.Context, chunkIndex uint64, chunkSize uint64, result ResponseCode, r io.Reader, w io.Writer) error {
 		return onResponse(&chRespHandler{
@@ -196,7 +197,9 @@ func (m *RPCMethod) RunRequest(ctx context.Context, newStreamFn NewStreamFn,
 	respHandler := handleChunks.MakeResponseHandler(maxRespChunks, maxChunkContentSize, comp)
 
 	handler := ResponseHandler(func(ctx context.Context, r io.Reader, w io.WriteCloser) error {
-		madeRequest()
+		if err := madeRequest(); err != nil {
+			return fmt.Errorf("made request, but could not continue: %v", err)
+		}
 		return respHandler(ctx, r, w)
 	})
 

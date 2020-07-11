@@ -8,13 +8,23 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// SpawnFn spawns background tasks.
-// Ctx is used to terminate spawned resources.
-// Done is called after the spawned resources are fully freed.
-type SpawnFn func() (ctx context.Context, done context.CancelFunc)
+// Step is a function that is proposed by the command, and can be stepped into by the controller.
+// The context is used to limit the step execution
+type Step func(ctx context.Context) error
 
-// StepFn, ctx blocks until step requested. Done should be called when the next step completes.
-type StepFn func() (ctx context.Context, done context.CancelFunc)
+// OnStop is a function  that is proposed by the command, and called by the controller to end the command.
+// The context is used to limit the stop execution
+type OnStop func(ctx context.Context) error
+
+type Control interface {
+	// RegisterStop register a callback for the controller to shutdown a background task of a command
+	// The command can be running the background task in some other go routine after returning.
+	RegisterStop(onStop OnStop)
+
+	// Step creates a job that can be stepped into by the controller.
+	// It blocks until the step is consumed. The step itself can schedule next steps
+	Step(step Step) error
+}
 
 type Base struct {
 	WithHost
@@ -22,10 +32,8 @@ type Base struct {
 	GlobalContext context.Context
 	// For actor
 	ActorContext context.Context
-	// For non-blocking tasks to end later. E.g. serving data in the background.
-	SpawnContext SpawnFn
-	// For step-wise non blocking tasks
-	StepContext StepFn
+	// Control the execution of a call
+	Control Control
 	// For command
 	Log logrus.FieldLogger
 }

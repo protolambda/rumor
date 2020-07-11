@@ -52,15 +52,11 @@ func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 	}
 	c.Log.Infof("Started discv5 with %d bootnodes", len(bootNodes))
 
-	spCtx, freed := c.SpawnContext()
-	go func() {
-		<-spCtx.Done()
-
+	c.Control.RegisterStop(func(ctx context.Context) error {
 		c.Dv5State.Dv5Node.Close()
 		c.Dv5State.Dv5Node = nil
 		log.Info("Stopped discv5")
-
-		freed()
-	}()
+		return nil
+	})
 	return nil
 }
