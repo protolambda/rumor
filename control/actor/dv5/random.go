@@ -30,21 +30,30 @@ func (c *Dv5RandomCmd) Run(ctx context.Context, args ...string) error {
 	randomNodes := c.Dv5State.Dv5Node.RandomNodes()
 	c.Log.Infof("Started looking for random nodes: %s", time.Now().String())
 
-	h, err := c.Host()
-	if err != nil {
-		if c.Add {
-			return errors.New("to add or connect nodes, a libp2p host needs to be started first")
-		}
-	}
 	finished := make(chan struct{})
 	go func() {
+		exit := false
 		for {
-			if !randomNodes.Next() {
+			if exit || !randomNodes.Next() {
 				break
 			}
-			res := randomNodes.Node()
-			c.HandleENR.handle(c.Log, h, res)
-			c.Base.Log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()}).Infof("Got random node")
+			if err := c.Control.Step(func(ctx context.Context) error {
+				res := randomNodes.Node()
+				if res == nil {
+					exit = true
+					return errors.New("no new node available")
+				}
+				entry := c.Log.WithFields(logrus.Fields{"enr": res.String(), "id": res.ID().String()})
+				if err := c.HandleENR.handle(c.Log, res); err != nil {
+					return err
+				} else {
+					entry.Infof("Got random node")
+					return nil
+				}
+			}); err != nil {
+				// no more steps, stop looping.
+				break
+			}
 		}
 		finished <- struct{}{}
 	}()

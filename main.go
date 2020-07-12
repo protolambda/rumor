@@ -511,6 +511,7 @@ func main() {
 
 	{
 		var level string
+		var formatter string
 		fileCmd := &cobra.Command{
 			Use:   "file <input-file>",
 			Short: "Run rom a file",
@@ -519,7 +520,11 @@ func main() {
 				log := logrus.New()
 				log.SetOutput(os.Stdout)
 				log.SetLevel(logrus.TraceLevel)
-				log.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
+				if formatter == "terminal" {
+					log.SetFormatter(&control.ShellLogFmt{})
+				} else {
+					log.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
+				}
 
 				if level != "" {
 					logLevel, err := logrus.ParseLevel(level)
@@ -554,6 +559,7 @@ func main() {
 			},
 		}
 		fileCmd.Flags().StringVar(&level, "level", "debug", "Log-level. Valid values: trace, debug, info, warn, error, fatal, panic")
+		fileCmd.Flags().StringVar(&formatter, "formatter", "json", "Formatter. Valid values: json, terminal")
 		mainCmd.AddCommand(fileCmd)
 	}
 

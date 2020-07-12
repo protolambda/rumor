@@ -32,7 +32,7 @@ func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 	for i := 0; i < len(c.Bootnodes); i++ {
 		dv5Addr, err := addrutil.ParseEnrOrEnode(c.Bootnodes[i])
 		if err != nil {
-			return err
+			return fmt.Errorf("bootnode %d is bad: %v", i, err)
 		}
 		bootNodes = append(bootNodes, dv5Addr)
 	}
@@ -48,7 +48,7 @@ func (c *Dv5RunCmd) Run(ctx context.Context, args ...string) error {
 	var err error
 	c.Dv5State.Dv5Node, err = dv5.NewDiscV5(c.Log, ip, udpPort, c.Dv5Settings, bootNodes)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init new dv5: %v", err)
 	}
 	c.Log.Infof("Started discv5 with %d bootnodes", len(bootNodes))
 

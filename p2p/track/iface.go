@@ -54,11 +54,11 @@ type PeerAllData struct {
 	UserAgent       string `json:"user_agent,omitempty"`
 	ProtocolVersion string `json:"protocol_version,omitempty"`
 
-	ForkDigest      *beacon.ForkDigest `json:"enr_fork_digest"`
-	NextForkVersion *beacon.Version    `json:"enr_next_fork_version"`
-	NextForkEpoch   *beacon.Epoch      `json:"enr_next_fork_epoch"`
+	ForkDigest      *beacon.ForkDigest `json:"enr_fork_digest,omitempty"`
+	NextForkVersion *beacon.Version    `json:"enr_next_fork_version,omitempty"`
+	NextForkEpoch   *beacon.Epoch      `json:"enr_next_fork_epoch,omitempty"`
 
-	Attnets *types.AttnetBits `json:"enr_attnets"`
+	Attnets *types.AttnetBits `json:"enr_attnets,omitempty"`
 
 	// Metadata with highest sequence number
 	MetaData *methods.MetaData `json:"metadata,omitempty"`

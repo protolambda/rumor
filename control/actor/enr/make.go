@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	crand "crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -26,6 +27,7 @@ type EnrMakeCmd struct {
 
 	FromHost bool `ask:"--from-host" help:"If IP, TCP and UDP should copy the libp2p host settings, if not present in the ENR already"`
 
+	RmIP        bool `ask:"--rm-ip"`
 	IP          net.IP `ask:"--ip" help:"IP address dv4. Currrent ENR IP if empty."`
 	StaticIP    net.IP `ask:"--static-ip" help:"Set a static IP in the ENR."`
 	FallbackIP  net.IP `ask:"--fallback-ip" help:"Set a fallback IP, used when no public IP is known, until it can be determined from traffic."`
@@ -60,6 +62,7 @@ func (c *EnrMakeCmd) Default() {
 	c.StaticIP = nil
 	c.FallbackIP = nil
 	c.FallbackUDP = 0
+	c.IP = nil
 	c.TCP = 9000
 	c.UDP = 9000
 }
@@ -86,6 +89,11 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 				return fmt.Errorf("failed to generate key: %v", err)
 			}
 			priv = (*crypto.Secp256k1PrivateKey)(key)
+			keyBytes, err := priv.Raw()
+			if err != nil {
+				return fmt.Errorf("failed to serialize key: %v", err)
+			}
+			c.Log.WithField("key", hex.EncodeToString(keyBytes)).Infoln("generated key")
 		} else {
 			return fmt.Errorf("no private key known, but key-gen disabled, cannot make ENR")
 		}
@@ -142,15 +150,17 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	if c.IPChanged {
+	node := c.Lazy.Current.GetNode()
+
+	if c.IPChanged || node.IP() == nil {
 		c.Lazy.Current.SetIP(c.IP)
 	}
 
-	if c.TCPChanged {
+	if c.TCPChanged || node.TCP() == 0 {
 		c.Lazy.Current.SetTCP(c.TCP)
 	}
 
-	if c.UDPChanged {
+	if c.UDPChanged || node.UDP() == 0 {
 		c.Lazy.Current.SetUDP(c.UDP)
 	}
 
@@ -162,7 +172,6 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 		// If they didn't all change, merge in the existing data (if any)
 		if !(c.ForkDigestChanged && c.NextForkVersionChanged && c.NextForkEpochChanged) {
 			var currEth2 *types.Eth2Data = nil
-			node := c.Lazy.Current.GetNode()
 			if dat, exists, err := addrutil.ParseEnrEth2Data(node); err != nil && exists {
 				currEth2 = dat
 			}
@@ -187,7 +196,11 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 		})
 	}
 
-	node := c.Lazy.Current.GetNode()
+	if c.RmIP {
+		c.Lazy.Current.SetIP(nil)
+	}
+
+	node = c.Lazy.Current.GetNode()
 	c.Log.WithField("enr", node.String()).Infof("ENR created!")
 	return nil
 }

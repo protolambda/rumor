@@ -10,7 +10,7 @@ import (
 type Dv5LookupCmd struct {
 	*base.Base
 	*Dv5State
-	Target *flags.NodeIDFlexibleFlag `ask:"<target>" help:"Target ENR/enode/node-id"`
+	Target flags.NodeIDFlexibleFlag `ask:"<target>" help:"Target ENR/enode/node-id"`
 }
 
 func (c *Dv5LookupCmd) Help() string {
