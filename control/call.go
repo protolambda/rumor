@@ -86,6 +86,7 @@ func (c *Call) RequestStep(ctx context.Context) (noStep bool, finish bool, err e
 		return false, false, errors.New("step request stopped")
 	case step, ok := <-c.steps:
 		err = step(ctx)
+		c.logger.WithField("__step", true).Trace("Step complete")
 		return !ok, false, err
 	case <-c.bgCtx.Done():
 		return true, true, nil
