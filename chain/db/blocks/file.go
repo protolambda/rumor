@@ -15,11 +15,11 @@ import (
 )
 
 type FileDB struct {
-	path string
+	Path string
 }
 
 func (db *FileDB) rootToPath(root beacon.Root) string {
-	return path.Join(db.path, "0x"+hex.EncodeToString(root[:])+".ssz")
+	return path.Join(db.Path, "0x"+hex.EncodeToString(root[:])+".ssz")
 }
 
 func (db *FileDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool, err error) {
@@ -118,7 +118,7 @@ func (db *FileDB) Remove(root beacon.Root) (exists bool, err error) {
 }
 
 func (db *FileDB) Stats() DBStats {
-	files, err := ioutil.ReadDir(db.path)
+	files, err := ioutil.ReadDir(db.Path)
 	if err != nil {
 		return DBStats{}
 	}
@@ -149,7 +149,7 @@ func (db *FileDB) Stats() DBStats {
 }
 
 func (db *FileDB) List() (out []beacon.Root) {
-	files, err := ioutil.ReadDir(db.path)
+	files, err := ioutil.ReadDir(db.Path)
 	if err != nil {
 		return nil
 	}

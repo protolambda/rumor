@@ -9,7 +9,6 @@ import (
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
-	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/blocks"
 	"github.com/protolambda/rumor/control/actor/chain"
@@ -34,9 +33,7 @@ type GlobalActorData struct {
 	GlobalCtx        context.Context
 	GlobalPeerstores track.Peerstores
 	GlobalChains     chaindata.Chains
-
-	Blocks bdb.DB
-	States sdb.DB
+	GlobalBlocksDBs  bdb.DBs
 }
 
 type ActorID string
