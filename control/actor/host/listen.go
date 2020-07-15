@@ -16,7 +16,6 @@ type HostListenCmd struct {
 	IP net.IP `ask:"--ip" help:"If no IP is specified, network interfaces are checked for one."`
 
 	TcpPort uint16 `ask:"--tcp" help:"If no tcp port is specified, it defaults to the ENR TCP port."`
-	UdpPort uint16 `ask:"--udp" help:"If no udp port is specified, it defaults to the ENR UDP port."`
 }
 
 func (c *HostListenCmd) Default() {
@@ -24,10 +23,8 @@ func (c *HostListenCmd) Default() {
 	if !ok {
 		// No ENR available yet? Just use the common eth2 ENR port
 		c.TcpPort = 9000
-		c.UdpPort = 9000
 	} else {
 		c.TcpPort = uint16(node.TCP())
-		c.UdpPort = uint16(node.UDP())
 	}
 }
 
@@ -52,9 +49,6 @@ func (c *HostListenCmd) Run(ctx context.Context, args ...string) error {
 		ipScheme = "ip6"
 	} else {
 		c.IP = ip4
-	}
-	if c.UdpPort == 0 {
-		c.UdpPort = c.TcpPort
 	}
 	mAddr, err := ma.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%d", ipScheme, c.IP.String(), c.TcpPort))
 	if err != nil {

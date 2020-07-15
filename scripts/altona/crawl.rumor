@@ -2,6 +2,9 @@ external_ip="$(curl -s v4.ident.me)"
 p2p_port=9030
 
 echo "External IP used in ENRs: $external_ip"
+echo "External port used in ENRs: $p2p_port"
+
+fork_digest="0xfdca39b0"
 
 enr make \
   --ip="$external_ip" \
@@ -10,7 +13,7 @@ enr make \
   --static-ip="$external_ip" \
   --fallback-udp=$p2p_port \
   --attnets="0xffffffffffffffff" \
-  --fork-digest="0xfdca39b0" \
+  --fork-digest="$fork_digest" \
   --next-fork-version="0x00000121" \
   --next-fork-epoch="0xffffffffffffffff"
 
@@ -21,10 +24,23 @@ peerstore create crawler
 # Try and get 400 peers connected, because why not, we're a crawler.
 # And tag, see how many users identify us
 host start --lo-peers=400 --hi-peers=500 --peer-grace-period=30s --agent="Crawly McCrawlface"
-host listen --tcp=$p2p_port --udp=$p2p_port --ip=0.0.0.0
+host listen --tcp=$p2p_port --ip=0.0.0.0
 
 # Set up a fake Altona status
-include fake_status.rumor
+
+# We zero out attnets here, even though we advertise it in the ENR. We can't really support the attnets without gossip.
+peer metadata set \
+      --attnets="0x0000000000000000" \
+      --seq-number=0
+
+# change status, as if we are at the start of the Altona chain
+peer status set \
+      --finalized-epoch=0 \
+      --finalized-root="0000000000000000000000000000000000000000000000000000000000000000" \
+      --fork-digest="$fork_digest" \
+      --head-root="0x9e2ffe8ab9316e03e45409eaaffab10cf02e1b60e609276113e07240d4a31b7a" \
+      --head-slot=0
+
 
 # Set up malicious endpoints, never actually sync
 rpc blocks-by-range listen --drop
@@ -41,10 +57,11 @@ peer metadata poll --interval=30s  --timeout=10s  --update=true --update-timeout
 # Serve pong requests, also update if we get a higher ping than known
 peer metadata pong --update=true
 
+# TODO: specify bootnode ENR
 # Start discv5, and keep querying random nodes
-dv5 run
-# Add whatever we see to the peerstore
-dv5 random --add --filter-digest="0xfdca39b0"
+_dv5_runner dv5 run --ip="$listening_ip" --udp=$p2p_port
+# Add whatever we see to the peerstore, if it has the right fork digest.
+dv5 random --add --filter-digest="$fork_digest"
 
 #
 #while 1; do

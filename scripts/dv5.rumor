@@ -1,38 +1,51 @@
-alice: host start --priv=4fbdc938929d6286339ff996c7d5d374bb11b3d624ee2761af10a4c74002fcea
-bob: host start
-charlie: host start
+advertised_ip="192.168.0.77"
+listening_ip="192.168.0.77"
 
-alice: host notify all
-bob: host notify all
-charlie: host notify all
+alice: enr make --static-ip="$advertised_ip" --fallback-udp=9010 --priv="4a0ee208acba0625110012b495afe0de53c37eea3a2a3a68adf88f0e92b653d2"
+alice_enr=$__enr
+echo "Alice ENR: $alice_enr"
+enr view --kv $alice_enr
 
-alice: host view
+bob: enr make --static-ip="$advertised_ip" --fallback-udp=9011  --priv="8c1f224ec05764e271a5bf5cde7c3d0f3942a52385998dc017eb6766c2ff154f"
+enr view --kv $__enr
+charlie: enr make --static-ip="$advertised_ip" --fallback-udp=9012  --priv="f45177cd3132e2dda80243c3b20a94b6af5bb77c93a28b1e558824b79054781a"
+enr view --kv $__enr
 
-# TODO: instead of opening a host for ENR details, specify ENR separately in dv5
+alice: peerstore create
+bob: peerstore create
+charlie: peerstore create
 
-# UDP copies TCP port by default
-alice: host listen --ip=127.0.0.1 --tcp=9001
-bob: host listen --ip=127.0.0.1 --tcp=9002
-charlie: host listen --ip=127.0.0.1 --tcp=9003
-
-# Where the Alice ENR comes from
-_alice_view_ alice: host view
 
 # Start discv5 (with alice as bootnode passed to bob and charlie)
-alice: dv5 run
-bob: dv5 run run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
-charlie: dv5 run enr:-Iu4QBlFB-VuYl0FuBqytGALZ2JPD9Oin45DOQHazsURQavhd5q9SVz6eAknivus4b_XDEvGYedVfLX4H5w7Hg2fyQCAgmlkgnY0gmlwhH8AAAGJc2VjcDI1NmsxoQLUkfNmb4iVpct7dFCTCrrlHsX8R0y4Mq2J94RZoEf0C4N0Y3CCIymDdWRwgiMp
+alice: dv5 run --ip="$listening_ip" --udp=9010
+
+sleep 10s
+
+bob: dv5 run --ip="$listening_ip" --udp=9011 "$alice_enr"
+charlie: dv5 run --ip="$listening_ip" --udp=9012 "$alice_enr"
+
+bob: dv5 ping "$alice_enr"
+charlie: dv5 ping "$alice_enr"
+
+sleep 10s
 
 # Let's see if Bob can find Charlie through Alice
-_alice_find_nodes_ bob: dv5 random --add=true
-_bob_find_nodes_ bob: dv5 random --add=true
-_charlie_find_nodes_ bob: dv5 random --add=true
+_alice_find_nodes bob: dv5 random --add=true
+_bob_find_nodes bob: dv5 random --add=true
+_charlie_find_nodes bob: dv5 random --add=true
 
-sleep 20s
+echo "Charlie + alice"
+_charlie_find_nodes next
+_alice_find_nodes next
 
-_alice_find_nodes_ cancel
-_bob_find_nodes_ cancel
-_charlie_find_nodes_ cancel
+echo "Bob gets charlie from alice"
+_bob_find_nodes next
+
+echo "Done"
+
+_alice_find_nodes cancel
+_bob_find_nodes cancel
+_charlie_find_nodes cancel
 
 alice: peer list all --details
 bob: peer list all --details
