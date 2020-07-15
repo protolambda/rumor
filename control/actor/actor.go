@@ -9,6 +9,7 @@ import (
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/blocks"
 	"github.com/protolambda/rumor/control/actor/chain"
@@ -34,6 +35,7 @@ type GlobalActorData struct {
 	GlobalPeerstores track.Peerstores
 	GlobalChains     chaindata.Chains
 	GlobalBlocksDBs  bdb.DBs
+	GlobalStatesDBs  sdb.DBs
 }
 
 type ActorID string
@@ -48,7 +50,9 @@ type Actor struct {
 	PeerStatusState   status.PeerStatusState
 	PeerMetadataState metadata.PeerMetadataState
 
-	ChainState chain.ChainState
+	ChainState  chain.ChainState
+	BlocksState blocks.DBState
+	StatesState states.DBState
 
 	Dv5State dv5.Dv5State
 
@@ -190,12 +194,20 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "rpc":
 		cmd = &rpc.RpcCmd{Base: b, RPCState: &c.RPCState}
 	case "blocks":
-		cmd = &blocks.BlocksCmd{Base: b, DB: c.Blocks}
+		cmd = &blocks.BlocksCmd{Base: b, DBs: c.GlobalBlocksDBs, DBState: &c.BlocksState}
 	case "states":
-		cmd = &states.StatesCmd{Base: b, DB: c.States}
+		cmd = &states.StatesCmd{Base: b, DBs: c.GlobalStatesDBs, DBState: &c.StatesState}
 	case "chain":
+		bl, ok := c.GlobalBlocksDBs.Find(c.BlocksState.CurrentDB)
+		if !ok {
+			return nil, errors.New("no blocks DB available, try 'blocks create'")
+		}
+		st, ok := c.GlobalStatesDBs.Find(c.StatesState.CurrentDB)
+		if !ok {
+			return nil, errors.New("no states DB available, try 'states create'")
+		}
 		cmd = &chain.ChainCmd{Base: b, Chains: c.GlobalChains,
-			ChainState: &c.ChainState, Blocks: c.Blocks, States: c.States}
+			ChainState: &c.ChainState, Blocks: bl, States: st}
 	case "sleep":
 		cmd = &SleepCmd{Base: b}
 	default:

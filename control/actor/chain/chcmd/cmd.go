@@ -1,4 +1,4 @@
-package on
+package chcmd
 
 import (
 	"github.com/protolambda/ask"
@@ -6,21 +6,21 @@ import (
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
 	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/control/actor/chain/on/cold"
-	"github.com/protolambda/rumor/control/actor/chain/on/head"
-	"github.com/protolambda/rumor/control/actor/chain/on/hot"
-	"github.com/protolambda/rumor/control/actor/chain/on/serve"
-	"github.com/protolambda/rumor/control/actor/chain/on/sync"
+	"github.com/protolambda/rumor/control/actor/chain/chcmd/cold"
+	"github.com/protolambda/rumor/control/actor/chain/chcmd/head"
+	"github.com/protolambda/rumor/control/actor/chain/chcmd/hot"
+	"github.com/protolambda/rumor/control/actor/chain/chcmd/serve"
+	"github.com/protolambda/rumor/control/actor/chain/chcmd/sync"
 )
 
-type ChainOnCmd struct {
+type ChainCmd struct {
 	*base.Base
 	Chain  chain.FullChain
 	Blocks bdb.DB
 	States sdb.DB
 }
 
-func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
+func (c *ChainCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "attestation":
 		cmd = &AttestationCmd{Base: c.Base}
@@ -44,10 +44,10 @@ func (c *ChainOnCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
-func (c *ChainOnCmd) Routes() []string {
+func (c *ChainCmd) Routes() []string {
 	return []string{"attestation", "block", "hot", "cold", "head", "serve", "sync", "votes"}
 }
 
-func (c *ChainOnCmd) Help() string {
+func (c *ChainCmd) Help() string {
 	return "Manage things on a beacon chain (hot part may have forks)"
 }

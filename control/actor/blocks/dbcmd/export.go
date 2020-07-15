@@ -1,4 +1,4 @@
-package blocks
+package dbcmd
 
 import (
 	"bytes"

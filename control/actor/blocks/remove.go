@@ -4,24 +4,21 @@ import (
 	"context"
 	bdb "github.com/protolambda/rumor/chain/db/blocks"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/sirupsen/logrus"
 )
 
-type BlocksRemoveCmd struct {
+type RemoveCmd struct {
 	*base.Base
-	bdb.DB
-	BlockRoot beacon.Root `ask:"<root>" help:"Root of the block to delete"`
+	bdb.DBs
+	Name bdb.DBID `ask:"<name>" help:"The name of the DB to remove. Must exist."`
 }
 
-func (c *BlocksRemoveCmd) Help() string {
-	return "Remove a block from the managed blocks collection"
+func (c *RemoveCmd) Help() string {
+	return "Remove a DB"
 }
 
-func (c *BlocksRemoveCmd) Run(ctx context.Context, args ...string) error {
-	exists, err := c.DB.Remove(c.BlockRoot)
-	if err != nil {
-		return err
-	}
-	c.Log.WithField("existed", exists).Infof("removed block")
+func (c *RemoveCmd) Run(ctx context.Context, args ...string) error {
+	existed := c.DBs.Remove(c.Name)
+	c.Log.WithFields(logrus.Fields{"existed": existed, "name": c.Name}).Info("removed DB")
 	return nil
 }

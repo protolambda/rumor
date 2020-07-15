@@ -1,24 +1,24 @@
-package blocks
+package states
 
 import (
 	"errors"
 	"github.com/protolambda/ask"
-	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/control/actor/blocks/dbcmd"
+	"github.com/protolambda/rumor/control/actor/states/dbcmd"
 )
 
 type DBState struct {
-	CurrentDB bdb.DBID
+	CurrentDB sdb.DBID
 }
 
-type BlocksCmd struct {
+type StatesCmd struct {
 	*base.Base
-	bdb.DBs
+	sdb.DBs
 	*DBState
 }
 
-func (c *BlocksCmd) Cmd(route string) (cmd interface{}, err error) {
+func (c *StatesCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "create":
 		cmd = &CreateCmd{Base: c.Base, DBs: c.DBs, DBState: c.DBState}
@@ -33,7 +33,7 @@ func (c *BlocksCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "db":
 		db, ok := c.DBs.Find(c.CurrentDB)
 		if !ok {
-			return nil, errors.New("current DB not available. Create one with 'blocks create'")
+			return nil, errors.New("current DB not available. Create one with 'states create'")
 		}
 		cmd = &dbcmd.DBCmd{Base: c.Base, DB: db}
 	case "on":
@@ -44,10 +44,10 @@ func (c *BlocksCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
-func (c *BlocksCmd) Routes() []string {
+func (c *StatesCmd) Routes() []string {
 	return []string{"create", "copy", "switch", "rm", "list", "db", "on"}
 }
 
-func (c *BlocksCmd) Help() string {
+func (c *StatesCmd) Help() string {
 	return "Manage and interact with blocks DBs"
 }

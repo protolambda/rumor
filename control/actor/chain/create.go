@@ -13,6 +13,7 @@ import (
 type ChainCreateCmd struct {
 	*base.Base
 	chain.Chains
+	*ChainState
 	States    sdb.DB
 	Name      chain.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
 	StateRoot beacon.Root   `ask:"<state>" help:"The state to start from, retrieved from the states DB"`
@@ -62,5 +63,9 @@ func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
 	}
 	entry := chain.NewHotEntry(slot, blockRoot, parentRoot, state, epc)
 	_, err = c.Chains.Create(c.Name, entry)
-	return err
+	if err != nil {
+		return err
+	}
+	c.ChainState.CurrentChain = c.Name
+	return nil
 }

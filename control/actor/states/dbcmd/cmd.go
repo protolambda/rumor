@@ -1,4 +1,4 @@
-package states
+package dbcmd
 
 import (
 	"github.com/protolambda/ask"
@@ -6,7 +6,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 )
 
-type StatesCmd struct {
+type DBCmd struct {
 	*base.Base
 	sdb.DB
 }
@@ -17,7 +17,7 @@ type StatesCmd struct {
 //  - automatic upload/export to some place
 //  - query States by attribute (slot, state root, parent root, eth1 data, etc.)
 
-func (c *StatesCmd) Cmd(route string) (cmd interface{}, err error) {
+func (c *DBCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "import":
 		cmd = &StatesImportCmd{Base: c.Base, DB: c.DB}
@@ -37,10 +37,10 @@ func (c *StatesCmd) Cmd(route string) (cmd interface{}, err error) {
 	return cmd, nil
 }
 
-func (c *StatesCmd) Routes() []string {
+func (c *DBCmd) Routes() []string {
 	return []string{"import", "export", "get", "rm", "stats", "list"}
 }
 
-func (c *StatesCmd) Help() string {
+func (c *DBCmd) Help() string {
 	return "Manage eth2 beacon States"
 }

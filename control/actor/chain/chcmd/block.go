@@ -1,4 +1,4 @@
-package on
+package chcmd
 
 import (
 	"context"

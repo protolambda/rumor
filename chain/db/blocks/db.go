@@ -59,6 +59,8 @@ type DB interface {
 	Stats() DBStats
 	// List all known block roots
 	List() []beacon.Root
+	// Get Path
+	Path() string
 }
 
 var maxBlockSize = beacon.SignedBeaconBlockSSZ.MaxLen()

@@ -143,3 +143,7 @@ func (db *MemDB) List() (out []beacon.Root) {
 	})
 	return out
 }
+
+func (db *MemDB) Path() string {
+	return ""
+}

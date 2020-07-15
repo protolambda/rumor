@@ -1,4 +1,4 @@
-package blocks
+package states
 
 import (
 	"errors"
@@ -33,7 +33,7 @@ func (dbm *DBMap) Create(id DBID, path string) (db DB, err error) {
 	if path == "" {
 		c = &MemDB{}
 	} else {
-		c = &FileDB{BasePath: path}
+		return nil, errors.New("file based DB not yet supported for beacon states")
 	}
 	_, alreadyExisted := dbm.dbs.LoadOrStore(id, c)
 	if alreadyExisted {

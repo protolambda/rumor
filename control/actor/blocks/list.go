@@ -6,17 +6,29 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 )
 
-type BlocksListCmd struct {
+type ListCmd struct {
 	*base.Base
-	bdb.DB
+	bdb.DBs
+	*DBState
 }
 
-func (c *BlocksListCmd) Help() string {
-	return "List known block roots"
+func (c *ListCmd) Help() string {
+	return "List DBs and identify current DB"
 }
 
-func (c *BlocksListCmd) Run(ctx context.Context, args ...string) error {
-	roots := c.DB.List()
-	c.Log.WithField("block_roots", roots).Infof("got %d block roots", len(roots))
+func (c *ListCmd) Run(ctx context.Context, args ...string) error {
+	dbIDs := c.DBs.List()
+	c.Log.WithField("dbs", dbIDs).Infof("Got %d DBs", len(dbIDs))
+
+	if current := c.DBState.CurrentDB; current != "" {
+		db, ok := c.DBs.Find(current)
+		if ok {
+			c.Log.WithField("current", current).WithField("path", db.Path()).Info("Current DB")
+		} else {
+			c.Log.WithField("current", "").Info("Current DB cannot be found")
+		}
+	} else {
+		c.Log.WithField("current", "").Info("No current DB")
+	}
 	return nil
 }
