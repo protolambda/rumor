@@ -27,7 +27,7 @@ type EnrMakeCmd struct {
 
 	FromHost bool `ask:"--from-host" help:"If IP, TCP and UDP should copy the libp2p host settings, if not present in the ENR already"`
 
-	RmIP        bool `ask:"--rm-ip"`
+	RmIP        bool   `ask:"--rm-ip"`
 	IP          net.IP `ask:"--ip" help:"IP address dv4. Currrent ENR IP if empty."`
 	StaticIP    net.IP `ask:"--static-ip" help:"Set a static IP in the ENR."`
 	FallbackIP  net.IP `ask:"--fallback-ip" help:"Set a fallback IP, used when no public IP is known, until it can be determined from traffic."`
