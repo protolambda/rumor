@@ -300,6 +300,10 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		return nil
 	}
 
+	if len(args) == 0 {
+		return errors.New("no actual command to run")
+	}
+
 	if !actor.IsActorCmd(args) {
 		return sess.RunNonRumorCmd(ctx, args)
 	}
