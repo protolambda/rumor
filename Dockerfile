@@ -1,12 +1,12 @@
 FROM golang:alpine as build
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates build-base
 
 WORKDIR /build
 
 ADD . .
 
-RUN CGO_ENABLED=0 GOOS=linux \
+RUN CGO_ENABLED=1 GOOS=linux \
     go build -ldflags '-extldflags "-static"' -o app
 
 FROM scratch
