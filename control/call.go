@@ -18,10 +18,31 @@ type CallSummary struct {
 	Args      []string      `json:"args"`
 }
 
+type CallErr struct {
+	Exit CallExitReason
+	error
+}
+
+func (ce *CallErr) Unwrap() error {
+	return ce.Exit.ExitErr()
+}
+
+func MaybeRuntimeErr(err error) error {
+	if err != nil {
+		return RuntimeError.WithErr(err)
+	} else {
+		return nil
+	}
+}
+
 type CallExitReason uint8
 
 func (code CallExitReason) ExitErr() error {
 	return interp.NewExitStatus(uint8(code))
+}
+
+func (code CallExitReason) WithErr(err error) *CallErr {
+	return &CallErr{Exit: code, error: err}
 }
 
 const (

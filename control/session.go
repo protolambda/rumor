@@ -232,30 +232,30 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			if len(args) == 2 {
 				timeout, err := time.ParseDuration(args[1])
 				if err != nil {
-					return fmt.Errorf("step timeout could not be parsed: %v", err)
+					return MaybeRuntimeErr(fmt.Errorf("step timeout could not be parsed: %v", err))
 				}
 				ctx, _ = context.WithTimeout(ctx, timeout)
 			}
 
 			noStep, finished, err := call.RequestStep(ctx)
 			if err != nil {
-				return fmt.Errorf("step failed: %v", err)
+				return MaybeRuntimeErr(fmt.Errorf("step failed: %v", err))
 			}
 			if noStep {
-				return errors.New("no remaining steps")
+				return MaybeRuntimeErr(errors.New("no remaining steps"))
 			}
 			if finished {
-				return errors.New("call finished, no more steps")
+				return MaybeRuntimeErr(errors.New("call finished, no more steps"))
 			}
 			return nil
 		} else {
-			return errors.New("call not available for stepping")
+			return MaybeRuntimeErr(errors.New("call not available for stepping"))
 		}
 	}
 
 	if len(args) >= 1 && args[0] == "cancel" {
 		if len(args) > 2 {
-			return fmt.Errorf("too many arguments, got %d, expected 2", len(args))
+			return MaybeRuntimeErr(fmt.Errorf("too many arguments, got %d, expected 2", len(args)))
 		}
 		var call *Call
 		if customCallID != "" {
@@ -266,14 +266,14 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		if len(args) == 2 {
 			timeout, err := time.ParseDuration(args[1])
 			if err != nil {
-				return fmt.Errorf("cancel timeout could not be parsed: %v", err)
+				return MaybeRuntimeErr(fmt.Errorf("cancel timeout could not be parsed: %v", err))
 			}
 			ctx, _ = context.WithTimeout(ctx, timeout)
 		}
 		if call != nil {
-			return call.RequestStop(ctx)
+			return MaybeRuntimeErr(call.RequestStop(ctx))
 		} else {
-			return errors.New("nothing to cancel")
+			return MaybeRuntimeErr(errors.New("nothing to cancel"))
 		}
 	}
 
@@ -321,7 +321,7 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 
 	sess.lastCall = call
 
-	return callErr
+	return MaybeRuntimeErr(callErr)
 }
 
 func (sess *Session) RunInclude(ctx context.Context, includePath string) error {
