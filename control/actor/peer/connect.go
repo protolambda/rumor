@@ -17,6 +17,10 @@ type PeerConnectCmd struct {
 	Tag     string                 `ask:"[tag]" help:"Optionally tag the peer upon connection, e.g. tag 'bootnode'"`
 }
 
+func (c *PeerConnectCmd) Default() {
+	c.Timeout = 2 * time.Second
+}
+
 func (c *PeerConnectCmd) Help() string {
 	return "Connect to peer."
 }
