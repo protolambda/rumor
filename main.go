@@ -514,7 +514,7 @@ func main() {
 		var formatter string
 		fileCmd := &cobra.Command{
 			Use:   "file <input-file>",
-			Short: "Run rom a file",
+			Short: "Run from a file",
 			Args:  cobra.ExactArgs(1),
 			Run: func(cmd *cobra.Command, args []string) {
 				log := logrus.New()
