@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	mplex "github.com/libp2p/go-libp2p-mplex"
@@ -14,11 +13,14 @@ import (
 	secio "github.com/libp2p/go-libp2p-secio"
 	tls "github.com/libp2p/go-libp2p-tls"
 	yamux "github.com/libp2p/go-libp2p-yamux"
+	"github.com/libp2p/go-libp2p/config"
+	basichost "github.com/libp2p/go-libp2p/p2p/host/basic"
 	"github.com/libp2p/go-tcp-transport"
 	ws "github.com/libp2p/go-ws-transport"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/control/actor/peerstore"
+	"github.com/protolambda/rumor/p2p/custom"
 	"github.com/protolambda/rumor/p2p/track"
 	"strings"
 	"time"
@@ -32,16 +34,21 @@ type HostStartCmd struct {
 	GlobalPeerstores track.Peerstores
 	CurrentPeerstore track.DynamicPeerstore
 
-	PrivKey          flags.P2pPrivKeyFlag `ask:"--priv" help:"hex-encoded private key for libp2p host. Random if none is specified."`
-	TransportsStrArr []string             `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
-	MuxStrArr        []string             `ask:"--mux" help:"Multiplexers to use"`
-	SecurityArr      []string             `ask:"--security" help:"Security to use. Multiple can be selected, order matters. Options: secio, noise, tls, none"`
-	RelayEnabled     bool                 `ask:"--relay" help:"enable relayer functionality"`
-	LoPeers          int                  `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
-	HiPeers          int                  `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
-	GracePeriod      time.Duration        `ask:"--peer-grace-period" help:"Time to grace a peer from being trimmed"`
-	NatEnabled       bool                 `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
-	UserAgent        string               `ask:"--agent" help:"user agent string to use in libp2p identify protocol"`
+	PrivKey            flags.P2pPrivKeyFlag `ask:"--priv" help:"hex-encoded private key for libp2p host. Random if none is specified."`
+	TransportsStrArr   []string             `ask:"--transport" help:"Transports to use. Options: tcp, ws"`
+	MuxStrArr          []string             `ask:"--mux" help:"Multiplexers to use"`
+	SecurityArr        []string             `ask:"--security" help:"Security to use. Multiple can be selected, order matters. Options: secio, noise, tls, none"`
+	RelayEnabled       bool                 `ask:"--relay" help:"enable relayer functionality"`
+	LoPeers            int                  `ask:"--lo-peers" help:"low-water for connection manager to trim peer count to"`
+	HiPeers            int                  `ask:"--hi-peers" help:"high-water for connection manager to trim peer count from"`
+	GracePeriod        time.Duration        `ask:"--peer-grace-period" help:"Time to grace a peer from being trimmed"`
+	NatEnabled         bool                 `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
+	UserAgent          string               `ask:"--agent" help:"user agent string to use in libp2p identify protocol"`
+	ActiveIdentify     bool                 `ask:"--active-identify" help:"On streams and dials, immediately try to identify peers"`
+	EnableIdentify     bool                 `ask:"--identify" help:"Enable the libp2p identify protocol"`
+	EnablePing         bool                 `ask:"--libp2p-ping" help:"Enable the libp2p ping background service"`
+	NegotiationTimeout time.Duration        `ask:"--negotiation-timeout" help:"Time to allow for negotiation. Negative to disable."`
+	SignedPeerRecord   bool                 `ask:"--signed-peer-records" help:"Use signed peer records"`
 }
 
 func (c *HostStartCmd) Default() {
@@ -53,6 +60,11 @@ func (c *HostStartCmd) Default() {
 	c.GracePeriod = 20 * time.Second
 	c.NatEnabled = true
 	c.UserAgent = "Rumor"
+	c.ActiveIdentify = true
+	c.EnableIdentify = true
+	c.EnablePing = false
+	c.NegotiationTimeout = custom.DefaultNegotiationTimeout
+	c.SignedPeerRecord = false
 }
 
 func (c *HostStartCmd) Help() string {
@@ -64,8 +76,10 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	if err == nil {
 		return errors.New("already have a host open")
 	}
-	var priv *crypto.Secp256k1PrivateKey
+
+	hostOptions := custom.Config{}
 	{
+		var priv *crypto.Secp256k1PrivateKey
 		if c.PrivKey.Priv == nil {
 			// Check if we already have a key
 			if current := c.GetPriv(); current == nil {
@@ -96,54 +110,84 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 				return fmt.Errorf("cannot overwrite existing actor private key: %v", err)
 			}
 		}
+		hostOptions.PeerKey = priv
 	}
-	hostOptions := make([]libp2p.Option, 0)
 
 	for _, v := range c.TransportsStrArr {
 		v = strings.ToLower(strings.TrimSpace(v))
+		var tp interface{}
 		switch v {
 		case "tcp":
-			hostOptions = append(hostOptions, libp2p.Transport(tcp.NewTCPTransport))
+			tp = tcp.NewTCPTransport
 		case "ws":
-			hostOptions = append(hostOptions, libp2p.Transport(ws.New))
+			tp = ws.New
 		default:
 			return fmt.Errorf("could not recognize transport %s", v)
 		}
+		tptc, err := config.TransportConstructor(tp)
+		if err != nil {
+			return err
+		}
+		hostOptions.Transports = append(hostOptions.Transports, tptc)
 	}
 
 	for _, v := range c.MuxStrArr {
 		v = strings.ToLower(strings.TrimSpace(v))
+		var mc config.MsMuxC
 		switch v {
 		case "yamux":
-			hostOptions = append(hostOptions, libp2p.Muxer("/yamux/1.0.0", yamux.DefaultTransport))
+			mtpt, err := config.MuxerConstructor(yamux.DefaultTransport)
+			if err != nil {
+				return err
+			}
+			mc = config.MsMuxC{MuxC: mtpt, ID: "/yamux/1.0.0"}
 		case "mplex":
-			hostOptions = append(hostOptions, libp2p.Muxer("/mplex/6.7.0", mplex.DefaultTransport))
+			mtpt, err := config.MuxerConstructor(mplex.DefaultTransport)
+			if err != nil {
+				return err
+			}
+			mc = config.MsMuxC{MuxC: mtpt, ID: "/mplex/6.7.0"}
 		default:
 			return fmt.Errorf("could not recognize mux %s", v)
 		}
+		hostOptions.Muxers = append(hostOptions.Muxers, mc)
 	}
 
 	for _, secOpt := range c.SecurityArr {
+		var sc config.MsSecC
 		switch secOpt {
 		case "none":
 			// no security, for debugging etc.
+			if len(hostOptions.SecurityTransports) > 0 || len(c.SecurityArr) > 1 {
+				return errors.New("cannot mix secure transport protocols with no-security")
+			}
+			hostOptions.Insecure = true
 		case "secio":
-			hostOptions = append(hostOptions, libp2p.Security(secio.ID, secio.New))
+			stpt, err := config.SecurityConstructor(secio.New)
+			if err != nil {
+				return err
+			}
+			sc = config.MsSecC{SecC: stpt, ID: secio.ID}
 		case "noise":
-			hostOptions = append(hostOptions, libp2p.Security(noise.ID, noise.New))
+			stpt, err := config.SecurityConstructor(noise.New)
+			if err != nil {
+				return err
+			}
+			sc = config.MsSecC{SecC: stpt, ID: noise.ID}
 		case "tls":
-			hostOptions = append(hostOptions, libp2p.Security(tls.ID, tls.New))
+			stpt, err := config.SecurityConstructor(tls.New)
+			if err != nil {
+				return err
+			}
+			sc = config.MsSecC{SecC: stpt, ID: tls.ID}
 		default:
 			return fmt.Errorf("could not recognize security %s", secOpt)
 		}
+		hostOptions.SecurityTransports = append(hostOptions.SecurityTransports, sc)
 	}
 
 	if c.NatEnabled {
-		hostOptions = append(hostOptions, libp2p.NATPortMap())
-	}
-
-	if c.RelayEnabled {
-		hostOptions = append(hostOptions, libp2p.EnableRelay())
+		hostOptions.NATManager = basichost.NewNATManager
 	}
 
 	store := c.CurrentPeerstore
@@ -159,14 +203,16 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 			return fmt.Errorf("failed to create peerstore: %v", err)
 		}
 	}
-	hostOptions = append(hostOptions,
-		libp2p.Identity(priv),
-		libp2p.Peerstore(store),
-		libp2p.ConnectionManager(connmgr.NewConnManager(c.LoPeers, c.HiPeers, c.GracePeriod)),
-		libp2p.UserAgent(c.UserAgent),
-	)
+	hostOptions.Peerstore = store
+	hostOptions.ConnManager = connmgr.NewConnManager(c.LoPeers, c.HiPeers, c.GracePeriod)
+	hostOptions.UserAgent = c.UserAgent
+	hostOptions.EnablePing = c.EnablePing
+	hostOptions.DisableSignedPeerRecord = !c.SignedPeerRecord
+	// TODO: peer metrics data hostOptions.Reporter
+	// TODO: hostOptions.ConnectionGater
+	hostOptions.NegotiationTimeout = c.NegotiationTimeout
 	// Not the command ctx, we want the host to stay open after the command.
-	h, err := libp2p.New(c.ActorContext, hostOptions...)
+	h, err := custom.NewNode(c.ActorContext, &hostOptions)
 	if err != nil {
 		return err
 	}
