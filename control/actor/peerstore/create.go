@@ -47,7 +47,6 @@ func (c *CreateCmd) Run(ctx context.Context, args ...string) error {
 	var store ds.Batching
 	switch c.StoreType {
 	case "", "mem":
-		// TODO: default map is not safe, and mutex wrapper is slow
 		store = sync.MutexWrap(ds.NewMapDatastore())
 		if c.StorePath != "" {
 			return errors.New("memory peerstore cannot have store path")
