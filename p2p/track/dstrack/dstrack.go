@@ -15,9 +15,11 @@ import (
 	"github.com/multiformats/go-base32"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
+	"github.com/protolambda/rumor/p2p/track/dstee"
 	"github.com/protolambda/rumor/p2p/types"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"io"
+	"sync"
 )
 
 var eth2Base = ds.NewKey("/eth2")
@@ -27,6 +29,9 @@ func peerIdToKey(base ds.Key, p peer.ID) ds.Key {
 }
 
 type dsExtendedPeerstore struct {
+	multiTeeLock sync.Mutex
+	multiTee     dstee.MultiTee
+	store        ds.Batching
 	peerstore.Peerstore
 	*dsStatusBook
 	*dsMetadataBook
@@ -34,6 +39,11 @@ type dsExtendedPeerstore struct {
 }
 
 func NewExtendedPeerstore(ctx context.Context, store ds.Batching, opts pstoreds.Options) (track.ExtendedPeerstore, error) {
+	mul := dstee.MultiTee{}
+	store = &dstee.DSTee{
+		Batching: store,
+		Tee:      mul,
+	}
 	ps, err := pstoreds.NewPeerstore(ctx, store, opts)
 	if err != nil {
 		return nil, err
@@ -52,6 +62,8 @@ func NewExtendedPeerstore(ctx context.Context, store ds.Batching, opts pstoreds.
 	}
 
 	return &dsExtendedPeerstore{
+		multiTee:       mul,
+		store:          store,
 		Peerstore:      ps,
 		dsStatusBook:   sb,
 		dsMetadataBook: mb,
@@ -60,6 +72,39 @@ func NewExtendedPeerstore(ctx context.Context, store ds.Batching, opts pstoreds.
 }
 
 var _ track.IdentifyBook = (*dsExtendedPeerstore)(nil)
+
+func (ep *dsExtendedPeerstore) Datastore() ds.Batching {
+	return ep.store
+}
+
+func (ep *dsExtendedPeerstore) AddTee(id dstee.TeeID, tee dstee.Tee) (ok bool) {
+	ep.multiTeeLock.Lock()
+	defer ep.multiTeeLock.Unlock()
+	if _, exists := ep.multiTee[id]; exists {
+		return false
+	}
+	ep.multiTee[id] = tee
+	return true
+}
+
+func (ep *dsExtendedPeerstore) RmTee(id dstee.TeeID) (ok bool) {
+	ep.multiTeeLock.Lock()
+	defer ep.multiTeeLock.Unlock()
+	if _, exists := ep.multiTee[id]; exists {
+		return false
+	}
+	delete(ep.multiTee, id)
+	return true
+}
+
+func (ep *dsExtendedPeerstore) ListTees() (out []dstee.TeeID) {
+	ep.multiTeeLock.Lock()
+	defer ep.multiTeeLock.Unlock()
+	for id := range ep.multiTee {
+		out = append(out, id)
+	}
+	return
+}
 
 func (ep *dsExtendedPeerstore) ProtocolVersion(id peer.ID) (string, error) {
 	dat, err := ep.Get(id, "ProtocolVersion")

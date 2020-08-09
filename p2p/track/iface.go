@@ -3,9 +3,11 @@ package track
 import (
 	"encoding/json"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
+	"github.com/protolambda/rumor/p2p/track/dstee"
 	"github.com/protolambda/rumor/p2p/types"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"time"
@@ -86,7 +88,15 @@ type AllDataGetter interface {
 	GetAllData(id peer.ID) *PeerAllData
 }
 
+type TeedDatastore interface {
+	AddTee(id dstee.TeeID, tee dstee.Tee) (ok bool)
+	RmTee(id dstee.TeeID) (ok bool)
+	ListTees() (out []dstee.TeeID)
+}
+
 type ExtendedPeerstore interface {
+	TeedDatastore
+	Datastore() ds.Batching
 	peerstore.Peerstore
 	StatusBook
 	MetadataBook

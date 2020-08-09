@@ -15,6 +15,8 @@ require (
 	github.com/gorilla/websocket v1.4.2
 	github.com/herumi/bls-eth-go-binary v0.0.0-20200722032157-41fc56eba7b4 // indirect
 	github.com/ipfs/go-datastore v0.4.4
+	github.com/ipfs/go-ds-badger v0.2.3
+	github.com/ipfs/go-ds-leveldb v0.4.2
 	github.com/ipfs/go-log v1.0.4
 	github.com/libp2p/go-addr-util v0.0.2
 	github.com/libp2p/go-conn-security-multistream v0.2.0
