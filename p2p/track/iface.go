@@ -89,9 +89,9 @@ type AllDataGetter interface {
 }
 
 type TeedDatastore interface {
-	AddTee(id dstee.TeeID, tee dstee.Tee) (ok bool)
-	RmTee(id dstee.TeeID) (ok bool)
-	ListTees() (out []dstee.TeeID)
+	AddTee(tee dstee.Tee) (ok bool)
+	RmTee(tee dstee.Tee) (ok bool)
+	ListTees() (out []dstee.Tee)
 }
 
 type ExtendedPeerstore interface {

@@ -77,31 +77,31 @@ func (ep *dsExtendedPeerstore) Datastore() ds.Batching {
 	return ep.store
 }
 
-func (ep *dsExtendedPeerstore) AddTee(id dstee.TeeID, tee dstee.Tee) (ok bool) {
+func (ep *dsExtendedPeerstore) AddTee(tee dstee.Tee) (exists bool) {
 	ep.multiTeeLock.Lock()
 	defer ep.multiTeeLock.Unlock()
-	if _, exists := ep.multiTee[id]; exists {
+	if _, exists := ep.multiTee[tee]; exists {
+		return true
+	}
+	ep.multiTee[tee] = struct{}{}
+	return false
+}
+
+func (ep *dsExtendedPeerstore) RmTee(tee dstee.Tee) (ok bool) {
+	ep.multiTeeLock.Lock()
+	defer ep.multiTeeLock.Unlock()
+	if _, exists := ep.multiTee[tee]; exists {
 		return false
 	}
-	ep.multiTee[id] = tee
+	delete(ep.multiTee, tee)
 	return true
 }
 
-func (ep *dsExtendedPeerstore) RmTee(id dstee.TeeID) (ok bool) {
+func (ep *dsExtendedPeerstore) ListTees() (out []dstee.Tee) {
 	ep.multiTeeLock.Lock()
 	defer ep.multiTeeLock.Unlock()
-	if _, exists := ep.multiTee[id]; exists {
-		return false
-	}
-	delete(ep.multiTee, id)
-	return true
-}
-
-func (ep *dsExtendedPeerstore) ListTees() (out []dstee.TeeID) {
-	ep.multiTeeLock.Lock()
-	defer ep.multiTeeLock.Unlock()
-	for id := range ep.multiTee {
-		out = append(out, id)
+	for t := range ep.multiTee {
+		out = append(out, t)
 	}
 	return
 }

@@ -5,28 +5,26 @@ import (
 )
 
 type BatchItem struct {
-	key   ds.Key
-	value []byte
+	Key   ds.Key
+	Value []byte
 }
 
-type TeeID string
-
-type MultiTee map[TeeID]Tee
+type MultiTee map[Tee]struct{}
 
 func (m MultiTee) OnPut(key ds.Key, value []byte) {
-	for _, t := range m {
+	for t := range m {
 		t.OnPut(key, value)
 	}
 }
 
 func (m MultiTee) OnDelete(key ds.Key) {
-	for _, t := range m {
+	for t := range m {
 		t.OnDelete(key)
 	}
 }
 
 func (m MultiTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
-	for _, t := range m {
+	for t := range m {
 		t.OnBatch(puts, deletes)
 	}
 }
