@@ -30,6 +30,7 @@ func (m MultiTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
 }
 
 type Tee interface {
+	String() string
 	OnPut(key ds.Key, value []byte)
 	OnDelete(key ds.Key)
 	OnBatch(puts []BatchItem, deletes []ds.Key)

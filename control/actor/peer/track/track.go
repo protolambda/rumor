@@ -17,10 +17,8 @@ func (c *PeerTrack) Cmd(route string) (cmd interface{}, err error) {
 		return nil, errors.New("Not available. Create a peerstore first.")
 	}
 	switch route {
-	case "add":
-		cmd = &PeerConnectCmd{Base: c.Base, Store: c.Store}
-	case "remove", "rm":
-		cmd = &PeerDisconnectCmd{Base: c.Base}
+	case "tee":
+		cmd = &PeerTrackTeeCmd{Base: c.Base, Store: c.Store}
 	case "list", "ls":
 		cmd = &PeerProtectCmd{Base: c.Base}
 	default:
@@ -30,7 +28,7 @@ func (c *PeerTrack) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *PeerTrack) Routes() []string {
-	return []string{"add", "rm", "list"}
+	return []string{"tee", "list"}
 }
 
 func (c *PeerTrack) Help() string {
