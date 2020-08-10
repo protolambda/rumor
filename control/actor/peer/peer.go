@@ -6,6 +6,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/peer/metadata"
 	"github.com/protolambda/rumor/control/actor/peer/status"
+	trackcmd "github.com/protolambda/rumor/control/actor/peer/track"
 	"github.com/protolambda/rumor/p2p/track"
 )
 
@@ -37,6 +38,8 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &PeerListCmd{Base: c.Base, Store: c.Store}
 	case "info":
 		cmd = &PeerInfoCmd{Base: c.Base, Store: c.Store}
+	case "track":
+		cmd = &trackcmd.PeerTrack{Base: c.Base, Store: c.Store}
 	case "addrs":
 		cmd = &PeerAddrsCmd{Base: c.Base}
 	case "status":
@@ -51,7 +54,7 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 
 func (c *PeerCmd) Routes() []string {
 	return []string{"connect", "disconnect", "protect", "unprotect", "add", "trim",
-		"list", "info", "addrs", "status", "metadata"}
+		"list", "info", "track", "addrs", "status", "metadata"}
 }
 
 func (c *PeerCmd) Help() string {

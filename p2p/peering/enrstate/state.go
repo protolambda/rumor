@@ -105,7 +105,6 @@ func (s *EnrState) SetUDP(port uint16) {
 
 func (s *EnrState) SetIP(ip net.IP) {
 	if ip == nil {
-		fmt.Printf("removing IP!!!\n")
 		s.localNode.Delete(enr.IP(net.IPv4zero))
 		s.localNode.Delete(enr.IP(net.IPv6zero))
 		return

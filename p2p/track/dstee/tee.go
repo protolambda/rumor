@@ -5,33 +5,12 @@ import (
 )
 
 type BatchItem struct {
-	key   ds.Key
-	value []byte
-}
-
-type TeeID string
-
-type MultiTee map[TeeID]Tee
-
-func (m MultiTee) OnPut(key ds.Key, value []byte) {
-	for _, t := range m {
-		t.OnPut(key, value)
-	}
-}
-
-func (m MultiTee) OnDelete(key ds.Key) {
-	for _, t := range m {
-		t.OnDelete(key)
-	}
-}
-
-func (m MultiTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
-	for _, t := range m {
-		t.OnBatch(puts, deletes)
-	}
+	Key   ds.Key
+	Value []byte
 }
 
 type Tee interface {
+	String() string
 	OnPut(key ds.Key, value []byte)
 	OnDelete(key ds.Key)
 	OnBatch(puts []BatchItem, deletes []ds.Key)
