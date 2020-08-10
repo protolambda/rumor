@@ -21,4 +21,5 @@ func (c *PeerTrackListCmd) Run(ctx context.Context, args ...string) error {
 		tees = append(tees, t.String())
 	}
 	c.Log.WithField("tees", tees).Infof("Currently %d active tees", len(tees))
+	return nil
 }
