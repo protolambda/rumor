@@ -74,7 +74,10 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 	_ = c.Store.AddTee(tee)
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		c.Store.RmTee(tee)
-		return clean()
+		if clean != nil {
+			return clean()
+		}
+		return nil
 	})
 	return nil
 }

@@ -20,7 +20,7 @@ func (c *PeerTrack) Cmd(route string) (cmd interface{}, err error) {
 	case "tee":
 		cmd = &PeerTrackTeeCmd{Base: c.Base, Store: c.Store}
 	case "list", "ls":
-		cmd = &PeerTrackListCmd{Base: c.Base}
+		cmd = &PeerTrackListCmd{Base: c.Base, Store: c.Store}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
