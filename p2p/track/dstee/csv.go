@@ -32,6 +32,8 @@ func (t *CSVTee) OnPut(key ds.Key, value []byte) {
 		hex.EncodeToString(value), // TODO: maybe format some special sub paths, e.g. IPs, utf-8 values, etc.
 	}); err != nil {
 		t.Log.WithError(err).Error("Failed to write put")
+	} else {
+		t.CSV.Flush()
 	}
 }
 
@@ -45,6 +47,8 @@ func (t *CSVTee) OnDelete(key ds.Key) {
 		"",
 	}); err != nil {
 		t.Log.WithError(err).Error("Failed to write delete")
+	} else {
+		t.CSV.Flush()
 	}
 }
 
@@ -72,4 +76,5 @@ func (t *CSVTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
 			t.Log.WithError(err).WithField("i", i).Error("Failed to write batch delete entry")
 		}
 	}
+	t.CSV.Flush()
 }
