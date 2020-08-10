@@ -73,4 +73,3 @@ func (t *CSVTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
 		}
 	}
 }
-

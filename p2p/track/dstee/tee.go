@@ -9,26 +9,6 @@ type BatchItem struct {
 	Value []byte
 }
 
-type MultiTee map[Tee]struct{}
-
-func (m MultiTee) OnPut(key ds.Key, value []byte) {
-	for t := range m {
-		t.OnPut(key, value)
-	}
-}
-
-func (m MultiTee) OnDelete(key ds.Key) {
-	for t := range m {
-		t.OnDelete(key)
-	}
-}
-
-func (m MultiTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
-	for t := range m {
-		t.OnBatch(puts, deletes)
-	}
-}
-
 type Tee interface {
 	String() string
 	OnPut(key ds.Key, value []byte)

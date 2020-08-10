@@ -38,4 +38,3 @@ func (t *LogTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
 		t.OnDelete(d)
 	}
 }
-
