@@ -123,7 +123,17 @@ func (c *Call) RequestStop(ctx context.Context) error {
 			// only clean up the stop function if it did not error.
 			c.onStop = nil
 		}
-		return err
+		if err != nil {
+			return err
+		}
+	}
+	c.bgCancel()
+	// wait for timeout, or proper cleanup
+	select {
+	case <-c.bgCtx.Done():
+		break
+	case <-ctx.Done():
+		break
 	}
 	return nil
 }

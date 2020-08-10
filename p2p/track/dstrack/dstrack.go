@@ -87,10 +87,10 @@ func (ep *dsExtendedPeerstore) AddTee(tee dstee.Tee) (exists bool) {
 	return false
 }
 
-func (ep *dsExtendedPeerstore) RmTee(tee dstee.Tee) (ok bool) {
+func (ep *dsExtendedPeerstore) RmTee(tee dstee.Tee) (exists bool) {
 	ep.multiTeeLock.Lock()
 	defer ep.multiTeeLock.Unlock()
-	if _, exists := ep.multiTee[tee]; exists {
+	if _, exists := ep.multiTee[tee]; !exists {
 		return false
 	}
 	delete(ep.multiTee, tee)

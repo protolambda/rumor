@@ -73,6 +73,7 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 	}
 	_ = c.Store.AddTee(tee)
 	c.Control.RegisterStop(func(ctx context.Context) error {
+		c.Log.Infof("Stopping peer tracker: %s", tee)
 		c.Store.RmTee(tee)
 		if clean != nil {
 			return clean()

@@ -271,7 +271,15 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 			ctx, _ = context.WithTimeout(ctx, timeout)
 		}
 		if call != nil {
-			return MaybeRuntimeErr(call.RequestStop(ctx))
+			return MaybeRuntimeErr(func() error {
+				if err := call.RequestStop(ctx); err != nil {
+					return err
+				}
+				if sess.lastCall == call {
+					sess.lastCall = nil
+				}
+				return nil
+			}())
 		} else {
 			return MaybeRuntimeErr(errors.New("nothing to cancel"))
 		}

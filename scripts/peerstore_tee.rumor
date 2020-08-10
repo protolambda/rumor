@@ -1,0 +1,9 @@
+peerstore create
+_tracker peer track tee
+calls
+host start
+calls
+_tracker cancel
+sleep 1s
+calls
+sleep 1000s

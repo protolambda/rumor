@@ -89,8 +89,11 @@ type AllDataGetter interface {
 }
 
 type TeedDatastore interface {
-	AddTee(tee dstee.Tee) (ok bool)
-	RmTee(tee dstee.Tee) (ok bool)
+	// AddTee registers a tee, and returns true if it was already registered
+	AddTee(tee dstee.Tee) (exists bool)
+	// RmTee registers a tee, and returns true if it was registered before unregistering it
+	RmTee(tee dstee.Tee) (exists bool)
+	// ListTees lists all the tees
 	ListTees() (out []dstee.Tee)
 }
 
