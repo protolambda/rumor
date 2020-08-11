@@ -653,7 +653,11 @@ func main() {
 							log.Debug(fullyParsed)
 							for _, stmt := range stmts {
 								if err := sess.Run(context.Background(), stmt); err != nil {
-									log.WithError(err).Error("error result")
+									if e, ok := interp.IsExitStatus(err); ok {
+										log.WithField("code", e).Error("non-zero exit")
+									} else {
+										log.WithError(err).Error("error result")
+									}
 									return true
 								}
 								if sess.Exited() {

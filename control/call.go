@@ -20,7 +20,15 @@ type CallSummary struct {
 
 type CallErr struct {
 	Exit CallExitReason
-	error
+	Err  error
+}
+
+func (ce *CallErr) String() string {
+	return ce.Error()
+}
+
+func (ce *CallErr) Error() string {
+	return fmt.Sprintf("%s: %s", ce.Exit.ExitErr().Error(), ce.Err.Error())
 }
 
 func (ce *CallErr) Unwrap() error {
@@ -42,7 +50,7 @@ func (code CallExitReason) ExitErr() error {
 }
 
 func (code CallExitReason) WithErr(err error) *CallErr {
-	return &CallErr{Exit: code, error: err}
+	return &CallErr{Exit: code, Err: err}
 }
 
 const (
