@@ -98,7 +98,7 @@ type BasicHost struct {
 	// keep track of resources we need to wait on before shutting down
 	refCount sync.WaitGroup
 	// If the Identify protocol should block the stream connect or dial
-	idActively bool
+	idFirst bool
 
 	network    network.Network
 	mux        *msmux.MultistreamMuxer
@@ -171,8 +171,8 @@ type HostOpts struct {
 	// EnableIdentify disables the default use of the identification background service.
 	EnableIdentify bool
 
-	// IDActively makes the host run the libp2p identify protocol upon new streams and dials with peers.
-	IDActively bool
+	// IDFirst makes the host run the libp2p identify protocol upon new streams and dials with peers.
+	IDFirst bool
 }
 
 // NewHost constructs a new *BasicHost and activates it by attaching its stream and connection handlers to the given inet.Network.
@@ -190,7 +190,7 @@ func NewHost(ctx context.Context, n network.Network, opts *HostOpts) (*BasicHost
 		ctx:                     hostCtx,
 		ctxCancel:               cancel,
 		disableSignedPeerRecord: opts.DisableSignedPeerRecord,
-		idActively:              opts.IDActively,
+		idFirst:                 opts.IDFirst,
 	}
 
 	h.updateLocalIpAddr()
@@ -595,7 +595,7 @@ func (h *BasicHost) NewStream(ctx context.Context, p peer.ID, pids ...protocol.I
 		return nil, err
 	}
 
-	if ids := h.ids; ids != nil && h.idActively {
+	if ids := h.ids; ids != nil && h.idFirst {
 		// Wait for any in-progress identifies on the connection to finish. This
 		// is faster than negotiating.
 		//
@@ -743,7 +743,7 @@ func (h *BasicHost) dialPeer(ctx context.Context, p peer.ID) error {
 		return err
 	}
 
-	if ids := h.ids; ids != nil && h.idActively {
+	if ids := h.ids; ids != nil && h.idFirst {
 		// TODO: Consider removing this? On one hand, it's nice because we can
 		// assume that things like the agent version are usually set when this
 		// returns. On the other hand, we don't _really_ need to wait for this.

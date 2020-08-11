@@ -18,7 +18,7 @@ type PeerConnectCmd struct {
 }
 
 func (c *PeerConnectCmd) Default() {
-	c.Timeout = 2 * time.Second
+	c.Timeout = 10 * time.Second
 }
 
 func (c *PeerConnectCmd) Help() string {

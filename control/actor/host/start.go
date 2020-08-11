@@ -46,6 +46,7 @@ type HostStartCmd struct {
 	UserAgent          string               `ask:"--agent" help:"user agent string to use in libp2p identify protocol"`
 	ActiveIdentify     bool                 `ask:"--active-identify" help:"On streams and dials, immediately try to identify peers"`
 	EnableIdentify     bool                 `ask:"--identify" help:"Enable the libp2p identify protocol"`
+	IDFirst            bool                 `ask:"--identify-first" help:"Try and identify upon connecting with the host"`
 	EnablePing         bool                 `ask:"--libp2p-ping" help:"Enable the libp2p ping background service"`
 	NegotiationTimeout time.Duration        `ask:"--negotiation-timeout" help:"Time to allow for negotiation. Negative to disable."`
 	SignedPeerRecord   bool                 `ask:"--signed-peer-records" help:"Use signed peer records"`
@@ -62,6 +63,7 @@ func (c *HostStartCmd) Default() {
 	c.UserAgent = "Rumor"
 	c.ActiveIdentify = true
 	c.EnableIdentify = true
+	c.IDFirst = true
 	c.EnablePing = false
 	c.NegotiationTimeout = custom.DefaultNegotiationTimeout
 	c.SignedPeerRecord = false
@@ -208,6 +210,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	hostOptions.UserAgent = c.UserAgent
 	hostOptions.EnablePing = c.EnablePing
 	hostOptions.DisableSignedPeerRecord = !c.SignedPeerRecord
+	hostOptions.IDFirst = c.IDFirst
 	// TODO: peer metrics data hostOptions.Reporter
 	// TODO: hostOptions.ConnectionGater
 	hostOptions.NegotiationTimeout = c.NegotiationTimeout
