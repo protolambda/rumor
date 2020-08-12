@@ -184,7 +184,10 @@ func (ep *dsExtendedPeerstore) GetAllData(id peer.ID) *track.PeerAllData {
 	}
 
 	nodeID := enode.PubkeyToIDV4((*ecdsa.PublicKey)(secpKey))
-	protocols, _ := ep.GetProtocols(id)
+	protocols, err := ep.GetProtocols(id)
+	if err != nil {
+		fmt.Printf("couldn't get protocols: %v\n", err)
+	}
 	userAgent, _ := ep.UserAgent(id)
 	protVersion, _ := ep.ProtocolVersion(id)
 	seq, _ := ep.ClaimedSeq(id)
