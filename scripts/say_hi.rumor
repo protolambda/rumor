@@ -1,0 +1,24 @@
+LISTEN_IP=0.0.0.0
+LISTEN_PORT=13000
+FORK_DIGEST=a2ec54bd
+TARGET_IP=1.2.3.4
+TARGET_PORT=9000
+TARGET_PEER_ID=16Uiu2HAm3k4PUxH5xVorayPLjQGNK6KLQhR56Gr9dg7kiRPyco2J
+
+peerstore create foo
+host start --identify=true --identify-first=true --libp2p-ping=true --agent="Jonny"
+host listen --ip=$LISTEN_IP --tcp=$LISTEN_PORT
+host notify all
+peer status set --finalized-epoch=0 --fork-digest="$FORK_DIGEST" --head-slot=0
+peer status serve
+peer metadata set --seq-number=1
+peer metadata serve
+peer metadata pong --update=false
+rpc blocks-by-range listen --drop
+rpc blocks-by-root listen --drop
+rpc goodbye listen --drop
+peer connect /ip4/$TARGET_IP/tcp/$TARGET_PORT/p2p/$TARGET_PEER_ID
+peer status req $TARGET_PEER_ID
+peer identify --timeout=5s $TARGET_PEER_ID
+peer info $TARGET_PEER_ID
+peer disconnect $TARGET_PEER_ID
