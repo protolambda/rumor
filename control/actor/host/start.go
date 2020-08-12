@@ -209,6 +209,7 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 	hostOptions.EnablePing = c.EnablePing
 	hostOptions.DisableSignedPeerRecord = !c.SignedPeerRecord
 	hostOptions.IDFirst = c.IDFirst
+	hostOptions.EnableIdentify = c.EnableIdentify
 	// TODO: peer metrics data hostOptions.Reporter
 	// TODO: hostOptions.ConnectionGater
 	hostOptions.NegotiationTimeout = c.NegotiationTimeout
