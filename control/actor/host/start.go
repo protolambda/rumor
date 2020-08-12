@@ -44,7 +44,6 @@ type HostStartCmd struct {
 	GracePeriod        time.Duration        `ask:"--peer-grace-period" help:"Time to grace a peer from being trimmed"`
 	NatEnabled         bool                 `ask:"--nat" help:"enable nat address discovery (upnp/pmp)"`
 	UserAgent          string               `ask:"--agent" help:"user agent string to use in libp2p identify protocol"`
-	ActiveIdentify     bool                 `ask:"--active-identify" help:"On streams and dials, immediately try to identify peers"`
 	EnableIdentify     bool                 `ask:"--identify" help:"Enable the libp2p identify protocol"`
 	IDFirst            bool                 `ask:"--identify-first" help:"Try and identify upon connecting with the host"`
 	EnablePing         bool                 `ask:"--libp2p-ping" help:"Enable the libp2p ping background service"`
@@ -61,7 +60,6 @@ func (c *HostStartCmd) Default() {
 	c.GracePeriod = 20 * time.Second
 	c.NatEnabled = true
 	c.UserAgent = "Rumor"
-	c.ActiveIdentify = true
 	c.EnableIdentify = true
 	c.IDFirst = true
 	c.EnablePing = false

@@ -27,8 +27,16 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 
 		go func() {
 			<-ctx.Done()
+			// TODO: should this be a stream reset?
 			_ = stream.Close() // Close stream after ctx closes.
 		}()
+
+		w := io.WriteCloser(stream)
+		// If no request data, then do not even read a length from the stream.
+		if maxRequestContentSize == 0 {
+			handle(ctx, peerId, 0, nil, w, comp, nil)
+			return
+		}
 
 		var invalidInputErr error
 
@@ -58,7 +66,6 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 		}
 		blr.N = int(maxRequestContentSize)
 		r := io.Reader(blr)
-		w := io.WriteCloser(stream)
 		handle(ctx, peerId, reqLen, r, w, comp, invalidInputErr)
 	}
 }
