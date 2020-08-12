@@ -65,7 +65,11 @@ func (b *BufLimitReader) Read(p []byte) (n int, err error) {
 		}
 		b.r = 0
 		b.w = 0
-		n, err = b.rd.Read(b.buf[:b.N]) // read no more than allowed.
+		to := b.N // read no more than allowed.
+		if to > len(b.buf) {
+			to = len(b.buf)
+		}
+		n, err = b.rd.Read(b.buf[:to])
 		if n < 0 {
 			panic(errNegativeRead)
 		}
