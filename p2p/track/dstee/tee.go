@@ -4,6 +4,13 @@ import (
 	ds "github.com/ipfs/go-datastore"
 )
 
+type Operation string
+
+const (
+	Put    Operation = "put"
+	Delete Operation = "del"
+)
+
 type BatchItem struct {
 	Key   ds.Key
 	Value []byte

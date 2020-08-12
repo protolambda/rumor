@@ -22,7 +22,7 @@ import (
 	"sync"
 )
 
-var eth2Base = ds.NewKey("/eth2")
+var eth2Base = ds.NewKey("/peers/eth2")
 
 func peerIdToKey(base ds.Key, p peer.ID) ds.Key {
 	return base.ChildString(base32.RawStdEncoding.EncodeToString([]byte(p)))

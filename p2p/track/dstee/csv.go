@@ -26,7 +26,7 @@ func (t *CSVTee) OnPut(key ds.Key, value []byte) {
 	t.Lock()
 	defer t.Unlock()
 	if err := t.CSV.Write([]string{
-		"put",
+		string(Put),
 		strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10),
 		key.String(),
 		hex.EncodeToString(value), // TODO: maybe format some special sub paths, e.g. IPs, utf-8 values, etc.
@@ -41,7 +41,7 @@ func (t *CSVTee) OnDelete(key ds.Key) {
 	t.Lock()
 	defer t.Unlock()
 	if err := t.CSV.Write([]string{
-		"del",
+		string(Delete),
 		strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10),
 		key.String(),
 		"",
@@ -58,7 +58,7 @@ func (t *CSVTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
 	m := strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10)
 	for i, p := range puts {
 		if err := t.CSV.Write([]string{
-			"put",
+			string(Put),
 			m,
 			p.Key.String(),
 			hex.EncodeToString(p.Value),
@@ -68,7 +68,7 @@ func (t *CSVTee) OnBatch(puts []BatchItem, deletes []ds.Key) {
 	}
 	for i, d := range deletes {
 		if err := t.CSV.Write([]string{
-			"del",
+			string(Delete),
 			m,
 			d.String(),
 			"",

@@ -10,8 +10,8 @@ import (
 	"github.com/protolambda/rumor/p2p/track"
 )
 
-// enrs are stored under the /eth2/enr/<peer id> path, and stored in string representation
-var enrBase = eth2Base.ChildString("enr")
+// enrs are stored under the /eth2/<peer id>/enr path, and stored in string representation
+var enrSuffix = ds.NewKey("/enr")
 
 var validSchemesForDB = enr.SchemeMap{
 	"v4":   enode.V4ID{},
@@ -29,7 +29,7 @@ func NewENRBook(store ds.Datastore) (*dsENRBook, error) {
 }
 
 func (eb *dsENRBook) loadEnr(p peer.ID) (*enode.Node, error) {
-	key := peerIdToKey(enrBase, p)
+	key := peerIdToKey(eth2Base, p).Child(enrSuffix)
 	value, err := eb.ds.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("error while fetching enr from datastore for peer %s: %s\n", p.Pretty(), err)
@@ -42,7 +42,7 @@ func (eb *dsENRBook) loadEnr(p peer.ID) (*enode.Node, error) {
 }
 
 func (eb *dsENRBook) storeEnr(p peer.ID, n *enode.Node) error {
-	key := peerIdToKey(enrBase, p)
+	key := peerIdToKey(eth2Base, p).Child(enrSuffix)
 	if err := eb.ds.Put(key, []byte(n.String())); err != nil {
 		return fmt.Errorf("failed to store enr: %v", err)
 	}
