@@ -21,7 +21,7 @@ peer status serve
 peer metadata set --seq-number=1
 # respond to metadata requests
 peer metadata serve
-# don't bother sending periodic requests
+# don't bother sending metadata requests when receiving newer ping seq numbers
 peer metadata pong --update=false
 
 # ignore these rpc messages
