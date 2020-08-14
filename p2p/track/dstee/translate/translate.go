@@ -19,6 +19,8 @@ import (
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/zssz"
+	"sort"
+	"strconv"
 )
 
 /*
@@ -88,6 +90,108 @@ type PartialPeerstoreEntry struct {
 	UserAgent       string          `json:"user_agent,omitempty"`
 	Pubkey          string          `json:"pub,omitempty"` // raw bytes, not the protobuf representation
 	NodeID          string          `json:"node_id,omitempty"`
+}
+
+func (p *PartialPeerstoreEntry) Merge(other *PartialPeerstoreEntry) {
+	if other.Eth2 != nil {
+		if p.Eth2 == nil {
+			p.Eth2 = other.Eth2
+		} else {
+			if other.Eth2.ENR != nil {
+				p.Eth2.ENR = other.Eth2.ENR
+			}
+			if other.Eth2.Status != nil {
+				p.Eth2.Status = other.Eth2.Status
+			}
+			if other.Eth2.MetadataClaim > p.Eth2.MetadataClaim {
+				p.Eth2.MetadataClaim = other.Eth2.MetadataClaim
+			}
+			if other.Eth2.Metadata != nil {
+				p.Eth2.Metadata = other.Eth2.Metadata
+			}
+		}
+	}
+	if other.AddrRecords != nil {
+		p.AddrRecords = other.AddrRecords
+	}
+	if other.Protocols != nil {
+		p.Protocols = other.Protocols
+	}
+	if other.ProtocolVersion != "" {
+		p.ProtocolVersion = other.ProtocolVersion
+	}
+	if other.UserAgent != "" {
+		p.UserAgent = other.UserAgent
+	}
+	if other.Pubkey != "" {
+		p.Pubkey = other.Pubkey
+	}
+	if other.NodeID != "" {
+		p.NodeID = other.NodeID
+	}
+}
+
+func (p *PartialPeerstoreEntry) ToCSV(prefixFields ...string) (out [][]string) {
+	entry := func(key string, value string) {
+		fields := make([]string, 0, len(prefixFields)+2)
+		fields = append(fields, prefixFields...)
+		fields = append(fields, key, value)
+		out = append(out, fields)
+	}
+	if p.Eth2 != nil {
+		if p.Eth2.ENR != nil {
+			entry("eth2/enr", p.Eth2.ENR.Raw)
+			for k, v := range p.Eth2.ENR.Contents {
+				entry("eth2/enr/"+k, v)
+			}
+		}
+		if p.Eth2.Status != nil {
+			entry("eth2/status/finalized_root", p.Eth2.Status.FinalizedRoot.String())
+			entry("eth2/status/finalized_epoch", strconv.FormatUint(uint64(p.Eth2.Status.FinalizedEpoch), 10))
+			entry("eth2/status/head_root", p.Eth2.Status.HeadRoot.String())
+			entry("eth2/status/head_slot", strconv.FormatUint(uint64(p.Eth2.Status.HeadSlot), 10))
+			entry("eth2/status/fork_digest", p.Eth2.Status.ForkDigest.String())
+		}
+		if p.Eth2.MetadataClaim > p.Eth2.MetadataClaim {
+			entry("eth2/metadata_claim", strconv.FormatUint(uint64(p.Eth2.MetadataClaim), 10))
+		}
+		if p.Eth2.Metadata != nil {
+			entry("eth2/metadata/seq_number", strconv.FormatUint(uint64(p.Eth2.Metadata.SeqNumber), 10))
+			entry("eth2/metadata/attnets", p.Eth2.Metadata.Attnets.String())
+		}
+	}
+	if p.AddrRecords != nil {
+		if p.AddrRecords.CertifiedRecord != nil {
+			entry("addr_records/certified_record", p.AddrRecords.CertifiedRecord.Raw)
+		}
+		if p.AddrRecords.Addrs != nil {
+			for i, addr := range p.AddrRecords.Addrs {
+				entry(fmt.Sprintf("addr_records/addrs/%d/addr", i), addr.Addr.String())
+				entry(fmt.Sprintf("addr_records/addrs/%d/ttl", i), fmt.Sprintf("%d", addr.Ttl))
+				entry(fmt.Sprintf("addr_records/addrs/%d/expiry", i), fmt.Sprintf("%d", addr.Expiry))
+			}
+			entry("addr_records/addrs/count", fmt.Sprintf("%d", len(p.AddrRecords.Addrs)))
+		}
+	}
+	if p.Protocols != nil {
+		for i, prot := range p.Protocols {
+			entry(fmt.Sprintf("protocols/%d", i), prot)
+		}
+		entry("protocols/count", fmt.Sprintf("%d", len(p.Protocols)))
+	}
+	if p.ProtocolVersion != "" {
+		entry("protocol_version", p.ProtocolVersion)
+	}
+	if p.UserAgent != "" {
+		entry("user_agent", p.UserAgent)
+	}
+	if p.Pubkey != "" {
+		entry("pub", p.Pubkey)
+	}
+	if p.NodeID != "" {
+		entry("node_id", p.NodeID)
+	}
+	return
 }
 
 func dsPeerId(v string) peer.ID {
@@ -244,6 +348,7 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 				for p := range res.(map[string]struct{}) {
 					out.Protocols = append(out.Protocols, p)
 				}
+				sort.Strings(out.Protocols)
 			case "ProtocolVersion":
 				out.UserAgent = res.(string)
 			case "AgentVersion":

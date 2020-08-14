@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"os"
 	"regexp"
+	"strconv"
 	"sync"
 )
 
@@ -19,7 +20,7 @@ type PeerTrackTeeCmd struct {
 	Store track.ExtendedPeerstore
 	Match string `ask:"--match" help:"Datastore key path matcher regex, to select what to track changes of. Empty to match everything."`
 	// TODO support http api, db, socket, websocket, anything.
-	Dest string `ask:"--dest" help:"Destination to direct events to. Could be: log,csv,evlog,json"`
+	Dest string `ask:"--dest" help:"Destination to direct events to. Could be: log,csv,evlog,evcsv,json"`
 	Path string `ask:"--path" help:"Path, address or other destination uri"`
 }
 
@@ -69,12 +70,47 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 			if st.Size() == 0 {
 				_ = w.Write([]string{"op", "time_ms", "key", "value"})
 			}
+			w.Flush()
 		}
 		tee = &dstee.CSVTee{
 			Name: c.Path,
 			CSV:  w,
 			Log:  c.Log.WithField("tracker", "csv"),
 		}
+		clean = func() error {
+			w.Flush()
+			return f.Close()
+		}
+	case "evcsv":
+		f, err := os.OpenFile(c.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		w := csv.NewWriter(f)
+		// Try to write a header if it's a new empty file.
+		if st, err := f.Stat(); err == nil {
+			if st.Size() == 0 {
+				_ = w.Write([]string{"op", "time_ms", "peer_id", "key", "value"})
+			}
+			w.Flush()
+		}
+		var l sync.Mutex
+		tee = &dstee.EventTee{Fn: func(evs ...*dstee.Event) {
+			l.Lock()
+			defer l.Unlock()
+			for _, ev := range evs {
+				if ev.Op == dstee.Delete {
+					if err := w.Write([]string{"del", strconv.FormatUint(ev.TimeMs, 10), ev.PeerID.String(), ev.DelPath, ""}); err != nil {
+						c.Log.Warn("failed to write event to csv output")
+					}
+				} else {
+					if err := w.WriteAll(ev.Entry.ToCSV(string(ev.Op), strconv.FormatUint(ev.TimeMs, 10), ev.PeerID.String())); err != nil {
+						c.Log.Warn("failed to write events to csv output")
+					}
+				}
+			}
+			w.Flush()
+		}}
 		clean = func() error {
 			w.Flush()
 			return f.Close()
@@ -89,7 +125,6 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 		tee = &dstee.EventTee{Fn: func(evs ...*dstee.Event) {
 			l.Lock()
 			defer l.Unlock()
-			fmt.Printf("writing %d events\n", len(evs))
 			for _, ev := range evs {
 				if err := enc.Encode(ev); err != nil {
 					c.Log.Warn("failed to write event to json output")
