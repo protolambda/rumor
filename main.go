@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -313,12 +314,12 @@ func main() {
 	}
 	{
 		var level string
-		var wsAddr string
+		var httpAddr string
 		var ipcPath string
 		var tcpAddr string
-		var wsApiKey string
+		var apiKey string
 		var wsPath string
-		// TODO: maybe support websockets as well?
+		var postPath string
 
 		serveCmd := &cobra.Command{
 			Use:   "serve",
@@ -446,6 +447,53 @@ func main() {
 					}
 				}
 
+				newHttpPost := func(rw http.ResponseWriter, req *http.Request) {
+					log := logrus.New()
+					var buf bytes.Buffer
+					log.SetOutput(&buf)
+
+					lvl, err := logrus.ParseLevel(req.Header.Get("X-Log-Level"))
+					if err != nil {
+						lvl = logrus.DebugLevel
+					}
+					log.SetLevel(lvl)
+					if req.Header.Get("X-Log-Format") == "terminal" {
+						log.SetFormatter(&control.ShellLogFmt{})
+					} else {
+						log.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339Nano})
+					}
+
+					sess := sp.NewSession(log)
+					parser := syntax.NewParser()
+					fileDoc, err := parser.Parse(req.Body, "")
+					if err != nil {
+						rw.WriteHeader(http.StatusBadRequest)
+						_, _ = rw.Write([]byte(err.Error()))
+					}
+					_ = req.Body.Close()
+					if err := sess.Run(context.Background(), fileDoc); err != nil {
+						if e, ok := interp.IsExitStatus(err); ok {
+							switch e {
+							case 0:
+								rw.WriteHeader(http.StatusOK)
+							case 1:
+								rw.WriteHeader(http.StatusInternalServerError)
+							case 2:
+								rw.WriteHeader(http.StatusBadRequest)
+							default:
+								rw.WriteHeader(http.StatusTeapot)
+							}
+						} else if err != nil {
+							log.WithError(err).Error("error result")
+							rw.WriteHeader(http.StatusInternalServerError)
+						}
+					}
+					_, _ = rw.Write(buf.Bytes())
+					if err := sess.Close(); err != nil {
+						adminLog.Warn("failed to close session: %v", sess)
+					}
+				}
+
 				stopped := false
 				ctx, cancel := context.WithCancel(context.Background())
 				sig := make(chan os.Signal, 1)
@@ -487,15 +535,24 @@ func main() {
 					go acceptInputs(tcpInput)
 				}
 
-				if wsAddr != "" {
+				if httpAddr != "" {
 					http.Handle(wsPath, Middleware(
-						http.HandlerFunc(makeWsHandler(log.WithField("ws-handler", wsAddr), newWsSession)),
+						http.HandlerFunc(makeWsHandler(log.WithField("ws-handler", httpAddr), newWsSession)),
 						APIKeyCheck(func(key string) bool {
-							return wsApiKey == "" || key == wsApiKey
+							return apiKey == "" || key == apiKey
 						}).authMiddleware,
 					))
-					log.WithField("api-key", wsApiKey).Printf("listening for websocket upgrade requests on ws://%s%s", wsAddr, wsPath)
-					log.Fatal(http.ListenAndServe(wsAddr, nil))
+					http.Handle(postPath, Middleware(
+						http.HandlerFunc(newHttpPost),
+						APIKeyCheck(func(key string) bool {
+							return apiKey == "" || key == apiKey
+						}).authMiddleware,
+					))
+					log.WithFields(logrus.Fields{"api-key": apiKey,
+						"ws":   fmt.Sprintf("ws://%s%s", httpAddr, wsPath),
+						"post": fmt.Sprintf("http://%s%s", httpAddr, postPath),
+					}).Print("listening for websocket upgrade requests and script posts")
+					log.Fatal(http.ListenAndServe(httpAddr, nil))
 				}
 
 				adminLog.Info("Started server")
@@ -506,9 +563,10 @@ func main() {
 		serveCmd.Flags().StringVar(&level, "level", "debug", "Log-level of the server log. Valid values: trace, debug, info, warn, error, fatal, panic")
 		serveCmd.Flags().StringVar(&ipcPath, "ipc", "", "Path to unix domain socket for IPC, e.g. `my_socket_file.sock`, use `rumor attach <socket>` to connect.")
 		serveCmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to listen on, e.g. `localhost:3030`. Disabled if empty.")
-		serveCmd.Flags().StringVar(&wsAddr, "ws", "", "Websocket address to listen on, e.g. `localhost:8000`. Disabled if empty.")
-		serveCmd.Flags().StringVar(&wsPath, "ws-path", "/ws", "Path after websocket address to use for request upgrader.")
-		serveCmd.Flags().StringVar(&wsApiKey, "ws-key", "", "Websocket API key ('X-Api-Key' header) to require from HTTP websocket upgrade requests. Not required if empty.")
+		serveCmd.Flags().StringVar(&httpAddr, "http", "", "Websocket/HTTP address to listen on, e.g. `localhost:8000`. Disabled if empty.")
+		serveCmd.Flags().StringVar(&wsPath, "ws-path", "/ws", "Path after http address to use for request upgrader.")
+		serveCmd.Flags().StringVar(&postPath, "post-path", "/script", "Path after http address to use for executing http-POST scripts")
+		serveCmd.Flags().StringVar(&apiKey, "api-key", "", "Websocket/HTTP API key ('X-Api-Key' header) to require from HTTP requests and websocket upgrade requests. Not required if empty.")
 
 		mainCmd.AddCommand(serveCmd)
 	}
@@ -548,6 +606,10 @@ func main() {
 				sess := sp.NewSession(log)
 				parser := syntax.NewParser()
 				fileDoc, err := parser.Parse(inputFile, "")
+				if err != nil {
+					log.Error(err)
+					return
+				}
 				exitCode := uint8(0)
 				if err := sess.Run(context.Background(), fileDoc); err != nil {
 					if e, ok := interp.IsExitStatus(err); ok {

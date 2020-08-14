@@ -54,7 +54,26 @@ There are a few subcommands to choose the mode of operation:
   shell       Rumor as a human-readable shell
 ```
 
-Serve and attach supported types: `ws` (http upgraded to websocket, optional auth key), `tcp` (raw socket), `ipc` (Unix socket)
+Serve and attach supported types:
+
+- `http` (optional auth key, `X-Api-Key` header)
+    - `ws` (http upgraded to websocket)
+    - `post` (http requests, not supported for `attach`)
+- `tcp` (raw socket)
+- `ipc` (Unix socket
+
+The HTTP post requests type can run a rumor script and return the full logs once the script completes.
+`POST` is recommended as method, but not enforced.
+
+With HTTP status codes from exit codes:
+- `0 = 200`
+- `1 = 500`
+- `2 = 400`
+
+And headers:
+- `X-Api-Key` like WS
+- `X-Log-Format`: `json` or `terminal`
+- `X-Log-Level`: `trace`, `debug`, `info`, `warn`, `error`
 
 ## General
 
