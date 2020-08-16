@@ -320,6 +320,7 @@ func main() {
 		var apiKey string
 		var wsPath string
 		var postPath string
+		var reportToURL string
 
 		serveCmd := &cobra.Command{
 			Use:   "serve",
@@ -362,6 +363,9 @@ func main() {
 				}
 
 				sp := control.NewSessionProcessor(log)
+				if reportToURL != "" {
+
+				}
 
 				adminLog := log
 
