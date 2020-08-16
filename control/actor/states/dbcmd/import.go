@@ -8,6 +8,7 @@ import (
 	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/tree"
 	"io"
 	"os"
 )
@@ -58,6 +59,7 @@ func (c *StatesImportCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	c.Log.WithField("existed", existed).Infof("imported state")
+	root := state.HashTreeRoot(tree.GetHashFn())
+	c.Log.WithField("existed", existed).WithField("root", root.String()).Infof("imported state")
 	return nil
 }

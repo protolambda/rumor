@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/rumor/chain"
@@ -55,6 +56,10 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 		reqCtx, _ = context.WithTimeout(reqCtx, c.Timeout)
 	}
 
+	if c.Step == 0 {
+		return errors.New("step must not be 0")
+	}
+
 	method := &methods.BlocksByRangeRPCv1
 	peerId := c.PeerID.PeerID
 
@@ -80,6 +85,8 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 	if c.ProcessTimeout != 0 {
 		procCtx, _ = context.WithTimeout(procCtx, c.ProcessTimeout)
 	}
+
+	expectedEnd := req.StartSlot + beacon.Slot(req.Step * req.Count)
 
 	return handleSync{
 		Log:     c.Log,
@@ -116,9 +123,9 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 					if err := chunk.ReadObj(&block); err != nil {
 						return err
 					}
-					expectedSlot := beacon.Slot(chunk.ChunkIndex()*req.Step) + req.StartSlot
-					if block.Message.Slot != expectedSlot {
-						return fmt.Errorf("bad block, expected slot %d, got %d", expectedSlot, block.Message.Slot)
+					if block.Message.Slot < req.StartSlot || uint64(block.Message.Slot - req.StartSlot) % req.Step != 0 || block.Message.Slot >= expectedEnd {
+						return fmt.Errorf("bad block, start slot: %d, step: %d, count: %d (implied end: %d), got %d",
+							req.StartSlot, req.Step, req.Count, expectedEnd, block.Message.Slot)
 					}
 					c.Log.WithField("chunk", f).Debug("Received block")
 					blocksCh <- &block

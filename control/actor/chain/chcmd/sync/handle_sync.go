@@ -41,6 +41,9 @@ processLoop:
 	for {
 		select {
 		case block, ok := <-blocksCh:
+			if !ok {
+				break processLoop
+			}
 			i += 1
 			withRoot := bdb.WithRoot(block)
 			if c.Process {
@@ -64,9 +67,6 @@ processLoop:
 					"slot":  block.Message.Slot,
 					"root":  hex.EncodeToString(withRoot.Root[:]),
 				}).Debug("stored block")
-			}
-			if !ok {
-				break processLoop
 			}
 		case <-processingCtx.Done():
 			return fmt.Errorf("block processing stopped early, only processed %d blocks", i)
