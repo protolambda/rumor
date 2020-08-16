@@ -43,10 +43,7 @@ func (c *PeerMetadataReqCmd) Run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("failed to fetch metadata: %v", err)
 	} else {
 		if code == reqresp.SuccessCode {
-			c.Log.WithFields(logrus.Fields{
-				"code":     code,
-				"metadata": metadata.Data(),
-			}).Debug("metadata request success")
+			c.Log.WithField("code", code).WithFields(metadata.Data()).Debug("metadata request success")
 		} else {
 			c.Log.WithFields(logrus.Fields{
 				"code": code,

@@ -43,10 +43,7 @@ func (c *PeerStatusReqCmd) Run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("failed to fetch status: %v", err)
 	} else {
 		if code == reqresp.SuccessCode {
-			c.Log.WithFields(logrus.Fields{
-				"code":   code,
-				"status": stat.Data(),
-			}).Debug("status request success")
+			c.Log.WithField("code", code).WithFields(stat.Data()).Debug("status request success")
 		} else {
 			c.Log.WithFields(logrus.Fields{
 				"code": code,
