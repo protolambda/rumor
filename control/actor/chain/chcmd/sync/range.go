@@ -86,7 +86,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 		procCtx, _ = context.WithTimeout(procCtx, c.ProcessTimeout)
 	}
 
-	expectedEnd := req.StartSlot + beacon.Slot(req.Step * req.Count)
+	expectedEnd := req.StartSlot + beacon.Slot(req.Step*req.Count)
 
 	return handleSync{
 		Log:     c.Log,
@@ -123,7 +123,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 					if err := chunk.ReadObj(&block); err != nil {
 						return err
 					}
-					if block.Message.Slot < req.StartSlot || uint64(block.Message.Slot - req.StartSlot) % req.Step != 0 || block.Message.Slot >= expectedEnd {
+					if block.Message.Slot < req.StartSlot || uint64(block.Message.Slot-req.StartSlot)%req.Step != 0 || block.Message.Slot >= expectedEnd {
 						return fmt.Errorf("bad block, start slot: %d, step: %d, count: %d (implied end: %d), got %d",
 							req.StartSlot, req.Step, req.Count, expectedEnd, block.Message.Slot)
 					}

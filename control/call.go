@@ -60,8 +60,9 @@ const (
 )
 
 type Call struct {
-	id   CallID
-	args []string
+	id          CallID
+	args        []string
+	startTimeNS int64
 
 	onStopLock sync.Mutex
 	onStop     base.OnStop

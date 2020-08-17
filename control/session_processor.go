@@ -1,9 +1,7 @@
 package control
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/chain"
@@ -14,8 +12,6 @@ import (
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/expand"
-	"net"
-	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -191,14 +187,15 @@ func (sp *SessionProcessor) MakeCall(callCtx context.Context, actorName actor.Ac
 	cmdLogger := sp.log.WithField("actor", actorName).WithField("call_id", callID)
 
 	call := &Call{
-		id:        callID,
-		args:      cmdArgs,
-		steps:     make(chan base.Step, 0),
-		bgCtx:     bgCtx,
-		bgCancel:  bgCancel,
-		logger:    cmdLogger,
-		actorName: actorName,
-		spawned:   false,
+		id:          callID,
+		args:        cmdArgs,
+		startTimeNS: time.Now().UnixNano(),
+		steps:       make(chan base.Step, 0),
+		bgCtx:       bgCtx,
+		bgCancel:    bgCancel,
+		logger:      cmdLogger,
+		actorName:   actorName,
+		spawned:     false,
 	}
 
 	callCmd := rep.MakeCmd(cmdLogger, call)
@@ -267,47 +264,58 @@ func (sp *SessionProcessor) GetCalls(id actor.ActorID) map[CallID]CallSummary {
 	return openJobs
 }
 
-type Report struct {
-
+type ReportActor struct {
+	// May be empty if no host is active
+	PeerID      string   `json:"peer_id,omitempty"`
+	ListenAddrs []string `json:"listen_addrs,omitempty"`
+	ENR         string   `json:"enr,omitempty"`
+	// TODO: could add more peer info
 }
 
-func (sp *SessionProcessor) ReportTo(ctx context.Context, url string) {
-	t := time.NewTicker(time.Minute)
-	defer t.Stop()
-	pollInterval := time.Second * 60
-	timeout := time.Second * 10
-	var netTransport = &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout: timeout,
-		}).DialContext,
-		// make keep-alives longer than the interval to make client re-use effective.
-		IdleConnTimeout:     2 * pollInterval,
-		TLSHandshakeTimeout: timeout,
+type ReportCall struct {
+	Actor       actor.ActorID `json:"actor,omitempty"`
+	Args        []string      `json:"args,omitempty"`
+	StartTimeNS int64         `json:"start_time,omitempty"`
+}
+
+type Report struct {
+	Actors map[actor.ActorID]ReportActor
+	Calls  map[CallID]ReportCall
+}
+
+func (sp *SessionProcessor) Report() *Report {
+	rep := &Report{
+		Actors: make(map[actor.ActorID]ReportActor),
+		Calls:  make(map[CallID]ReportCall),
 	}
-	var httpClient = &http.Client{
-		Timeout:   timeout,
-		Transport: netTransport,
-	}
-	var buf bytes.Buffer
-	for {
-		select {
-		case <-t.C:
-			buf.Reset()
-			var report Report
-			enc := json.NewEncoder(&buf)
-			if err := enc.Encode(&report); err != nil {
-				sp.adminLog.WithError(err).WithField("url", url).Warn("could not encode report data")
-			} else {
-				if resp, err := httpClient.Post(url, "application/json; charset=UTF-8", &buf); err != nil {
-					sp.adminLog.WithError(err).WithField("url", url).Warn("failed to report to remote")
-				} else {
-					sp.adminLog.WithField("status", resp.StatusCode).Info("Reported rumor status to server")
-				}
+	sp.actors.Range(func(key, value interface{}) bool {
+		id := key.(actor.ActorID)
+		ac := value.(*actor.Actor)
+		repAc := ReportActor{}
+		h, err := ac.HostState.Host()
+		if err == nil {
+			repAc.PeerID = h.ID().String()
+			for _, a := range h.Addrs() {
+				repAc.ListenAddrs = append(repAc.ListenAddrs, a.String())
 			}
-		case <-ctx.Done():
-			return
 		}
-	}
+		if c := ac.LazyEnrState.Current; c != nil {
+			repAc.ENR = c.GetNode().String()
+		}
+		rep.Actors[id] = repAc
+		return true
+	})
+	sp.ongoingCalls.Range(func(key, value interface{}) bool {
+		id := key.(CallID)
+		call := value.(*Call)
+		rep.Calls[id] = ReportCall{
+			Actor:       call.actorName,
+			Args:        call.args,
+			StartTimeNS: call.startTimeNS,
+		}
+		return true
+	})
+	return rep
 }
 
 func (sp *SessionProcessor) Close() {

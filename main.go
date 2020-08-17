@@ -320,7 +320,7 @@ func main() {
 		var apiKey string
 		var wsPath string
 		var postPath string
-		var reportToURL string
+		var reportPath string
 
 		serveCmd := &cobra.Command{
 			Use:   "serve",
@@ -363,9 +363,6 @@ func main() {
 				}
 
 				sp := control.NewSessionProcessor(log)
-				if reportToURL != "" {
-
-				}
 
 				adminLog := log
 
@@ -498,6 +495,14 @@ func main() {
 					}
 				}
 
+				newHttpReport := func(rw http.ResponseWriter, req *http.Request) {
+					rw.Header().Set("Content-Type", "application/json; charset=UTF-8")
+					enc := json.NewEncoder(rw)
+					if err := enc.Encode(sp.Report()); err != nil {
+						adminLog.WithError(err).Warn("failed to respond to HTTP report request")
+					}
+				}
+
 				stopped := false
 				ctx, cancel := context.WithCancel(context.Background())
 				sig := make(chan os.Signal, 1)
@@ -540,22 +545,39 @@ func main() {
 				}
 
 				if httpAddr != "" {
-					http.Handle(wsPath, Middleware(
-						http.HandlerFunc(makeWsHandler(log.WithField("ws-handler", httpAddr), newWsSession)),
-						APIKeyCheck(func(key string) bool {
-							return apiKey == "" || key == apiKey
-						}).authMiddleware,
-					))
-					http.Handle(postPath, Middleware(
-						http.HandlerFunc(newHttpPost),
-						APIKeyCheck(func(key string) bool {
-							return apiKey == "" || key == apiKey
-						}).authMiddleware,
-					))
-					log.WithFields(logrus.Fields{"api-key": apiKey,
-						"ws":   fmt.Sprintf("ws://%s%s", httpAddr, wsPath),
-						"post": fmt.Sprintf("http://%s%s", httpAddr, postPath),
-					}).Print("listening for websocket upgrade requests and script posts")
+					authMiddleware := APIKeyCheck(func(key string) bool {
+						return apiKey == "" || key == apiKey
+					}).authMiddleware
+					if wsPath != "" {
+						http.Handle(wsPath, Middleware(
+							http.HandlerFunc(makeWsHandler(log.WithField("ws-handler", httpAddr), newWsSession)),
+							authMiddleware,
+						))
+
+						log.WithField("ws", fmt.Sprintf("ws://%s%s", httpAddr, wsPath)).Info(
+							"listening for websocket upgrade requests")
+					}
+					if postPath != "" {
+						http.Handle(postPath, Middleware(
+							http.HandlerFunc(newHttpPost),
+							authMiddleware,
+						))
+
+						log.WithField("post", fmt.Sprintf("http://%s%s", httpAddr, postPath)).Info(
+							"listening for script posts")
+					}
+					if reportPath != "" {
+						http.Handle(reportPath, Middleware(
+							http.HandlerFunc(newHttpReport),
+							authMiddleware,
+						))
+
+						log.WithField("report", fmt.Sprintf("http://%s%s", httpAddr, reportPath)).Info(
+							"listening for report requests")
+					}
+					if apiKey != "" {
+						log.WithField("api-key", apiKey).Info("Requiring simple auth, use 'X-Api-Key' header")
+					}
 					log.Fatal(http.ListenAndServe(httpAddr, nil))
 				}
 
@@ -570,7 +592,8 @@ func main() {
 		serveCmd.Flags().StringVar(&httpAddr, "http", "", "Websocket/HTTP address to listen on, e.g. `localhost:8000`. Disabled if empty.")
 		serveCmd.Flags().StringVar(&wsPath, "ws-path", "/ws", "Path after http address to use for request upgrader.")
 		serveCmd.Flags().StringVar(&postPath, "post-path", "/script", "Path after http address to use for executing http-POST scripts")
-		serveCmd.Flags().StringVar(&apiKey, "api-key", "", "Websocket/HTTP API key ('X-Api-Key' header) to require from HTTP requests and websocket upgrade requests. Not required if empty.")
+		serveCmd.Flags().StringVar(&apiKey, "api-key", "", "Websocket/HTTP API key ('X-Api-Key' header) to require from HTTP requests and websocket upgrade requests. No key required if empty.")
+		serveCmd.Flags().StringVar(&reportPath, "report-path", "/report", "If not empty, respond with JSON reports about server state")
 
 		mainCmd.AddCommand(serveCmd)
 	}
