@@ -1,7 +1,9 @@
 package control
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/chain"
@@ -12,6 +14,8 @@ import (
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
 	"mvdan.cc/sh/v3/expand"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -261,6 +265,49 @@ func (sp *SessionProcessor) GetCalls(id actor.ActorID) map[CallID]CallSummary {
 		return true
 	})
 	return openJobs
+}
+
+type Report struct {
+
+}
+
+func (sp *SessionProcessor) ReportTo(ctx context.Context, url string) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	pollInterval := time.Second * 60
+	timeout := time.Second * 10
+	var netTransport = &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout: timeout,
+		}).DialContext,
+		// make keep-alives longer than the interval to make client re-use effective.
+		IdleConnTimeout:     2 * pollInterval,
+		TLSHandshakeTimeout: timeout,
+	}
+	var httpClient = &http.Client{
+		Timeout:   timeout,
+		Transport: netTransport,
+	}
+	var buf bytes.Buffer
+	for {
+		select {
+		case <-t.C:
+			buf.Reset()
+			var report Report
+			enc := json.NewEncoder(&buf)
+			if err := enc.Encode(&report); err != nil {
+				sp.adminLog.WithError(err).WithField("url", url).Warn("could not encode report data")
+			} else {
+				if resp, err := httpClient.Post(url, "application/json; charset=UTF-8", &buf); err != nil {
+					sp.adminLog.WithError(err).WithField("url", url).Warn("failed to report to remote")
+				} else {
+					sp.adminLog.WithField("status", resp.StatusCode).Info("Reported rumor status to server")
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func (sp *SessionProcessor) Close() {
