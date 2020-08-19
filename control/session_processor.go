@@ -268,6 +268,7 @@ type ReportActor struct {
 	// May be empty if no host is active
 	PeerID      string   `json:"peer_id,omitempty"`
 	ListenAddrs []string `json:"listen_addrs,omitempty"`
+	Peers       []string `json:"peers,omitempty"`
 	ENR         string   `json:"enr,omitempty"`
 	// TODO: could add more peer info
 }
@@ -297,6 +298,9 @@ func (sp *SessionProcessor) Report() *Report {
 			repAc.PeerID = h.ID().String()
 			for _, a := range h.Addrs() {
 				repAc.ListenAddrs = append(repAc.ListenAddrs, a.String())
+			}
+			for _, p := range h.Network().Peers() {
+				repAc.Peers = append(repAc.Peers, p.String())
 			}
 		}
 		if c := ac.LazyEnrState.Current; c != nil {
