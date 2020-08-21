@@ -276,7 +276,7 @@ type ReportActor struct {
 type ReportCall struct {
 	Actor       actor.ActorID `json:"actor,omitempty"`
 	Args        []string      `json:"args,omitempty"`
-	StartTimeNS int64         `json:"start_time,omitempty"`
+	StartTimeMS int64         `json:"start_time,omitempty"`
 }
 
 type Report struct {
@@ -315,7 +315,7 @@ func (sp *SessionProcessor) Report() *Report {
 		rep.Calls[id] = ReportCall{
 			Actor:       call.actorName,
 			Args:        call.args,
-			StartTimeNS: call.startTimeNS,
+			StartTimeMS: call.startTimeNS / 1000,
 		}
 		return true
 	})
