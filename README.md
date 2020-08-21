@@ -31,13 +31,14 @@ go get ./...
 - Eth2:
     - [`protolambda/zrnt`](https://github.com/protolambda/zrnt): For Eth2 consensus code
     - [`protolambda/ztyp`](https://github.com/protolambda/ztyp): For SSZ tree structures
-    - [`protolambda/ztyp`](https://github.com/protolambda/ztyp): For SSZ utils (incl streaming for RPC)
+    - [`protolambda/zssz`](https://github.com/protolambda/zssz): For SSZ utils (incl streaming for RPC)
     - [`ethereum/go-ethereum`](https://github.com/ethereum/go-ethereum) Geth, for ENR and Discv5 packages
 - Libp2p
     - [`ipfs/go-datastore`](https://github.com/ipfs/go-datastore): New experimental peerstore code
     - [`libp2p/go-libp2p`](https://github.com/libp2p/go-libp2p): Gossipsub, mutli-select, transports, multiplexers, identification, RPC base, and more.
 - [`mvdan/sh`](https://github.com/mvdan/sh): For shell parsing and interpreting
 - [`chzyer/readline`](https://github.com/chzyer/readline): For history/shell code
+- [`protolambda/ask`](https://github.com/protolambda/ask): For dynamically-evaluated command structure 
 - [`gorilla/websocket`](https://github.com/gorilla/websocket): For websocket server/client
 - [`sirupsen/logrus`](https://github.com/sirupsen/logrus): For logging infrastructure
 
