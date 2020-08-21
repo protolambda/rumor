@@ -44,15 +44,15 @@ go get ./...
 
 ## Usage
 
-There are a few subcommands to choose the mode of operation:
+There are a few sub-commands to choose the mode of operation:
 
 ```
   attach      Attach to a running rumor server
   bare        Rumor as a bare JSON-formatted input/output process, suitable for use as subprocess.
-  file        Run rom a file
+  file        Run from a file
   help        Help about any command
   serve       Rumor as a server to attach to
-  shell       Rumor as a human-readable shell
+  shell       Rumor as a human-readable shell   <- recommended
 ```
 
 Serve and attach supported types:
@@ -61,20 +61,11 @@ Serve and attach supported types:
     - `ws` (http upgraded to websocket)
     - `post` (http requests, not supported for `attach`)
 - `tcp` (raw socket)
-- `ipc` (Unix socket
+- `ipc` (Unix socket)
 
-The HTTP post requests type can run a rumor script and return the full logs once the script completes.
-`POST` is recommended as method, but not enforced.
+## Tutorial
 
-With HTTP status codes from exit codes:
-- `0 = 200`
-- `1 = 500`
-- `2 = 400`
-
-And headers:
-- `X-Api-Key` like WS
-- `X-Log-Format`: `json` or `terminal`
-- `X-Log-Level`: `trace`, `debug`, `info`, `warn`, `error`
+See https://notes.ethereum.org/@protolambda/rumor-tutorial
 
 ## General
 
@@ -290,6 +281,26 @@ These are reserved names, used for shell functionality:
 "fg", "bg", "getopts", "eval", "test", "[", "exec",
 "return", "read", "shopt"
 ```
+
+## Advanced
+
+### HTTP POST usage
+
+To run rumor scripts with HTTP POST requests, send scripts to the `/scripts` endpoint, customize with `serve --post-path=/mypath` option.
+
+The HTTP post requests type can run a rumor script and return the full logs once the script completes.
+`POST` is recommended as method, but not enforced.
+
+With HTTP status codes from exit codes:
+- `0 = 200`
+- `1 = 500`
+- `2 = 400`
+
+And headers:
+- `X-Api-Key` like WS
+- `X-Log-Format`: `json` or `terminal`
+- `X-Log-Level`: `trace`, `debug`, `info`, `warn`, `error`
+
 
 ## License
 
