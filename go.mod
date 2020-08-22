@@ -3,6 +3,7 @@ module github.com/protolambda/rumor
 go 1.14
 
 require (
+	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/aristanetworks/goarista v0.0.0-20200805130819-fd197cf57d96 // indirect
 	github.com/btcsuite/btcd v0.20.1-beta
 	github.com/chzyer/logex v1.1.10 // indirect
@@ -10,6 +11,7 @@ require (
 	github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/ethereum/go-ethereum v1.9.18
+	github.com/gliderlabs/ssh v0.3.0
 	github.com/golang/snappy v0.0.2-0.20200707131729-196ae77b8a26
 	github.com/google/gopacket v1.1.18 // indirect
 	github.com/gorilla/websocket v1.4.2

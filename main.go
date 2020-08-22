@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/chzyer/readline"
+	"github.com/gliderlabs/ssh"
 	"github.com/gorilla/websocket"
 	"github.com/protolambda/rumor/control"
 	"github.com/sirupsen/logrus"
@@ -67,6 +68,9 @@ func (t *TimedWsOut) Write(b []byte) (n int, err error) {
 // Every time some input has been parsed, call-back if parsing got a complete statement. If so, the full data is returned.
 type ParseBufferFn func(complete bool, fail bool) string
 
+const startPrompt = "\033[31m»\033[0m "
+const multilinePrompt = "\033[31m>>> \033[0m "
+
 func main() {
 
 	mainCmd := cobra.Command{
@@ -75,7 +79,7 @@ func main() {
 	}
 
 	// multi-line inputs end each intermediate line with "\"
-	shellMode := func(levelFlag string, run func(log logrus.FieldLogger, nextLine control.NextMultiLineFn, onParse ParseBufferFn)) {
+	shellLogger := func(levelFlag string) (logrus.FieldLogger, error) {
 		log := logrus.New()
 		log.SetOutput(os.Stdout)
 		log.SetLevel(logrus.TraceLevel)
@@ -84,14 +88,15 @@ func main() {
 		if levelFlag != "" {
 			logLevel, err := logrus.ParseLevel(levelFlag)
 			if err != nil {
-				log.Error(err)
+				return nil, err
 			}
 			log.SetLevel(logLevel)
 		}
-		startPrompt := "\033[31m»\033[0m "
-		multilinePrompt := "\033[31m>>> \033[0m "
+		return log, nil
+	}
 
-		rl, err := readline.NewEx(&readline.Config{
+	shellReader := func() (*readline.Instance, error) {
+		return readline.NewEx(&readline.Config{
 			Prompt:                 startPrompt,
 			HistoryFile:            "/tmp/rumor-history.tmp",
 			InterruptPrompt:        "^C",
@@ -100,11 +105,12 @@ func main() {
 			FuncFilterInputRune:    filterInput,
 			DisableAutoSaveHistory: true, // disabled to deal with multi-line history better
 		})
-		if err != nil {
-			log.Error(err)
-			return
-		}
+	}
+
+	shellMode := func(rl *readline.Instance,
+		run func(nextLine control.NextMultiLineFn, onParse ParseBufferFn)) {
 		defer rl.Close()
+
 		// re-use buffer, tracking multi-line history
 		var cmdBuf []string
 		onParse := func(complete bool, fail bool) string {
@@ -146,7 +152,7 @@ func main() {
 				return line, nil
 			}
 		})
-		run(log, readMultiLine, onParse)
+		run(readMultiLine, onParse)
 	}
 
 	feedLog := func(log logrus.FieldLogger, nextLogLine control.NextSingleLineFn, stopped *bool) {
@@ -211,7 +217,19 @@ func main() {
 			Short: "Attach to a running rumor server",
 			Args:  cobra.NoArgs,
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn, onParse ParseBufferFn) {
+				log, err := shellLogger(level)
+				if err != nil {
+					fmt.Errorf("%v", err)
+					os.Exit(1)
+					return
+				}
+				rl, err := shellReader()
+				if err != nil {
+					log.WithError(err).Error("could not open shell reader")
+					os.Exit(1)
+					return
+				}
+				shellMode(rl, func(nextLine control.NextMultiLineFn, onParse ParseBufferFn) {
 					var nextLogLine control.NextSingleLineFn
 					var writeLine func(v string) error
 					if wsAddr != "" {
@@ -321,6 +339,9 @@ func main() {
 		var wsPath string
 		var postPath string
 		var reportPath string
+		var sshAddr string
+		var sshUsers []string
+		var sshHostKeyFile string
 
 		serveCmd := &cobra.Command{
 			Use:   "serve",
@@ -416,6 +437,133 @@ func main() {
 					newSession(w, r, addr)
 					if err := c.Close(); err != nil {
 						log.Error(err)
+					}
+				}
+
+				var sshServ *ssh.Server
+				if sshAddr != "" {
+					passwords := make(map[string]string, len(sshUsers))
+					for _, u := range sshUsers {
+						dat := strings.Split(u, ":")
+						if len(dat) != 2 {
+							log.Warn("invalid ssh password entry, ignoring")
+							continue
+						}
+						passwords[dat[0]] = dat[1]
+					}
+					sshServ = &ssh.Server{
+						Addr: sshAddr,
+						Handler: func(session ssh.Session) {
+							_, _ = io.WriteString(session, "Opening new rumor session...")
+							rl, err := readline.NewEx(&readline.Config{
+								Prompt:              startPrompt,
+								HistoryFile:         "/tmp/rumor-history.tmp", // TODO different history per user
+								InterruptPrompt:     "^C",
+								EOFPrompt:           "exit",
+								HistorySearchFold:   true,
+								FuncFilterInputRune: filterInput,
+								Stdin:               session,
+								Stdout:              session,
+								Stderr:              session.Stderr(),
+								FuncGetWidth: func() int {
+									r, _, _ := session.Pty()
+									return r.Window.Width
+								},
+								FuncIsTerminal: func() bool {
+									_, _, ok := session.Pty()
+									return ok
+								},
+								FuncOnWidthChanged: func(f func()) {
+									_, wch, _ := session.Pty()
+									go func() {
+										for {
+											_, ok := <-wch
+											if !ok {
+												break
+											}
+											f()
+										}
+									}()
+								},
+								DisableAutoSaveHistory: true, // disabled to deal with multi-line history better
+							})
+							if err != nil {
+								log.WithError(err).Error("could not open readline terminal for ssh user")
+								session.Exit(1)
+								return
+							}
+							log.Info("opening ssh session")
+							if _, _, ok := session.Pty(); ok {
+								log := logrus.New()
+								log.SetOutput(rl)
+								log.SetLevel(logrus.TraceLevel)
+								log.SetFormatter(&control.ShellLogFmt{})
+
+								shellMode(rl,
+									func(nextLine control.NextMultiLineFn, onParse ParseBufferFn) {
+										sess := sp.NewSession(log)
+										parser := syntax.NewParser()
+										r := &control.LinesReader{Fn: nextLine}
+										for {
+											if err := parser.Interactive(r, func(stmts []*syntax.Stmt) bool {
+												if parser.Incomplete() {
+													onParse(false, false)
+													return true
+												}
+												fullyParsed := onParse(true, false)
+												log.Debug(fullyParsed)
+												for _, stmt := range stmts {
+													if err := sess.Run(context.Background(), stmt); err != nil {
+														if e, ok := interp.IsExitStatus(err); ok {
+															log.WithField("code", e).Error("non-zero exit")
+														} else {
+															log.WithError(err).Error("error result")
+														}
+														return true
+													}
+													if sess.Exited() {
+														return false
+													}
+												}
+												return true
+											}); err != nil {
+												// keep the shell alive after hitting bad inputs,
+												// we don't want a syntax mistake to tear down a session.
+												if err != readline.ErrInterrupt && !sess.Exited() {
+													onParse(false, true)
+													log.Error(err)
+													continue
+												} else {
+													break
+												}
+											}
+											if sess.Exited() {
+												break
+											}
+										}
+										sess.Close()
+									})
+							} else {
+								// TODO: support pure stdin/out?
+								log.Warn("SSH session without PTY request")
+							}
+							_ = session.Close()
+						},
+						PublicKeyHandler: func(ctx ssh.Context, key ssh.PublicKey) bool {
+							log.Info("pub handler")
+							return false
+						},
+						PasswordHandler: func(ctx ssh.Context, pass string) bool {
+							user := ctx.Value(ssh.ContextKeyUser).(string)
+							expected, ok := passwords[user]
+							return ok && pass == expected
+						},
+					}
+					if sshHostKeyFile != "" {
+						if err := ssh.HostKeyFile(sshHostKeyFile)(sshServ); err != nil {
+							log.Error(err)
+							os.Exit(1)
+						}
 					}
 				}
 
@@ -518,6 +666,9 @@ func main() {
 					if tcpInput != nil {
 						_ = tcpInput.Close()
 					}
+					if sshServ != nil {
+						_ = sshServ.Close()
+					}
 					sp.Close()
 					cancel()
 					os.Exit(0)
@@ -542,6 +693,9 @@ func main() {
 				}
 				if tcpInput != nil {
 					go acceptInputs(tcpInput)
+				}
+				if sshServ != nil {
+					go sshServ.ListenAndServe()
 				}
 
 				if httpAddr != "" {
@@ -590,11 +744,13 @@ func main() {
 		serveCmd.Flags().StringVar(&ipcPath, "ipc", "", "Path to unix domain socket for IPC, e.g. `my_socket_file.sock`, use `rumor attach <socket>` to connect.")
 		serveCmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to listen on, e.g. `localhost:3030`. Disabled if empty.")
 		serveCmd.Flags().StringVar(&httpAddr, "http", "", "Websocket/HTTP address to listen on, e.g. `localhost:8000`. Disabled if empty.")
+		serveCmd.Flags().StringVar(&sshAddr, "ssh", "", "SSH address to listen on, e.g. `:5000`. Disabled if empty")
+		serveCmd.Flags().StringVar(&sshHostKeyFile, "ssh-key", "", "SSH host key. Temporary key generated randomly if empty.")
 		serveCmd.Flags().StringVar(&wsPath, "ws-path", "/ws", "Path after http address to use for request upgrader.")
 		serveCmd.Flags().StringVar(&postPath, "post-path", "/script", "Path after http address to use for executing http-POST scripts")
 		serveCmd.Flags().StringVar(&apiKey, "api-key", "", "Websocket/HTTP API key ('X-Api-Key' header) to require from HTTP requests and websocket upgrade requests. No key required if empty.")
 		serveCmd.Flags().StringVar(&reportPath, "report-path", "/report", "If not empty, respond with JSON reports about server state")
-
+		serveCmd.Flags().StringArrayVar(&sshUsers, "ssh-users", []string{}, "Super simple SSH users. Formatted as 'user:pass'")
 		mainCmd.AddCommand(serveCmd)
 	}
 
@@ -731,7 +887,19 @@ func main() {
 				return nil
 			},
 			Run: func(cmd *cobra.Command, args []string) {
-				shellMode(level, func(log logrus.FieldLogger, nextLine control.NextMultiLineFn, onParse ParseBufferFn) {
+				log, err := shellLogger(level)
+				if err != nil {
+					fmt.Errorf("%v", err)
+					os.Exit(1)
+					return
+				}
+				rl, err := shellReader()
+				if err != nil {
+					log.WithError(err).Error("could not open shell reader")
+					os.Exit(1)
+					return
+				}
+				shellMode(rl, func(nextLine control.NextMultiLineFn, onParse ParseBufferFn) {
 					sp := control.NewSessionProcessor(log)
 					sess := sp.NewSession(log)
 					parser := syntax.NewParser()
