@@ -281,7 +281,7 @@ type ReportCall struct {
 
 type Report struct {
 	Actors map[actor.ActorID]ReportActor `json:"actors"`
-	Calls  map[CallID]ReportCall `json:"calls"`
+	Calls  map[CallID]ReportCall         `json:"calls"`
 }
 
 func (sp *SessionProcessor) Report() *Report {
