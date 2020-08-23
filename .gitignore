@@ -11,12 +11,17 @@
 # Output of the go coverage tool
 *.out
 
+
+# Debug data
 data
 logs
-
 
 *.sock
 *.log
 *.csv
 
 medalla
+
+# Example SSH key
+rumor_ssh_server
+rumor_ssh_server.pub

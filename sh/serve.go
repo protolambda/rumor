@@ -3,6 +3,7 @@ package sh
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -111,8 +112,23 @@ func (s *Server) ssh(sshAddr string, sshHostKeyFile string) (close func() error,
 		Addr: sshAddr,
 		Handler: func(session ssh.Session) {
 			_, _ = io.WriteString(session, "Opening new rumor session...")
-
-			s.log.Info("opening ssh session")
+			userV := session.Context().Value(ssh.ContextKeyUser)
+			sessionID := session.Context().Value(ssh.ContextKeySessionID)
+			addr := session.Context().Value(ssh.ContextKeyRemoteAddr).(net.Addr).String()
+			userData := logrus.Fields{"addr": addr, "id": sessionID}
+			if user, ok := userV.(string); ok {
+				userData["user"] = user
+			} else {
+				pub, ok := session.Context().Value(ssh.ContextKeyPublicKey).(ssh.PublicKey)
+				if ok {
+					userData["pub"] = hex.EncodeToString(pub.Marshal())
+				} else {
+					s.log.Warn("unrecognized ssh login method")
+					_ = session.Exit(1)
+					return
+				}
+			}
+			s.log.WithFields(userData).Info("ssh session opened")
 			if _, _, ok := session.Pty(); ok {
 				s.handleSshPtyUser(session)
 			} else {
@@ -120,15 +136,22 @@ func (s *Server) ssh(sshAddr string, sshHostKeyFile string) (close func() error,
 				s.log.Warn("SSH session without PTY request")
 			}
 			_ = session.Close()
+			s.log.WithFields(userData).Info("ssh session ended")
 		},
 		PublicKeyHandler: func(ctx ssh.Context, key ssh.PublicKey) bool {
-			s.log.Info("pub handler")
+			s.log.Info("ssh pub login handler, not yet supported")
 			return false
 		},
 		PasswordHandler: func(ctx ssh.Context, pass string) bool {
 			user := ctx.Value(ssh.ContextKeyUser).(string)
+			addr := ctx.Value(ssh.ContextKeyRemoteAddr).(net.Addr).String()
 			expected, ok := s.sshUsers[user]
-			return ok && pass == expected
+			if ok && pass == expected {
+				return true
+			} else {
+				s.log.WithFields(logrus.Fields{"user": user, "addr": addr}).Warn("bad ssh user login attempt")
+				return false
+			}
 		},
 	}
 	if sshHostKeyFile != "" {
@@ -373,7 +396,7 @@ func ServeCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			log := logrus.New()
 			log.SetOutput(os.Stdout)
-			log.SetLevel(logrus.TraceLevel)
+			log.SetLevel(logrus.DebugLevel)
 			log.SetFormatter(&logrus.TextFormatter{DisableTimestamp: true})
 
 			if level != "" {
@@ -395,6 +418,7 @@ func ServeCmd() *cobra.Command {
 					}
 					passwords[dat[0]] = dat[1]
 				}
+				s.sshUsers = passwords
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
