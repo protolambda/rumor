@@ -3,7 +3,6 @@ package enrstate
 import (
 	"crypto/ecdsa"
 	"errors"
-	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -109,7 +108,6 @@ func (s *EnrState) SetIP(ip net.IP) {
 		s.localNode.Delete(enr.IP(net.IPv6zero))
 		return
 	}
-	fmt.Printf("setting IP to %s!!!\n", ip.String())
 	s.localNode.Set(enr.IP(ip))
 }
 
