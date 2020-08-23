@@ -465,10 +465,10 @@ func ServeCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&level, "level", "debug", "Log-level of the server log. Valid values: trace, debug, info, warn, error, fatal, panic")
-	cmd.Flags().StringVar(&ipcPath, "ipc", "", "Path to unix domain socket for IPC, e.g. `my_socket_file.sock`, use `rumor attach <socket>` to connect.")
-	cmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to listen on, e.g. `localhost:3030`. Disabled if empty.")
-	cmd.Flags().StringVar(&httpAddr, "http", "", "Websocket/HTTP address to listen on, e.g. `localhost:8000`. Disabled if empty.")
-	cmd.Flags().StringVar(&sshAddr, "ssh", "", "SSH address to listen on, e.g. `:5000`. Disabled if empty")
+	cmd.Flags().StringVar(&ipcPath, "ipc", "", "Path to unix domain socket for IPC, e.g. 'my_socket_file.sock', use 'rumor attach <socket>' to connect.")
+	cmd.Flags().StringVar(&tcpAddr, "tcp", "", "TCP socket address to listen on, e.g. 'localhost:3030'. Disabled if empty.")
+	cmd.Flags().StringVar(&httpAddr, "http", "", "Websocket/HTTP address to listen on, e.g. 'localhost:8000'. Disabled if empty.")
+	cmd.Flags().StringVar(&sshAddr, "ssh", "", "SSH address to listen on, e.g. '127.0.0.1:5000'. Disabled if empty")
 	cmd.Flags().StringVar(&sshHostKeyFile, "ssh-key", "", "SSH host key. Temporary key generated randomly if empty.")
 	cmd.Flags().StringArrayVar(&sshUsers, "ssh-users", []string{}, "Super simple SSH users. Formatted as 'user:pass'")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "Websocket/HTTP API key ('X-Api-Key' header) to require from HTTP requests and websocket upgrade requests. No key required if empty.")
