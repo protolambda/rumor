@@ -200,7 +200,7 @@ func (s *Server) handleSshPtyUser(session ssh.Session) {
 
 	log := logrus.New()
 	log.SetOutput(rl)
-	log.SetLevel(logrus.TraceLevel)
+	log.SetLevel(logrus.DebugLevel)
 	log.SetFormatter(&control.ShellLogFmt{})
 
 	shellMode(rl,
