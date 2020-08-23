@@ -40,6 +40,7 @@ go get ./...
 - [`chzyer/readline`](https://github.com/chzyer/readline): For history/shell code
 - [`protolambda/ask`](https://github.com/protolambda/ask): For dynamically-evaluated command structure 
 - [`gorilla/websocket`](https://github.com/gorilla/websocket): For websocket server/client
+- [`gliderlabs/ssh`](https://github.com/gliderlabs/ssh): For SSH server
 - [`sirupsen/logrus`](https://github.com/sirupsen/logrus): For logging infrastructure
 
 ## Usage
@@ -55,13 +56,14 @@ There are a few sub-commands to choose the mode of operation:
   shell       Rumor as a human-readable shell   <- recommended
 ```
 
-Serve and attach supported types:
+Serve and attach supported types (build any infra you want):
 
 - `http` (optional auth key, `X-Api-Key` header)
     - `ws` (http upgraded to websocket)
-    - `post` (http requests, not supported for `attach`)
+    - `script` (http requests, not supported for `attach`)
 - `tcp` (raw socket)
 - `ipc` (Unix socket)
+- `ssh` (Direct SSH into rumor shell, no need for `attach`)
 
 ## Tutorial
 
@@ -283,6 +285,23 @@ These are reserved names, used for shell functionality:
 ```
 
 ## Advanced
+
+### SSH usage
+
+SSH with socket linking is extra work, if all you need is a human-readable shell.
+Instead, Rumor can serve it's `shell` mode as SSH server, to make remote-access easily.
+
+```
+# One-time only: generate a key for the server, so it has the same identity after restarting (avoid SSH trust warnings)
+ssh-keygen -f rumor_ssh_server -t rsa -b 4096
+
+# Serve rumor on SSH (change user details)
+# TODO: Support for authorized keys, instead of user/pass pairs.
+rumor serve --ssh=0.0.0.0:5000 --ssh-key= --ssh-users=myuser:1234,other:abcd
+
+# Login directly into rumor shell (change host details)
+ssh myuser@1.2.3.4 -p 5000
+```
 
 ### HTTP POST usage
 
