@@ -5,14 +5,17 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/websocket"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/protolambda/rumor/p2p/track/dstee"
 	"github.com/sirupsen/logrus"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
 )
 
 type PeerTrackTeeCmd struct {
@@ -22,6 +25,7 @@ type PeerTrackTeeCmd struct {
 	// TODO support http api, db, socket, websocket, anything.
 	Dest string `ask:"--dest" help:"Destination to direct events to. Could be: log,csv,evlog,evcsv,json"`
 	Path string `ask:"--path" help:"Path, address or other destination uri"`
+	Key  string `ask:"--key" help:"Optional API key or authentication for the chosen destination type"`
 }
 
 func (c *PeerTrackTeeCmd) Help() string {
@@ -133,6 +137,66 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 		}}
 		clean = func() error {
 			return f.Close()
+		}
+	case "wsjson":
+		h := http.Header{}
+		if c.Key != "" {
+			h["X-Api-Key"] = []string{c.Key}
+		}
+		reconnCtx, reconnCancel := context.WithCancel(context.Background())
+		evCh := make(chan *dstee.Event, 20)
+		go func() {
+			var conn *websocket.Conn
+			var err error
+		reconnectLoop:
+			for {
+				// TODO: maybe send the whole peerstore as json in the initial request?
+				conn, _, err = websocket.DefaultDialer.Dial(c.Path, h)
+				if err != nil {
+					c.Log.WithError(err).Error("WS dial error")
+					t, _ := context.WithTimeout(reconnCtx, time.Second*5)
+					<-t.Done()
+					if reconnCtx.Err() == nil { // attempt reconnect if not done yet.
+						continue
+					}
+					return
+				}
+
+				select {
+				case ev, ok := <-evCh:
+					if !ok {
+						if err := conn.Close(); err != nil {
+							c.Log.WithError(err).Error("failed to close websocket connection properly")
+						}
+						c.Log.Info("Done sending peerstore events to websocket")
+						return
+					}
+					if err := conn.WriteJSON(ev); err != nil {
+						if websocket.IsUnexpectedCloseError(err) {
+							continue reconnectLoop
+						}
+						c.Log.Warn("failed to write event to json websocket")
+					}
+				}
+			}
+		}()
+		var wl sync.Mutex // ugly, but need a lock to safely close the channel with parallel producers.
+		open := true
+		tee = &dstee.EventTee{Fn: func(evs ...*dstee.Event) {
+			for _, ev := range evs {
+				wl.Lock()
+				if open {
+					evCh <- ev
+				}
+				wl.Unlock()
+			}
+		}}
+		clean = func() error {
+			reconnCancel()
+			wl.Lock()
+			open = false
+			wl.Unlock()
+			return nil
 		}
 	default:
 		return fmt.Errorf("unrecognized tracker output type: %s", c.Dest)
