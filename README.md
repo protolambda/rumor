@@ -54,6 +54,7 @@ There are a few sub-commands to choose the mode of operation:
   help        Help about any command
   serve       Rumor as a server to attach to
   shell       Rumor as a human-readable shell   <- recommended
+  tool        Run rumor toolchain
 ```
 
 Serve and attach supported types (build any infra you want):

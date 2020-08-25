@@ -6,6 +6,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/sirupsen/logrus"
+	"io"
 )
 
 // Step is a function that is proposed by the command, and can be stepped into by the controller.
@@ -36,6 +37,8 @@ type Base struct {
 	Control Control
 	// For command
 	Log logrus.FieldLogger
+	// Optional std output
+	Out io.Writer
 }
 
 type WithHost interface {

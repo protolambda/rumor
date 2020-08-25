@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/sirupsen/logrus"
+	"io"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
@@ -22,7 +23,7 @@ import (
 type EnvGlobal interface {
 	GetCall(id CallID) *Call
 	// Runs the call in sync
-	MakeCall(callCtx context.Context, actorID actor.ActorID, callID CallID, args []string) (*Call, error)
+	MakeCall(callCtx context.Context, out io.Writer, actorID actor.ActorID, callID CallID, args []string) (*Call, error)
 	IsClosing() bool
 	KillActor(id actor.ActorID)
 	GetCalls(id actor.ActorID) map[CallID]CallSummary
@@ -323,9 +324,11 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 	}
 	sess.SetInterest(callID, logLvl)
 
+	wOut := interp.HandlerCtx(ctx).Stdout
+
 	// We remember the last call, even though we wait for it to be done,
 	// since we may want to cancel/modify its spawned background processes, without having to specify the call ID again.
-	call, callErr := sess.global.MakeCall(ctx, actorName, callID, args)
+	call, callErr := sess.global.MakeCall(ctx, wOut, actorName, callID, args)
 
 	sess.lastCall = call
 
