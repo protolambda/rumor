@@ -297,7 +297,7 @@ ssh-keygen -f rumor_ssh_server -t rsa -b 4096 -P ""
 
 # Serve rumor on SSH (change user details)
 # TODO: Support for authorized keys, instead of user/pass pairs.
-rumor serve --ssh=0.0.0.0:5000 --ssh-key=rumor_ssh_server --ssh-users=myuser:1234,other:abcd
+rumor serve --ssh=0.0.0.0:5000 --ssh-key=rumor_ssh_server --ssh-users=myuser:1234 --ssh-users=other:abcd
 
 # Login directly into rumor shell (change host details)
 ssh myuser@1.2.3.4 -p 5000
