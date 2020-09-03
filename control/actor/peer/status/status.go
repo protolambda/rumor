@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"errors"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
@@ -51,7 +52,7 @@ func (c *PeerStatusState) Routes() []string {
 
 func (c *PeerStatusState) fetch(book track.StatusBook, sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
 	resCode reqresp.ResponseCode, errMsg string, data *methods.Status, err error) {
-
+	resCode = reqresp.ServerErrCode // error by default
 	err = methods.StatusRPCv1.RunRequest(ctx, sFn, peerID, comp,
 		reqresp.RequestSSZInput{Obj: &c.Local}, 1,
 		func() error {
@@ -73,6 +74,8 @@ func (c *PeerStatusState) fetch(book track.StatusBook, sFn reqresp.NewStreamFn, 
 				}
 				data = &stat
 				book.RegisterStatus(peerID, stat)
+			default:
+				return errors.New("unexpected result code")
 			}
 			return nil
 		})
