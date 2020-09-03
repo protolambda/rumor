@@ -140,7 +140,7 @@ enr view --kv enr:-Iu4QLNTiVhgyDyvCBnewNcn9Wb7fjPoKYD2NPe-jDZ3_TqaGFK8CcWr7ai7w9
 
 By prefixing a command with `{actor-name}:`, you can run multiple p2p hosts, by name `{actor-name}` in the same process.
 
-```
+```shell script
 alice: host start
 alice: host listen --tcp=9000
 bob: host start
@@ -153,7 +153,7 @@ bob: peer connect <ENR from alice>
 
 To change the default actor, use the `me` command:
 
-```
+```shell script
 protolambda: me
 ```
 
@@ -166,14 +166,14 @@ Writing some things may become repetitive.
 To not repeat yourself, while still getting the same results as typing it yourself, you can use `include` to run rumor files.
 
 `host.rumor`
-```
+```shell script
 host start
 host notify all
 # maybe start some other tasks
 ```
 
 Then, in a shell, or in another rumor file:
-```
+```shell script
 # The include will use the new default actor
 alice: me
 include host.rumor
@@ -196,7 +196,7 @@ If no call-ID is specified, the call uses an incrementing counter for each new c
 I.e. an auto-generated call ID, with just the session id and a number, the command is prefixed with e.g. `s42_123`.
 Using such bare strings as custom call-IDs is unsafe, as these call-IDs will overlap with the auto-generated IDs.
 
-```
+```shell script
 _my_call alice: host start
 .... log output with call_id="my_call"
 
@@ -213,7 +213,7 @@ Also, to reference log-output in environment variables, the call IDs are very us
 Each log-entry will automatically be stored in the Rumor environment, to retrieve by its call ID.
 
 Example:
-```
+```shell script
 _my_call alice: host listen
 bob: peer connect _my_call_addr
 ```
@@ -221,7 +221,7 @@ bob: peer connect _my_call_addr
 And, the log entry variables of the last call in the session can be referenced with just `_` (and still separated with `_` from the log-entry name):
 
 Example:
-```
+```shell script
 alice: host listen
 bob: peer connect __addr
 ```
@@ -231,18 +231,32 @@ Both the call ID and the log entry name may contain multiple underscores. Refere
 After running many calls, the environment may grow too big.
 To flush it, run `clear_log_data` to clear every entry, except those prefixed with a call ID of an open call.
 
+### Grabbing data
+
+If you need the environment variable data in pure JSON format, instead of bash variable types, then you can simply `grab` it:
+
+```shell script
+# logs new private key to variable
+_example host start   # (call will named "example" here)
+# Grab the data
+grab priv > priv.txt
+grab example_priv > priv.txt
+# Or, with the regular environment variable prefixes
+grab __priv > priv.txt
+grab _example_priv > priv.txt
+```
 
 ### Cancel long-running calls
 
 To close a long-running call (which may run in the background), you can:
 - If it is the latest call, just run `cancel`
 - Cancel it directly by its call ID:
-```
+```shell script
 _my_call_ cancel
 ```
 
 Optionally, provide a duration, like `3s`, to set a timeout on the cancellation.
-```
+```shell script
 _my_call_ cancel 3s
 ```
 
@@ -251,7 +265,7 @@ _my_call_ cancel 3s
 Some long-running calls can be stepped through: by running `next` you enable the call to progress.
 Optionally, provide a duration as timeout, to not indefinitely wait for the next step of the call,
  or to stop steps that take too long to complete.
-```
+```shell script
 _my_call_ next 3s
 ```
 
@@ -259,7 +273,7 @@ _my_call_ next 3s
 
 An actor can be killed by running a `kill` command on them, after that a fresh libp2p host can be started.
 
-```
+```shell script
 alice: kill
 ```
 
