@@ -232,7 +232,6 @@ func (sp *SessionProcessor) MakeCall(callCtx context.Context, out io.Writer,
 		fCmd, isHelp, err := loadedCmd.Execute(callCtx, cmdArgs...)
 		if err != nil {
 			cmdLogger.WithField("__error", err).Trace("call failed with error")
-			cmdLogger.WithError(err).WithField("args", cmdArgs).Warnf("failed")
 			return call, fmt.Errorf("command failed: %v", err)
 		} else {
 			if isHelp {

@@ -47,8 +47,7 @@ func ShellCmd() *cobra.Command {
 							onParse(false, false)
 							return true
 						}
-						fullyParsed := onParse(true, false)
-						log.Debug(fullyParsed)
+						onParse(true, false)
 						for _, stmt := range stmts {
 							if err := sess.Run(context.Background(), stmt); err != nil {
 								if e, ok := interp.IsExitStatus(err); ok {

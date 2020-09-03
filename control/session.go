@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/protolambda/rumor/control/actor"
@@ -165,6 +166,14 @@ func (sess *Session) Done() <-chan struct{} {
 
 // RunCmd implements interp.ExecHandlerFunc
 func (sess *Session) RunCmd(ctx context.Context, args []string) error {
+	err := sess.runCmd(ctx, args)
+	if err != nil {
+		sess.log.WithError(err).WithField("args", args).Warn("failed")
+	}
+	return err
+}
+
+func (sess *Session) runCmd(ctx context.Context, args []string) error {
 	actorName := sess.defaultActorID
 	var customCallID CallID
 	logLvl := logrus.DebugLevel
@@ -303,6 +312,42 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		return nil
 	}
 
+	wOut := interp.HandlerCtx(ctx).Stdout
+
+	// Useful hack to dump variables to Stdout in json format
+	if len(args) >= 1 && args[0] == "grab" {
+		if len(args) == 1 {
+			return MaybeRuntimeErr(errors.New("specify the name of the var to grab"))
+		}
+		if len(args) != 2 {
+			return MaybeRuntimeErr(errors.New("too many arguments"))
+		}
+		name := args[1]
+		var val interface{}
+		var ok bool
+		if strings.HasPrefix(name, "__") {
+			if last := sess.lastCall; last != nil {
+				// still separated by a `_`, but first  `_` is a shortcut for the last call ID
+				val, ok = sess.global.GetLogData(string(last.id) + name[1:])
+			}
+		} else if strings.HasPrefix(name, "_") {
+			val, ok = sess.global.GetLogData(name[1:])
+		} else {
+			val, ok = sess.global.GetLogData(name)
+			if !ok {
+				if last := sess.lastCall; last != nil {
+					val, ok = sess.global.GetLogData(string(last.id) + "_" + name)
+				}
+			}
+		}
+		if ok {
+			enc := json.NewEncoder(wOut)
+			return MaybeRuntimeErr(enc.Encode(val))
+		} else {
+			return MaybeRuntimeErr(errors.New("unknown variable"))
+		}
+	}
+
 	if len(args) == 1 && args[0] == "me" {
 		sess.defaultActorID = actorName
 		sess.log.Infof("Changed default actor to %s", actorName)
@@ -323,8 +368,6 @@ func (sess *Session) RunCmd(ctx context.Context, args []string) error {
 		callID = sess.NewCallID()
 	}
 	sess.SetInterest(callID, logLvl)
-
-	wOut := interp.HandlerCtx(ctx).Stdout
 
 	// We remember the last call, even though we wait for it to be done,
 	// since we may want to cancel/modify its spawned background processes, without having to specify the call ID again.
