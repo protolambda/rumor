@@ -30,7 +30,6 @@ func (c *Dv5RandomCmd) Run(ctx context.Context, args ...string) error {
 	randomNodes := c.Dv5State.Dv5Node.RandomNodes()
 	c.Log.Infof("Started looking for random nodes: %s", time.Now().String())
 
-	finished := make(chan struct{})
 	go func() {
 		exit := false
 		for {
@@ -55,12 +54,10 @@ func (c *Dv5RandomCmd) Run(ctx context.Context, args ...string) error {
 				break
 			}
 		}
-		finished <- struct{}{}
 	}()
 
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		randomNodes.Close()
-		<-finished
 
 		c.Log.Infof("Stopped looking for random nodes: %s", time.Now().String())
 		return nil
