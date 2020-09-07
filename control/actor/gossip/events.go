@@ -5,6 +5,7 @@ import (
 	"fmt"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/sirupsen/logrus"
 )
 
 type GossipEventsCmd struct {
@@ -28,20 +29,27 @@ func (c *GossipEventsCmd) Run(ctx context.Context, args ...string) error {
 	evHandler, err := top.(*pubsub.Topic).EventHandler()
 	if err != nil {
 		return err
-	} else {
+	}
+	ctx, cancelEvs := context.WithCancel(ctx)
+	go func() {
 		c.Log.Infof("Started listening for peer join/leave events for topic %s", c.TopicName)
 		for {
 			ev, err := evHandler.NextPeerEvent(ctx)
 			if err != nil {
 				c.Log.Infof("Stopped listening for peer join/leave events for topic %s", c.TopicName)
-				return nil
+				return
 			}
 			switch ev.Type {
 			case pubsub.PeerJoin:
-				c.Log.WithField("join", ev.Peer.Pretty()).Infof("peer %s joined topic %s", ev.Peer.Pretty(), c.TopicName)
+				c.Log.WithFields(logrus.Fields{"peer_id": ev.Peer, "topic": c.TopicName}).Info("topic joined")
 			case pubsub.PeerLeave:
-				c.Log.WithField("leave", ev.Peer.Pretty()).Infof("peer %s left topic %s", ev.Peer.Pretty(), c.TopicName)
+				c.Log.WithFields(logrus.Fields{"peer_id": ev.Peer, "topic": c.TopicName}).Info("topic left")
 			}
 		}
-	}
+	}()
+	c.Control.RegisterStop(func(ctx context.Context) error {
+		cancelEvs()
+		return nil
+	})
+	return nil
 }
