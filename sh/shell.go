@@ -24,15 +24,15 @@ func ShellCmd() *cobra.Command {
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			log, err := shellLogger(level)
+			rl, err := shellReader()
 			if err != nil {
-				fmt.Errorf("%v", err)
+				fmt.Errorf("could not open shell reader: %v", err)
 				os.Exit(1)
 				return
 			}
-			rl, err := shellReader()
+			log, err := shellLogger(level, rl.Operation.Stdout())
 			if err != nil {
-				log.WithError(err).Error("could not open shell reader")
+				log.WithError(err).Error("could not open shell logger")
 				os.Exit(1)
 				return
 			}

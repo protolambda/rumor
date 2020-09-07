@@ -9,7 +9,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"io"
 	"net"
-	"os"
 	"strings"
 	"time"
 )
@@ -60,9 +59,9 @@ const startPrompt = "\033[31m»\033[0m "
 const multilinePrompt = "\033[31m>>> \033[0m "
 
 // multi-line inputs end each intermediate line with "\"
-func shellLogger(levelFlag string) (logrus.FieldLogger, error) {
+func shellLogger(levelFlag string, w io.Writer) (logrus.FieldLogger, error) {
 	log := logrus.New()
-	log.SetOutput(os.Stdout)
+	log.SetOutput(w)
 	log.SetLevel(logrus.TraceLevel)
 	log.SetFormatter(&control.ShellLogFmt{})
 

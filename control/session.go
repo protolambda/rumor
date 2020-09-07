@@ -177,8 +177,8 @@ func (sess *Session) runCmd(ctx context.Context, args []string) error {
 	actorName := sess.defaultActorID
 	var customCallID CallID
 	logLvl := logrus.DebugLevel
+	changedLogLvl := false
 	{
-		changedLogLvl := false
 		var actorStr, customCallIDStr string
 		skip := 0
 		for _, arg := range args {
@@ -355,6 +355,11 @@ func (sess *Session) runCmd(ctx context.Context, args []string) error {
 	}
 
 	if len(args) == 0 {
+		if changedLogLvl && customCallID != "" {
+			sess.SetInterest(customCallID, logLvl)
+			sess.log.Infof("Changed log level of %s to %s", customCallID, logLvl)
+			return nil
+		}
 		return errors.New("no actual command to run")
 	}
 

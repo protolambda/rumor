@@ -21,11 +21,10 @@ echo "bootnodes: $bootnodes"
 
 bootnodes=$(echo -n $bootnodes | tr " " ",")
 
-lvl_warn dv5 run --bootnodes=$bootnodes
+_dv5_runner lvl_warn dv5 run --bootnodes=$bootnodes
 
 fork_digest="0xe7a75d5a"
-lvl_error dv5 random --add --filter-digest=$fork_digest
+_dv5_crawler lvl_error dv5 random --add --filter-digest=$fork_digest
 
-echo "started dv5 in background, dv5 warn+ logs only, crawl error+ logs only"
-
+echo "started dv5 in background: _dv5_runner lvl_warn, _dv5_crawler lvl_error"
 
