@@ -199,7 +199,8 @@ func (s *Server) handleSshPtyUser(session ssh.Session) {
 	})
 
 	log := logrus.New()
-	log.SetOutput(rl)
+	rlw := rl.Operation.Stdout() // allocate the writer once, avoid rl.Write directly.
+	log.SetOutput(rlw)
 	log.SetLevel(logrus.DebugLevel)
 	log.SetFormatter(&control.ShellLogFmt{})
 
