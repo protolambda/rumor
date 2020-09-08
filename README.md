@@ -303,8 +303,8 @@ These are reserved names, used for shell functionality:
 
 ### SSH usage
 
-SSH with socket linking is extra work, if all you need is a human-readable shell.
-Instead, Rumor can serve it's `shell` mode as SSH server, to make remote-access easily.
+SSH with socket linking to connect via TCP/IPC is extra work, if all you need is a human-readable shell.
+Instead, Rumor can serve its `shell` mode as SSH server, to make remote-access easy.
 
 ```
 # One-time only: generate a key for the server, so it has the same identity after restarting (avoid SSH trust warnings)
