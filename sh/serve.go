@@ -7,15 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/chzyer/readline"
-	"github.com/gliderlabs/ssh"
-	"github.com/gorilla/websocket"
-	"github.com/protolambda/rumor/control"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"io"
-	"mvdan.cc/sh/v3/interp"
-	"mvdan.cc/sh/v3/syntax"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +15,15 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/chzyer/readline"
+	"github.com/gliderlabs/ssh"
+	"github.com/gorilla/websocket"
+	"github.com/protolambda/rumor/control"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"mvdan.cc/sh/v3/interp"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 type Server struct {
