@@ -52,4 +52,4 @@ func (c *Dv5Cmd) Help() string {
 	return "Peer discovery with discv5"
 }
 
-var NoDv5Err = errors.New("Must start discv5 first. Try 'dv5 start'")
+var NoDv5Err = errors.New("Must start discv5 first. Try 'dv5 run'")
