@@ -2,6 +2,7 @@ package dv5
 
 import (
 	"errors"
+
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
@@ -51,4 +52,4 @@ func (c *Dv5Cmd) Help() string {
 	return "Peer discovery with discv5"
 }
 
-var NoDv5Err = errors.New("Must start discv5 first. Try 'dv5 start'")
+var NoDv5Err = errors.New("Must start discv5 first. Try 'dv5 run'")
