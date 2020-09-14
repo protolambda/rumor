@@ -1,21 +1,14 @@
 package sh
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/chzyer/readline"
-	"github.com/gliderlabs/ssh"
-	"github.com/gorilla/websocket"
-	"github.com/protolambda/rumor/control"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"io"
-	"mvdan.cc/sh/v3/interp"
-	"mvdan.cc/sh/v3/syntax"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +16,15 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/chzyer/readline"
+	"github.com/gliderlabs/ssh"
+	"github.com/gorilla/websocket"
+	"github.com/protolambda/rumor/control"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"mvdan.cc/sh/v3/interp"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 type Server struct {
@@ -107,7 +109,40 @@ func (s *Server) newSession(w io.Writer, r io.Reader, addr string) {
 	s.log.WithField("addr", addr).Info("user session stopped")
 }
 
-func (s *Server) ssh(sshAddr string, sshHostKeyFile string) (close func() error, err error) {
+func parseAuthorizedKeys(authorizedKeysFile string) ([]ssh.PublicKey, error) {
+	file, err := os.Open(authorizedKeysFile)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	keys := []ssh.PublicKey{}
+	for scanner.Scan() {
+		keyData := scanner.Bytes()
+		if len(keyData) == 0 {
+			// whitespace in authorized keys file... skip
+			continue
+		}
+		key, _, _, _, err := ssh.ParseAuthorizedKey(keyData)
+		if err != nil {
+			return keys, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
+}
+
+func (s *Server) ssh(sshAddr string, sshHostKeyFile string, authorizedKeysFile string) (close func() error, err error) {
+	var authorizedKeys []ssh.PublicKey
+	if authorizedKeysFile != "" {
+		var err error
+		authorizedKeys, err = parseAuthorizedKeys(authorizedKeysFile)
+		if err != nil {
+			s.log.Error(err)
+			os.Exit(1)
+		}
+	}
 	sshServ := &ssh.Server{
 		Addr: sshAddr,
 		Handler: func(session ssh.Session) {
@@ -139,7 +174,11 @@ func (s *Server) ssh(sshAddr string, sshHostKeyFile string) (close func() error,
 			s.log.WithFields(userData).Info("ssh session ended")
 		},
 		PublicKeyHandler: func(ctx ssh.Context, key ssh.PublicKey) bool {
-			s.log.Info("ssh pub login handler, not yet supported")
+			for _, authorizedKey := range authorizedKeys {
+				if ssh.KeysEqual(key, authorizedKey) {
+					return true
+				}
+			}
 			return false
 		},
 		PasswordHandler: func(ctx ssh.Context, pass string) bool {
@@ -389,6 +428,7 @@ func ServeCmd() *cobra.Command {
 	var sshAddr string
 	var sshUsers []string
 	var sshHostKeyFile string
+	var sshAuthorizedKeysFile string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -454,7 +494,7 @@ func ServeCmd() *cobra.Command {
 				serving(s.tcp(tcpAddr))
 			}
 			if sshAddr != "" {
-				serving(s.ssh(sshAddr, sshHostKeyFile))
+				serving(s.ssh(sshAddr, sshHostKeyFile, sshAuthorizedKeysFile))
 			}
 			if httpAddr != "" {
 				serving(s.http(httpAddr, apiKey))
@@ -472,6 +512,7 @@ func ServeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&sshAddr, "ssh", "", "SSH address to listen on, e.g. '127.0.0.1:5000'. Disabled if empty")
 	cmd.Flags().StringVar(&sshHostKeyFile, "ssh-key", "", "SSH host key. Temporary key generated randomly if empty.")
 	cmd.Flags().StringArrayVar(&sshUsers, "ssh-users", []string{}, "Super simple SSH users. Formatted as 'user:pass'")
+	cmd.Flags().StringVar(&sshAuthorizedKeysFile, "ssh-authorized-keys", "", "Path to `authorized_keys` file, as used in OpenSSH")
 	cmd.Flags().StringVar(&apiKey, "api-key", "", "Websocket/HTTP API key ('X-Api-Key' header) to require from HTTP requests and websocket upgrade requests. No key required if empty.")
 	return cmd
 }
