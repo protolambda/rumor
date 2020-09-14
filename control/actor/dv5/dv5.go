@@ -2,6 +2,7 @@ package dv5
 
 import (
 	"errors"
+
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/peering/dv5"
