@@ -15,15 +15,19 @@ import (
 
 type EnrViewCmd struct {
 	*base.Base
-	KvMode bool          `ask:"--kv" help:"Print the full set of Key-Value pairs"`
-	Enr    flags.EnrFlag `ask:"<enr>" help:"The ENR to view, url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix."`
+	KvMode      bool          `ask:"--kv" help:"Print the full set of Key-Value pairs"`
+	Enr         flags.EnrFlag `ask:"[enr]" help:"The ENR to view, url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix."`
+	CurrentNode *enode.Node
 }
 
 func (c *EnrViewCmd) Help() string {
-	return "View ENR contents"
+	return "View ENR contents, defaults to current actor's ENR if none provided to decode"
 }
 
 func (c *EnrViewCmd) Run(ctx context.Context, args ...string) error {
+	if c.Enr.ENR == nil {
+		c.Enr.ENR = c.CurrentNode.Record()
+	}
 	if c.KvMode {
 		enrPairs := c.Enr.ENR.AppendElements(nil)
 		enrKV := make(map[string]string)
