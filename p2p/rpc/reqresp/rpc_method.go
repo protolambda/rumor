@@ -249,7 +249,11 @@ func (h *chReqHandler) ReadRequest(dest interface{}) error {
 	if h.invalidInputErr != nil {
 		return h.invalidInputErr
 	}
-	return h.m.RequestCodec.Decode(h.comp.Decompress(h.r), h.reqLen, dest)
+	r := h.r
+	if h.comp != nil {
+		r = h.comp.Decompress(r)
+	}
+	return h.m.RequestCodec.Decode(r, h.reqLen, dest)
 }
 
 func (h *chReqHandler) RawRequest() ([]byte, error) {
@@ -257,7 +261,11 @@ func (h *chReqHandler) RawRequest() ([]byte, error) {
 		return nil, h.invalidInputErr
 	}
 	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(io.LimitReader(h.comp.Decompress(h.r), int64(h.reqLen))); err != nil {
+	r := h.r
+	if h.comp != nil {
+		r = h.comp.Decompress(r)
+	}
+	if _, err := buf.ReadFrom(io.LimitReader(r, int64(h.reqLen))); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

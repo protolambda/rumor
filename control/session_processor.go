@@ -11,6 +11,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
+	"io"
 	"mvdan.cc/sh/v3/expand"
 	"os"
 	"strings"
@@ -180,7 +181,9 @@ func (sp *SessionProcessor) ClearLogData() {
 	})
 }
 
-func (sp *SessionProcessor) MakeCall(callCtx context.Context, actorName actor.ActorID, callID CallID, cmdArgs []string) (*Call, error) {
+func (sp *SessionProcessor) MakeCall(callCtx context.Context, out io.Writer,
+	actorName actor.ActorID, callID CallID, cmdArgs []string) (*Call, error) {
+
 	rep := sp.GetActor(actorName)
 	bgCtx, bgCancel := context.WithCancel(rep.ActorCtx)
 
@@ -198,7 +201,7 @@ func (sp *SessionProcessor) MakeCall(callCtx context.Context, actorName actor.Ac
 		spawned:     false,
 	}
 
-	callCmd := rep.MakeCmd(cmdLogger, call)
+	callCmd := rep.MakeCmd(cmdLogger, call, out)
 
 	sp.log.WithField("args", cmdArgs).Tracef("Started %s", callID)
 
@@ -229,7 +232,6 @@ func (sp *SessionProcessor) MakeCall(callCtx context.Context, actorName actor.Ac
 		fCmd, isHelp, err := loadedCmd.Execute(callCtx, cmdArgs...)
 		if err != nil {
 			cmdLogger.WithField("__error", err).Trace("call failed with error")
-			cmdLogger.WithError(err).WithField("args", cmdArgs).Warnf("failed")
 			return call, fmt.Errorf("command failed: %v", err)
 		} else {
 			if isHelp {

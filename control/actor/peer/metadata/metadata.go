@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"context"
+	"errors"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/control/actor/base"
@@ -55,7 +56,7 @@ func (c *PeerMetadataCmd) Routes() []string {
 
 func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
 	resCode reqresp.ResponseCode, errMsg string, data *methods.MetaData, err error) {
-
+	resCode = reqresp.ServerErrCode // error by default
 	err = methods.MetaDataRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: nil}, 1,
 		func() error {
 			// TODO
@@ -77,6 +78,8 @@ func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStream
 				}
 				data = &meta
 				book.RegisterMetadata(peerID, meta)
+			default:
+				return errors.New("unexpected result code")
 			}
 			return nil
 		})
@@ -85,7 +88,7 @@ func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStream
 
 func (c *PeerMetadataState) ping(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
 	resCode reqresp.ResponseCode, errMsg string, data methods.Pong, err error) {
-
+	resCode = reqresp.ServerErrCode // error by default
 	p := methods.Ping(c.Local.SeqNumber)
 	err = methods.PingRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: &p}, 1,
 		func() error {
@@ -106,6 +109,8 @@ func (c *PeerMetadataState) ping(sFn reqresp.NewStreamFn, ctx context.Context, p
 					return err
 				}
 				data = pong
+			default:
+				return errors.New("unexpected result code")
 			}
 			return nil
 		})

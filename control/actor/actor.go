@@ -23,9 +23,11 @@ import (
 	"github.com/protolambda/rumor/control/actor/peerstore"
 	"github.com/protolambda/rumor/control/actor/rpc"
 	"github.com/protolambda/rumor/control/actor/states"
+	"github.com/protolambda/rumor/control/tool"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/sirupsen/logrus"
+	"io"
 	"sync"
 	"time"
 )
@@ -115,11 +117,12 @@ func (r *Actor) GetNode() (n *enode.Node, ok bool) {
 	}
 }
 
-func (r *Actor) MakeCmd(log logrus.FieldLogger, control base.Control) *ActorCmd {
+func (r *Actor) MakeCmd(log logrus.FieldLogger, control base.Control, out io.Writer) *ActorCmd {
 	return &ActorCmd{
 		Actor:   r,
 		Log:     log,
 		Control: control,
+		Out:     out,
 	}
 }
 
@@ -129,6 +132,8 @@ type ActorCmd struct {
 	Log logrus.FieldLogger
 	// Control the execution of a command
 	Control base.Control
+	// Optional std output
+	Out io.Writer
 }
 
 func (c *ActorCmd) Help() string {
@@ -152,6 +157,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 		ActorContext:  c.ActorCtx,
 		Control:       c.Control,
 		Log:           c.Log,
+		Out:           c.Out,
 	}
 	switch route {
 	case "host":
@@ -210,6 +216,8 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 			ChainState: &c.ChainState, Blocks: bl, States: st}
 	case "sleep":
 		cmd = &SleepCmd{Base: b}
+	case "tool":
+		cmd = &tool.ToolCmd{Out: b.Out}
 	default:
 		return nil, ask.UnrecognizedErr
 	}
@@ -217,7 +225,7 @@ func (c *ActorCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 var topRoutes = []string{"host", "enr", "peer", "peerstore", "dv5", "gossip",
-	"rpc", "blocks", "states", "chain", "sleep"}
+	"rpc", "blocks", "states", "chain", "sleep", "tool"}
 var topRoutesMap = map[string]struct{}{}
 
 func init() {

@@ -1,5 +1,5 @@
-advertised_ip="192.168.0.77"
-listening_ip="192.168.0.77"
+advertised_ip="127.0.0.1"
+listening_ip="127.0.0.1"
 
 alice: enr make --static-ip="$advertised_ip" --fallback-udp=9010 --priv="4a0ee208acba0625110012b495afe0de53c37eea3a2a3a68adf88f0e92b653d2"
 alice_enr=$__enr
@@ -19,7 +19,7 @@ charlie: peerstore create
 # Start discv5 (with alice as bootnode passed to bob and charlie)
 alice: dv5 run --ip="$listening_ip" --udp=9010
 
-sleep 10s
+sleep 3s
 
 bob: dv5 run --ip="$listening_ip" --udp=9011 "$alice_enr"
 charlie: dv5 run --ip="$listening_ip" --udp=9012 "$alice_enr"
@@ -30,9 +30,9 @@ charlie: dv5 ping "$alice_enr"
 sleep 10s
 
 # Let's see if Bob can find Charlie through Alice
-_alice_find_nodes bob: dv5 random --add=true
-_bob_find_nodes bob: dv5 random --add=true
-_charlie_find_nodes bob: dv5 random --add=true
+_alice_find_nodes bob: dv5 random --add=true --stepwise=true
+_bob_find_nodes bob: dv5 random --add=true --stepwise=true
+_charlie_find_nodes bob: dv5 random --add=true --stepwise=true
 
 echo "Charlie + alice"
 _charlie_find_nodes next

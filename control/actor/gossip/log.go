@@ -30,34 +30,45 @@ func (c *GossipLogCmd) Run(ctx context.Context, args ...string) error {
 	} else {
 		sub, err := top.(*pubsub.Topic).Subscribe()
 		if err != nil {
-			return fmt.Errorf("Cannot open subscription on topic %s: %v", c.TopicName, err)
+			return fmt.Errorf("cannot open subscription on topic %s: %v", c.TopicName, err)
 		}
-		defer sub.Cancel()
-		for {
-			msg, err := sub.Next(ctx)
-			if err != nil {
-				if err == ctx.Err() { // expected quit, context stopped.
-					break
-				}
-				return fmt.Errorf("Gossip subscription on %s encountered error: %v", c.TopicName, err)
-			} else {
-				var msgData []byte
-				if strings.HasSuffix(c.TopicName, "_snappy") {
-					msgData, err = snappy.Decode(nil, msg.Data)
-					if err != nil {
-						return fmt.Errorf("Cannot decode message on %s with snappy: %v", c.TopicName, err)
+		ctx, cancelLog := context.WithCancel(ctx)
+		go func() {
+			defer sub.Cancel()
+			for {
+				msg, err := sub.Next(ctx)
+				if err != nil {
+					if err == ctx.Err() { // expected quit, context stopped.
+						break
 					}
+					c.Log.WithError(err).WithField("topic", c.TopicName).Error("Gossip logging encountered error")
+					return
 				} else {
-					msgData = msg.Data
+					var msgData []byte
+					if strings.HasSuffix(c.TopicName, "_snappy") {
+						msgData, err = snappy.Decode(nil, msg.Data)
+						if err != nil {
+							c.Log.WithError(err).WithField("topic", c.TopicName).Error("Cannot decompress snappy message")
+							continue
+						}
+					} else {
+						msgData = msg.Data
+					}
+					c.Log.WithFields(logrus.Fields{
+						"from":      msg.GetFrom().String(),
+						"data":      hex.EncodeToString(msgData),
+						"signature": hex.EncodeToString(msg.Signature),
+						"seq_no":    hex.EncodeToString(msg.Seqno),
+					}).Infof("new message on %s", c.TopicName)
 				}
-				c.Log.WithFields(logrus.Fields{
-					"from":      msg.GetFrom().String(),
-					"data":      hex.EncodeToString(msgData),
-					"signature": hex.EncodeToString(msg.Signature),
-					"seq_no":    hex.EncodeToString(msg.Seqno),
-				}).Infof("new message on %s", c.TopicName)
 			}
-		}
+		}()
+
+		c.Control.RegisterStop(func(ctx context.Context) error {
+			cancelLog()
+			c.Log.Info("Stopped gossip logger")
+			return nil
+		})
 		return nil
 	}
 }

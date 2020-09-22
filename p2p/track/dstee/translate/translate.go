@@ -295,6 +295,7 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 					out.Eth2.Status = &st
 				}
 			case "enr":
+				out.Eth2.ENR = &ENRData{}
 				out.Eth2.ENR.Raw = string(v)
 				rec, err := addrutil.ParseEnr(out.Eth2.ENR.Raw)
 				if err == nil {
