@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/protolambda/rumor/p2p/addrutil"
-	"github.com/protolambda/rumor/p2p/types"
+	"github.com/protolambda/zrnt/eth2/beacon"
 	"net"
 	"sync"
 )
@@ -111,10 +111,10 @@ func (s *EnrState) SetIP(ip net.IP) {
 	s.localNode.Set(enr.IP(ip))
 }
 
-func (s *EnrState) SetEth2Data(dat *types.Eth2Data) {
+func (s *EnrState) SetEth2Data(dat *beacon.Eth2Data) {
 	s.localNode.Set(addrutil.NewEth2DataEntry(dat))
 }
 
-func (s *EnrState) SetAttnets(dat *types.AttnetBits) {
+func (s *EnrState) SetAttnets(dat *beacon.AttnetBits) {
 	s.localNode.Set(addrutil.NewAttnetsENREntry(dat))
 }

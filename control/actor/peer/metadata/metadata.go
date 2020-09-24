@@ -9,11 +9,12 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/rumor/p2p/track"
+	"github.com/protolambda/zrnt/eth2/beacon"
 )
 
 type PeerMetadataState struct {
 	Following bool
-	Local     methods.MetaData
+	Local     beacon.MetaData
 }
 
 type PeerMetadataCmd struct {
@@ -55,7 +56,7 @@ func (c *PeerMetadataCmd) Routes() []string {
 }
 
 func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
-	resCode reqresp.ResponseCode, errMsg string, data *methods.MetaData, err error) {
+	resCode reqresp.ResponseCode, errMsg string, data *beacon.MetaData, err error) {
 	resCode = reqresp.ServerErrCode // error by default
 	err = methods.MetaDataRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: nil}, 1,
 		func() error {
@@ -72,7 +73,7 @@ func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStream
 				}
 				errMsg = msg
 			case reqresp.SuccessCode:
-				var meta methods.MetaData
+				var meta beacon.MetaData
 				if err := chunk.ReadObj(&meta); err != nil {
 					return err
 				}
@@ -87,9 +88,9 @@ func (c *PeerMetadataState) fetch(book track.MetadataBook, sFn reqresp.NewStream
 }
 
 func (c *PeerMetadataState) ping(sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
-	resCode reqresp.ResponseCode, errMsg string, data methods.Pong, err error) {
+	resCode reqresp.ResponseCode, errMsg string, data beacon.Pong, err error) {
 	resCode = reqresp.ServerErrCode // error by default
-	p := methods.Ping(c.Local.SeqNumber)
+	p := beacon.Ping(c.Local.SeqNumber)
 	err = methods.PingRPCv1.RunRequest(ctx, sFn, peerID, comp, reqresp.RequestSSZInput{Obj: &p}, 1,
 		func() error {
 			return nil
@@ -104,7 +105,7 @@ func (c *PeerMetadataState) ping(sFn reqresp.NewStreamFn, ctx context.Context, p
 				}
 				errMsg = msg
 			case reqresp.SuccessCode:
-				var pong methods.Pong
+				var pong beacon.Pong
 				if err := chunk.ReadObj(&pong); err != nil {
 					return err
 				}

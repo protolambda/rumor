@@ -55,7 +55,8 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 		reqCtx, _ = context.WithTimeout(reqCtx, c.Timeout)
 	}
 
-	method := &methods.BlocksByRootRPCv1
+	spec := c.Blocks.Spec()
+	method := methods.BlocksByRootRPCv1(spec)
 	peerId := c.PeerID.PeerID
 
 	protocolId := method.Protocol
@@ -112,10 +113,10 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 					return fmt.Errorf("got error response %d on chunk %d: %s", resultCode, chunk.ChunkIndex(), msg)
 				case reqresp.SuccessCode:
 					var block beacon.SignedBeaconBlock
-					if err := chunk.ReadObj(&block); err != nil {
+					if err := chunk.ReadObj(spec.Wrap(&block)); err != nil {
 						return err
 					}
-					withRoot := bdb.WithRoot(&block)
+					withRoot := bdb.WithRoot(spec, &block)
 					expectedRoot := req[chunk.ChunkIndex()]
 					if withRoot.Root != expectedRoot {
 						return fmt.Errorf("bad block, expected root %s, got %s", withRoot.Root, expectedRoot)

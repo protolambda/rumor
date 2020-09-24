@@ -5,6 +5,7 @@ import (
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
+	"github.com/protolambda/zrnt/eth2/configs"
 )
 
 type RpcCmd struct {
@@ -23,9 +24,9 @@ func (c *RpcCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "metadata":
 		cmd = c.Method("metadata", &c.RPCState.Metadata, &methods.MetaDataRPCv1)
 	case "blocks-by-range":
-		cmd = c.Method("blocks-by-range", &c.RPCState.BlocksByRange, &methods.BlocksByRangeRPCv1)
+		cmd = c.Method("blocks-by-range", &c.RPCState.BlocksByRange, methods.BlocksByRangeRPCv1(configs.Mainnet)) // TODO configure spec
 	case "blocks-by-root":
-		cmd = c.Method("blocks-by-root", &c.RPCState.BlocksByRoot, &methods.BlocksByRootRPCv1)
+		cmd = c.Method("blocks-by-root", &c.RPCState.BlocksByRoot, methods.BlocksByRootRPCv1(configs.Mainnet))
 	default:
 		return nil, ask.UnrecognizedErr
 	}

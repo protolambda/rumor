@@ -13,17 +13,17 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
-	"github.com/protolambda/rumor/p2p/types"
-	"github.com/protolambda/zssz"
+	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/codec"
 	"net"
 	"strings"
 )
 
 type Eth2ENREntry []byte
 
-func NewEth2DataEntry(dat *types.Eth2Data) Eth2ENREntry {
+func NewEth2DataEntry(dat *beacon.Eth2Data) Eth2ENREntry {
 	var buf bytes.Buffer
-	if _, err := zssz.Encode(&buf, dat, types.Eth2DataSSZ); err != nil {
+	if err := dat.Serialize(codec.NewEncodingWriter(&buf)); err != nil {
 		return nil
 	}
 	return buf.Bytes()
@@ -33,9 +33,9 @@ func (eee Eth2ENREntry) ENRKey() string {
 	return "eth2"
 }
 
-func (eee Eth2ENREntry) Eth2Data() (*types.Eth2Data, error) {
-	var dat types.Eth2Data
-	if err := zssz.Decode(bytes.NewReader(eee), uint64(len(eee)), &dat, types.Eth2DataSSZ); err != nil {
+func (eee Eth2ENREntry) Eth2Data() (*beacon.Eth2Data, error) {
+	var dat beacon.Eth2Data
+	if err := dat.Deserialize(codec.NewDecodingReader(bytes.NewReader(eee), uint64(len(eee)))); err != nil {
 		return nil, err
 	}
 	return &dat, nil
@@ -52,9 +52,9 @@ func (eee Eth2ENREntry) String() string {
 
 type AttnetsENREntry []byte
 
-func NewAttnetsENREntry(dat *types.AttnetBits) AttnetsENREntry {
+func NewAttnetsENREntry(dat *beacon.AttnetBits) AttnetsENREntry {
 	var buf bytes.Buffer
-	if _, err := zssz.Encode(&buf, dat, types.AttnetBitsSSZ); err != nil {
+	if err := dat.Serialize(codec.NewEncodingWriter(&buf)); err != nil {
 		return nil
 	}
 	return buf.Bytes()
@@ -64,10 +64,10 @@ func (aee AttnetsENREntry) ENRKey() string {
 	return "attnets"
 }
 
-func (aee AttnetsENREntry) AttnetBits() (types.AttnetBits, error) {
-	var dat types.AttnetBits
-	if err := zssz.Decode(bytes.NewReader(aee), uint64(len(aee)), &dat, types.AttnetBitsSSZ); err != nil {
-		return types.AttnetBits{}, err
+func (aee AttnetsENREntry) AttnetBits() (beacon.AttnetBits, error) {
+	var dat beacon.AttnetBits
+	if err := dat.Deserialize(codec.NewDecodingReader(bytes.NewReader(aee), uint64(len(aee)))); err != nil {
+		return beacon.AttnetBits{}, err
 	}
 	return dat, nil
 }
@@ -363,7 +363,7 @@ func MakeENR(ip net.IP, tcpPort uint16, udpPort uint16, priv *crypto.Secp256k1Pr
 	return &rec
 }
 
-func ParseEnrEth2Data(n *enode.Node) (data *types.Eth2Data, exists bool, err error) {
+func ParseEnrEth2Data(n *enode.Node) (data *beacon.Eth2Data, exists bool, err error) {
 	var eth2 Eth2ENREntry
 	if err := n.Load(&eth2); err != nil {
 		return nil, false, nil
@@ -375,7 +375,7 @@ func ParseEnrEth2Data(n *enode.Node) (data *types.Eth2Data, exists bool, err err
 	return dat, true, nil
 }
 
-func ParseEnrAttnets(n *enode.Node) (attnetbits *types.AttnetBits, exists bool, err error) {
+func ParseEnrAttnets(n *enode.Node) (attnetbits *beacon.AttnetBits, exists bool, err error) {
 	var attnets AttnetsENREntry
 	if err := n.Load(&attnets); err != nil {
 		return nil, false, nil

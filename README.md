@@ -31,7 +31,6 @@ go get ./...
 - Eth2:
     - [`protolambda/zrnt`](https://github.com/protolambda/zrnt): For Eth2 consensus code
     - [`protolambda/ztyp`](https://github.com/protolambda/ztyp): For SSZ tree structures
-    - [`protolambda/zssz`](https://github.com/protolambda/zssz): For SSZ utils (incl streaming for RPC)
     - [`ethereum/go-ethereum`](https://github.com/ethereum/go-ethereum) Geth, for ENR and Discv5 packages
 - Libp2p
     - [`ipfs/go-datastore`](https://github.com/ipfs/go-datastore): New experimental peerstore code

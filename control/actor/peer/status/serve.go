@@ -9,6 +9,7 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/rumor/p2p/track"
+	"github.com/protolambda/zrnt/eth2/beacon"
 	"time"
 )
 
@@ -47,7 +48,7 @@ func (c *PeerStatusServeCmd) Run(ctx context.Context, args ...string) error {
 		f := map[string]interface{}{
 			"from": peerId.String(),
 		}
-		var reqStatus methods.Status
+		var reqStatus beacon.Status
 		err := handler.ReadRequest(&reqStatus)
 		if err != nil {
 			f["input_err"] = err.Error()

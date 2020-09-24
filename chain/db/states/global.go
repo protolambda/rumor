@@ -2,6 +2,7 @@ package states
 
 import (
 	"errors"
+	"github.com/protolambda/zrnt/eth2/beacon"
 	"sync"
 )
 
@@ -10,7 +11,7 @@ type DBID string
 type DBs interface {
 	Find(id DBID) (db DB, ok bool)
 	// Create a new database. An empty path creates a memory DB.
-	Create(id DBID, path string) (db DB, err error)
+	Create(id DBID, path string, spec *beacon.Spec) (db DB, err error)
 	Remove(id DBID) (existed bool)
 	List() []DBID
 }
@@ -28,10 +29,10 @@ func (dbm *DBMap) Find(id DBID) (db DB, ok bool) {
 	return dbi.(DB), true
 }
 
-func (dbm *DBMap) Create(id DBID, path string) (db DB, err error) {
+func (dbm *DBMap) Create(id DBID, path string, spec *beacon.Spec) (db DB, err error) {
 	var c DB
 	if path == "" {
-		c = &MemDB{}
+		c = &MemDB{spec: spec}
 	} else {
 		return nil, errors.New("file based DB not yet supported for beacon states")
 	}

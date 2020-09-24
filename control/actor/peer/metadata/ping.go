@@ -8,9 +8,9 @@ import (
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/flags"
-	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/rumor/p2p/track"
+	"github.com/protolambda/zrnt/eth2/beacon"
 	"github.com/sirupsen/logrus"
 	"time"
 )
@@ -76,7 +76,7 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 	updating := c.ForceUpdate
 	if !updating && c.Update {
 		current := c.Store.Metadata(peerID)
-		if current == nil || current.SeqNumber < methods.SeqNr(pong) {
+		if current == nil || current.SeqNumber < beacon.SeqNr(pong) {
 			fetches := c.Store.RegisterMetaFetch(peerID)
 			updating = fetches <= c.MaxTries
 		}

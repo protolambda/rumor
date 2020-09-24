@@ -8,6 +8,7 @@ import (
 	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/codec"
 	"io"
 	"os"
 )
@@ -46,7 +47,7 @@ func (c *StatesExportCmd) Run(ctx context.Context, args ...string) (err error) {
 		defer f.Close()
 		w = f
 	}
-	if err := state.Serialize(w); err != nil {
+	if err := state.Serialize(codec.NewEncodingWriter(w)); err != nil {
 		return fmt.Errorf("failed to serialize state: %v", err)
 	}
 	c.Log.Infof("exported state")

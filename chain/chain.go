@@ -91,6 +91,7 @@ type FullChain interface {
 type HotColdChain struct {
 	HotChain
 	ColdChain
+	Spec *beacon.Spec
 }
 
 func (hc *HotColdChain) ByStateRoot(root Root) (ChainEntry, error) {
@@ -185,7 +186,7 @@ type ChainID string
 
 type Chains interface {
 	Find(id ChainID) (pi FullChain, ok bool)
-	Create(id ChainID, anchor *HotEntry) (pi FullChain, err error)
+	Create(id ChainID, anchor *HotEntry, spec *beacon.Spec) (pi FullChain, err error)
 	Remove(id ChainID) (existed bool)
 	List() []ChainID
 }
@@ -203,8 +204,8 @@ func (cs *ChainsMap) Find(id ChainID) (pi FullChain, ok bool) {
 	return pii.(FullChain), true
 }
 
-func (cs *ChainsMap) Create(id ChainID, anchor *HotEntry) (pi FullChain, err error) {
-	coldCh := NewFinalizedChain(anchor.slot)
+func (cs *ChainsMap) Create(id ChainID, anchor *HotEntry, spec *beacon.Spec) (pi FullChain, err error) {
+	coldCh := NewFinalizedChain(anchor.slot, spec)
 	hotCh, err := NewUnfinalizedChain(anchor,
 		BlockSinkFn(func(entry *HotEntry, canonical bool) error {
 			if canonical {
@@ -212,7 +213,7 @@ func (cs *ChainsMap) Create(id ChainID, anchor *HotEntry) (pi FullChain, err err
 			}
 			return nil
 			// TODO keep track of pruned non-finalized blocks?
-		}))
+		}), spec)
 	if err != nil {
 		return nil, err
 	}
@@ -220,6 +221,7 @@ func (cs *ChainsMap) Create(id ChainID, anchor *HotEntry) (pi FullChain, err err
 	c := &HotColdChain{
 		HotChain:  hotCh,
 		ColdChain: coldCh,
+		Spec:      spec,
 	}
 	_, alreadyExisted := cs.chains.LoadOrStore(id, c)
 	if alreadyExisted {

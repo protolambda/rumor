@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"github.com/protolambda/zrnt/eth2/beacon"
-	"github.com/protolambda/zrnt/eth2/util/ssz"
+	"github.com/protolambda/ztyp/tree"
 	"io"
 	"sync"
 )
@@ -16,8 +16,8 @@ type BlockWithRoot struct {
 	Block *beacon.SignedBeaconBlock
 }
 
-func WithRoot(block *beacon.SignedBeaconBlock) *BlockWithRoot {
-	root := beacon.Root(ssz.HashTreeRoot(&block.Message, beacon.BeaconBlockSSZ))
+func WithRoot(spec *beacon.Spec, block *beacon.SignedBeaconBlock) *BlockWithRoot {
+	root := block.Message.HashTreeRoot(spec, tree.GetHashFn())
 	return &BlockWithRoot{
 		Root:  root,
 		Block: block,
@@ -61,9 +61,12 @@ type DB interface {
 	List() []beacon.Root
 	// Get Path
 	Path() string
+	// Spec of states
+	Spec() *beacon.Spec
 }
 
-var maxBlockSize = beacon.SignedBeaconBlockSSZ.MaxLen()
+// Mainnet blocks are 157756 in v0.12.x, buffer can grow if necessary, and should be enough for most custom configs.
+var maxBlockSize = 160_000
 
 var dbBlockPool = sync.Pool{
 	New: func() interface{} {

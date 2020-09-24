@@ -53,7 +53,8 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 		reqCtx, _ := context.WithTimeout(bgCtx, c.Timeout)
 		return reqCtx
 	}
-	method := &methods.BlocksByRangeRPCv1
+	spec := c.Blocks.Spec()
+	method := methods.BlocksByRangeRPCv1(spec)
 	prot := method.Protocol
 	if c.Compression.Compression != nil {
 		prot += protocol.ID("_" + c.Compression.Compression.Name())
@@ -80,7 +81,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 			respondErr(reqresp.InvalidReqCode, "step must not be 0")
 			return
 		}
-		if req.Count > c.MaxCount || req.Step > c.MaxStep {
+		if uint64(req.Count) > c.MaxCount || uint64(req.Step) > c.MaxStep {
 			c.Log.WithFields(f).Warn("request has out of bounds size")
 			respondErr(reqresp.InvalidReqCode, "request params out of bounds")
 			return

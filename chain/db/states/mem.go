@@ -13,6 +13,7 @@ type MemDB struct {
 	data        sync.Map
 	removalLock sync.Mutex
 	stats       DBStats
+	spec        *beacon.Spec
 }
 
 func (db *MemDB) Store(ctx context.Context, state *beacon.BeaconStateView) (exists bool, err error) {
@@ -33,7 +34,7 @@ func (db *MemDB) Get(root beacon.Root) (state *beacon.BeaconStateView, exists bo
 		return nil, false, nil
 	}
 	exists = true
-	v, vErr := beacon.BeaconStateType.ViewFromBacking(dat.(tree.Node), nil)
+	v, vErr := db.spec.BeaconState().ViewFromBacking(dat.(tree.Node), nil)
 	state, err = beacon.AsBeaconStateView(v, vErr)
 	return
 }
@@ -66,4 +67,8 @@ func (db *MemDB) List() (out []beacon.Root) {
 
 func (db *MemDB) Path() string {
 	return ""
+}
+
+func (db *MemDB) Spec() *beacon.Spec {
+	return db.spec
 }

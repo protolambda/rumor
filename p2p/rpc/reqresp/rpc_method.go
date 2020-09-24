@@ -8,10 +8,8 @@ import (
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
-	"github.com/protolambda/zssz"
-	ztypes "github.com/protolambda/zssz/types"
+	"github.com/protolambda/ztyp/codec"
 	"io"
-	"reflect"
 )
 
 type Request interface {
@@ -20,25 +18,25 @@ type Request interface {
 
 type Codec interface {
 	MaxByteLen() uint64
-	Encode(w io.Writer, input interface{}) error
-	Decode(r io.Reader, bytesLen uint64, dest interface{}) error
-	Alloc() interface{}
+	Encode(w io.Writer, input codec.Serializable) error
+	Decode(r io.Reader, bytesLen uint64, dest codec.Deserializable) error
+	Alloc() SerDes
+}
+
+type SerDes interface {
+	codec.Serializable
+	codec.Deserializable
 }
 
 type SSZCodec struct {
-	def   ztypes.SSZ
-	alloc func() interface{}
+	alloc      func() SerDes
+	maxByteLen uint64
 }
 
-func NewSSZCodec(typ interface{}) *SSZCodec {
-	sszDef := zssz.GetSSZ(typ)
-	rTyp := reflect.TypeOf(typ).Elem()
-	alloc := func() interface{} {
-		return reflect.New(rTyp).Interface()
-	}
+func NewSSZCodec(alloc func() SerDes, maxByteLen uint64) *SSZCodec {
 	return &SSZCodec{
-		def:   sszDef,
-		alloc: alloc,
+		alloc:      alloc,
+		maxByteLen: maxByteLen,
 	}
 }
 
@@ -46,31 +44,30 @@ func (c *SSZCodec) MaxByteLen() uint64 {
 	if c == nil {
 		return 0
 	}
-	return c.def.MaxLen()
+	return c.maxByteLen
 }
 
-func (c *SSZCodec) Encode(w io.Writer, input interface{}) error {
+func (c *SSZCodec) Encode(w io.Writer, input codec.Serializable) error {
 	if c == nil {
 		if input != nil {
 			return errors.New("expected empty data, nil input. This codec is no-op")
 		}
 		return nil
 	}
-	_, err := zssz.Encode(w, input, c.def)
-	return err
+	return input.Serialize(codec.NewEncodingWriter(w))
 }
 
-func (c *SSZCodec) Decode(r io.Reader, bytesLen uint64, dest interface{}) error {
+func (c *SSZCodec) Decode(r io.Reader, bytesLen uint64, dest codec.Deserializable) error {
 	if c == nil {
 		if bytesLen != 0 {
 			return errors.New("expected 0 bytes, no definition")
 		}
 		return nil
 	}
-	return zssz.Decode(r, bytesLen, dest, c.def)
+	return dest.Deserialize(codec.NewDecodingReader(r, bytesLen))
 }
 
-func (c *SSZCodec) Alloc() interface{} {
+func (c *SSZCodec) Alloc() SerDes {
 	if c == nil {
 		return nil
 	}
@@ -102,7 +99,7 @@ type RequestInput interface {
 }
 
 type RequestSSZInput struct {
-	Obj interface{}
+	Obj codec.Serializable
 }
 
 func (v RequestSSZInput) Reader(c Codec) (io.Reader, error) {
@@ -125,7 +122,7 @@ type ChunkedResponseHandler interface {
 	ResultCode() ResponseCode
 	ReadRaw() ([]byte, error)
 	ReadErrMsg() (string, error)
-	ReadObj(dest interface{}) error
+	ReadObj(dest codec.Deserializable) error
 }
 
 type chRespHandler struct {
@@ -160,7 +157,7 @@ func (c *chRespHandler) ReadErrMsg() (string, error) {
 	return string(buf.Bytes()), err
 }
 
-func (c *chRespHandler) ReadObj(dest interface{}) error {
+func (c *chRespHandler) ReadObj(dest codec.Deserializable) error {
 	return c.m.ResponseChunkCodec.Decode(c.r, c.chunkSize, dest)
 }
 
@@ -215,12 +212,12 @@ type WriteMsgFn func(msg string) error
 type RequestReader interface {
 	// nil if not an invalid input
 	InvalidInput() error
-	ReadRequest(dest interface{}) error
+	ReadRequest(dest codec.Deserializable) error
 	RawRequest() ([]byte, error)
 }
 
 type RequestResponder interface {
-	WriteResponseChunk(code ResponseCode, data interface{}) error
+	WriteResponseChunk(code ResponseCode, data codec.Serializable) error
 	WriteRawResponseChunk(code ResponseCode, chunk []byte) error
 	StreamResponseChunk(code ResponseCode, size uint64, r io.Reader) error
 	WriteErrorChunk(code ResponseCode, msg string) error
@@ -245,7 +242,7 @@ func (h *chReqHandler) InvalidInput() error {
 	return h.invalidInputErr
 }
 
-func (h *chReqHandler) ReadRequest(dest interface{}) error {
+func (h *chReqHandler) ReadRequest(dest codec.Deserializable) error {
 	if h.invalidInputErr != nil {
 		return h.invalidInputErr
 	}
@@ -271,7 +268,7 @@ func (h *chReqHandler) RawRequest() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (h *chReqHandler) WriteResponseChunk(code ResponseCode, data interface{}) error {
+func (h *chReqHandler) WriteResponseChunk(code ResponseCode, data codec.Serializable) error {
 	h.respBuf.Reset() // re-use buffer for each response chunk
 	if err := h.m.ResponseChunkCodec.Encode(&h.respBuf, data); err != nil {
 		return err

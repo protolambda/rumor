@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/protolambda/zrnt/eth2/beacon"
-	"github.com/protolambda/zssz"
+	"github.com/protolambda/ztyp/codec"
 	"io"
 	"io/ioutil"
 	"os"
@@ -15,6 +15,7 @@ import (
 )
 
 type FileDB struct {
+	spec     *beacon.Spec
 	BasePath string
 }
 
@@ -32,8 +33,7 @@ func (db *FileDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool,
 		}
 		return false, err
 	}
-	_, err = zssz.Encode(f, block.Block, beacon.SignedBeaconBlockSSZ)
-	if err != nil {
+	if err := block.Block.Serialize(db.spec, codec.NewEncodingWriter(f)); err != nil {
 		return false, fmt.Errorf("failed to store block %s: %v", block.Root, err)
 	}
 	return false, nil
@@ -46,12 +46,12 @@ func (db *FileDB) Import(r io.Reader) (exists bool, err error) {
 		return false, err
 	}
 	var dest beacon.SignedBeaconBlock
-	err = zssz.Decode(buf, uint64(len(buf.Bytes())), &dest, beacon.SignedBeaconBlockSSZ)
+	err = dest.Deserialize(db.spec, codec.NewDecodingReader(buf, uint64(len(buf.Bytes()))))
 	if err != nil {
 		return false, fmt.Errorf("failed to decode block, nee valid block to get block root. Err: %v", err)
 	}
 	// Take the hash-tree-root of the BeaconBlock, ignore the signature.
-	return db.Store(context.Background(), WithRoot(&dest))
+	return db.Store(context.Background(), WithRoot(db.spec, &dest))
 }
 
 func (db *FileDB) Get(root beacon.Root, dest *beacon.SignedBeaconBlock) (exists bool, err error) {
@@ -65,7 +65,7 @@ func (db *FileDB) Get(root beacon.Root, dest *beacon.SignedBeaconBlock) (exists 
 	if err != nil {
 		return true, err
 	}
-	err = zssz.Decode(f, uint64(info.Size()), dest, beacon.SignedBeaconBlockSSZ)
+	err = dest.Deserialize(db.spec, codec.NewDecodingReader(f, uint64(info.Size())))
 	return true, err
 }
 
@@ -172,4 +172,8 @@ func (db *FileDB) List() (out []beacon.Root) {
 
 func (db *FileDB) Path() string {
 	return db.BasePath
+}
+
+func (db *FileDB) Spec() *beacon.Spec {
+	return db.spec
 }

@@ -20,7 +20,7 @@ type ChainCreateCmd struct {
 }
 
 func (c *ChainCreateCmd) Help() string {
-	return "Create a new eth2 chain from a pre-state"
+	return "Create a new eth2 chain from a pre-state (using same spec config as state)"
 }
 
 func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
@@ -31,6 +31,7 @@ func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
 	if !exists {
 		return fmt.Errorf("state %s was not found", c.StateRoot)
 	}
+	spec := c.States.Spec()
 	slot, err := state.Slot()
 	if err != nil {
 		return err
@@ -57,12 +58,12 @@ func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	epc, err := state.NewEpochsContext()
+	epc, err := spec.NewEpochsContext(state)
 	if err != nil {
 		return err
 	}
 	entry := chain.NewHotEntry(slot, blockRoot, parentRoot, state, epc)
-	_, err = c.Chains.Create(c.Name, entry)
+	_, err = c.Chains.Create(c.Name, entry, spec)
 	if err != nil {
 		return err
 	}

@@ -34,6 +34,7 @@ func (c handleSync) handle(processingCtx context.Context, runSync SyncFn) error 
 		syncErr = runSync(blocksCh)
 	}()
 
+	spec := c.Blocks.Spec()
 	// TODO: option to buffer batches of blocks, to then process as aggregate.
 
 	i := 0
@@ -45,7 +46,7 @@ processLoop:
 				break processLoop
 			}
 			i += 1
-			withRoot := bdb.WithRoot(block)
+			withRoot := bdb.WithRoot(spec, block)
 			if c.Process {
 				if err := c.Chain.AddBlock(processingCtx, block); err != nil {
 					return fmt.Errorf("failed to process block: %v", err)

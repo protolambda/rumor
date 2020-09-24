@@ -53,7 +53,8 @@ func (c *ByRootCmd) Run(ctx context.Context, args ...string) error {
 		reqCtx, _ := context.WithTimeout(bgCtx, c.Timeout)
 		return reqCtx
 	}
-	method := &methods.BlocksByRootRPCv1
+	spec := c.Blocks.Spec()
+	method := methods.BlocksByRootRPCv1(spec)
 	prot := method.Protocol
 	if c.Compression.Compression != nil {
 		prot += protocol.ID("_" + c.Compression.Compression.Name())

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/track"
-	"github.com/protolambda/zssz"
+	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/codec"
 	"sync"
 )
 
@@ -25,14 +25,14 @@ func NewStatusBook(store ds.Datastore) (*dsStatusBook, error) {
 	return &dsStatusBook{ds: store}, nil
 }
 
-func (sb *dsStatusBook) loadStatus(p peer.ID) (*methods.Status, error) {
+func (sb *dsStatusBook) loadStatus(p peer.ID) (*beacon.Status, error) {
 	key := peerIdToKey(eth2Base, p).Child(statusSuffix)
 	value, err := sb.ds.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("error while fetching status from datastore for peer %s: %s\n", p.Pretty(), err)
 	}
-	var status methods.Status
-	if err := zssz.Decode(bytes.NewReader(value), uint64(len(value)), &status, methods.StatusSSZ); err != nil {
+	var status beacon.Status
+	if err := status.Deserialize(codec.NewDecodingReader(bytes.NewReader(value), uint64(len(value)))); err != nil {
 		return nil, fmt.Errorf("failed parse status bytes from datastore: %v", err)
 	}
 	// cache it
@@ -40,11 +40,11 @@ func (sb *dsStatusBook) loadStatus(p peer.ID) (*methods.Status, error) {
 	return &status, nil
 }
 
-func (sb *dsStatusBook) storeStatus(p peer.ID, st *methods.Status) error {
+func (sb *dsStatusBook) storeStatus(p peer.ID, st *beacon.Status) error {
 	key := peerIdToKey(eth2Base, p).Child(statusSuffix)
-	size := zssz.SizeOf(st, methods.StatusSSZ)
+	size := st.FixedLength()
 	out := bytes.NewBuffer(make([]byte, size, size))
-	if _, err := zssz.Encode(out, st, methods.StatusSSZ); err != nil {
+	if err := st.Serialize(codec.NewEncodingWriter(out)); err != nil {
 		return fmt.Errorf("failed encode status bytes for datastore: %v", err)
 	}
 	if err := sb.ds.Put(key, out.Bytes()); err != nil {
@@ -53,10 +53,10 @@ func (sb *dsStatusBook) storeStatus(p peer.ID, st *methods.Status) error {
 	return nil
 }
 
-func (sb *dsStatusBook) Status(id peer.ID) *methods.Status {
+func (sb *dsStatusBook) Status(id peer.ID) *beacon.Status {
 	dat, loaded := sb.data.Load(id)
 	if loaded {
-		return dat.(*methods.Status)
+		return dat.(*beacon.Status)
 	} else {
 		// lazy-load status into the db
 		st, err := sb.loadStatus(id)
@@ -70,7 +70,7 @@ func (sb *dsStatusBook) Status(id peer.ID) *methods.Status {
 // TODO: option to remove Status from the DB?
 
 // RegisterStatus updates latest peer status
-func (sb *dsStatusBook) RegisterStatus(id peer.ID, st methods.Status) {
+func (sb *dsStatusBook) RegisterStatus(id peer.ID, st beacon.Status) {
 	sb.data.Store(id, &st)
 	return
 }
@@ -80,7 +80,7 @@ func (sb *dsStatusBook) flush() error {
 	// store all statuses to datastore before exiting
 	sb.data.Range(func(key, value interface{}) bool {
 		id := key.(peer.ID)
-		st := value.(*methods.Status)
+		st := value.(*beacon.Status)
 		if err := sb.storeStatus(id, st); err != nil {
 			clErr = err
 			return false
