@@ -26,4 +26,6 @@ type DB interface {
 	List() []beacon.Root
 	// Get Path
 	Path() string
+	// Spec of states
+	Spec() *beacon.Spec
 }

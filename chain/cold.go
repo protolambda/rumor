@@ -66,11 +66,14 @@ type FinalizedChain struct {
 	SlotsByBlockRoot map[Root]Slot
 	// BlockRoots maps the canonical chain state roots to the state slot
 	SlotsByStateRoot map[Root]Slot
+
+	// Spec is holds configuration information for the parameters and types of the chain
+	Spec *beacon.Spec
 }
 
 var _ = ColdChain((*FinalizedChain)(nil))
 
-func NewFinalizedChain(anchorSlot Slot) *FinalizedChain {
+func NewFinalizedChain(anchorSlot Slot, spec *beacon.Spec) *FinalizedChain {
 	initialCapacity := Slot(200)
 	return &FinalizedChain{
 		PubkeyCache:      beacon.EmptyPubkeyCache(),
@@ -79,6 +82,7 @@ func NewFinalizedChain(anchorSlot Slot) *FinalizedChain {
 		StateRoots:       make([]Root, 0, initialCapacity),
 		SlotsByBlockRoot: make(map[Root]Slot, initialCapacity),
 		SlotsByStateRoot: make(map[Root]Slot, initialCapacity),
+		Spec:             spec,
 	}
 }
 

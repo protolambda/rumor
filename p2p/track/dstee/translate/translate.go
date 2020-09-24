@@ -17,8 +17,8 @@ import (
 	"github.com/multiformats/go-base32"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/addrutil"
-	"github.com/protolambda/rumor/p2p/rpc/methods"
-	"github.com/protolambda/zssz"
+	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/codec"
 	"sort"
 	"strconv"
 )
@@ -76,10 +76,10 @@ type AddrBookRecord_CertifiedRecord struct {
 }
 
 type Eth2Data struct {
-	Metadata      *methods.MetaData `json:"metadata,omitempty"`
-	MetadataClaim methods.SeqNr     `json:"metadata_claim,omitempty"`
-	Status        *methods.Status   `json:"status,omitempty"`
-	ENR           *ENRData          `json:"enr,omitempty"`
+	Metadata      *beacon.MetaData `json:"metadata,omitempty"`
+	MetadataClaim beacon.SeqNr     `json:"metadata_claim,omitempty"`
+	Status        *beacon.Status   `json:"status,omitempty"`
+	ENR           *ENRData         `json:"enr,omitempty"`
 }
 
 type PartialPeerstoreEntry struct {
@@ -281,17 +281,17 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 			out.Eth2 = &Eth2Data{}
 			switch parts[3] {
 			case "metadata":
-				var md methods.MetaData
-				if err := zssz.Decode(bytes.NewReader(v), uint64(len(v)), &md, methods.MetaDataSSZ); err == nil {
+				var md beacon.MetaData
+				if err := md.Deserialize(codec.NewDecodingReader(bytes.NewReader(v), uint64(len(v)))); err == nil {
 					out.Eth2.Metadata = &md
 				}
 			case "metadata_claim":
 				if len(v) == 8 {
-					out.Eth2.MetadataClaim = methods.SeqNr(binary.LittleEndian.Uint64(v))
+					out.Eth2.MetadataClaim = beacon.SeqNr(binary.LittleEndian.Uint64(v))
 				}
 			case "status":
-				var st methods.Status
-				if err := zssz.Decode(bytes.NewReader(v), uint64(len(v)), &st, methods.StatusSSZ); err == nil {
+				var st beacon.Status
+				if err := st.Deserialize(codec.NewDecodingReader(bytes.NewReader(v), uint64(len(v)))); err == nil {
 					out.Eth2.Status = &st
 				}
 			case "enr":

@@ -16,7 +16,6 @@ import (
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/protolambda/rumor/p2p/track/dstee"
-	"github.com/protolambda/rumor/p2p/types"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"io"
 	"sync"
@@ -195,7 +194,7 @@ func (ep *dsExtendedPeerstore) GetAllData(id peer.ID) *track.PeerAllData {
 	for _, addr := range ep.Addrs(id) {
 		multiAddrs = append(multiAddrs, addr.String())
 	}
-	var enrAttnets *types.AttnetBits
+	var enrAttnets *beacon.AttnetBits
 
 	var forkDigest *beacon.ForkDigest
 	var nextForkVersion *beacon.Version

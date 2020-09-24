@@ -12,6 +12,7 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/view"
 	"time"
 )
 
@@ -60,7 +61,8 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 		return errors.New("step must not be 0")
 	}
 
-	method := &methods.BlocksByRangeRPCv1
+	spec := c.Blocks.Spec()
+	method := methods.BlocksByRangeRPCv1(spec)
 	peerId := c.PeerID.PeerID
 
 	protocolId := method.Protocol
@@ -77,8 +79,8 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 
 	req := methods.BlocksByRangeReqV1{
 		StartSlot: c.StartSlot,
-		Count:     c.Count,
-		Step:      c.Step,
+		Count:     view.Uint64View(c.Count),
+		Step:      view.Uint64View(c.Step),
 	}
 
 	procCtx := ctx
@@ -96,7 +98,7 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 		Process: c.Process,
 	}.handle(procCtx, func(blocksCh chan<- *beacon.SignedBeaconBlock) error {
 
-		return method.RunRequest(reqCtx, sFn, peerId, c.Compression.Compression, reqresp.RequestSSZInput{Obj: &req}, req.Count,
+		return method.RunRequest(reqCtx, sFn, peerId, c.Compression.Compression, reqresp.RequestSSZInput{Obj: &req}, uint64(req.Count),
 			func() error {
 				// TODO
 				return nil
@@ -120,10 +122,10 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 					return fmt.Errorf("got error response %d on chunk %d: %s", resultCode, chunk.ChunkIndex(), msg)
 				case reqresp.SuccessCode:
 					var block beacon.SignedBeaconBlock
-					if err := chunk.ReadObj(&block); err != nil {
+					if err := chunk.ReadObj(spec.Wrap(&block)); err != nil {
 						return err
 					}
-					if block.Message.Slot < req.StartSlot || uint64(block.Message.Slot-req.StartSlot)%req.Step != 0 || block.Message.Slot >= expectedEnd {
+					if block.Message.Slot < req.StartSlot || uint64(block.Message.Slot-req.StartSlot)%uint64(req.Step) != 0 || block.Message.Slot >= expectedEnd {
 						return fmt.Errorf("bad block, start slot: %d, step: %d, count: %d (implied end: %d), got %d",
 							req.StartSlot, req.Step, req.Count, expectedEnd, block.Message.Slot)
 					}

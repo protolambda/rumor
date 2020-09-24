@@ -6,9 +6,9 @@ import (
 	"fmt"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/track"
-	"github.com/protolambda/zssz"
+	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/codec"
 	"sync"
 )
 
@@ -22,9 +22,9 @@ type dsMetadataBook struct {
 	// cache metadata objects to not load/store them all the time
 	sync.RWMutex
 	// Track metadata with highest sequence number
-	metadatas map[peer.ID]methods.MetaData
+	metadatas map[peer.ID]beacon.MetaData
 	// highest claimed seq nr, we may not have the actual corresponding metadata yet.
-	claims map[peer.ID]methods.SeqNr
+	claims map[peer.ID]beacon.SeqNr
 	// Track how many times we have tried to ask them for metadata without getting an answer
 	fetches map[peer.ID]uint64
 }
@@ -34,30 +34,30 @@ var _ track.MetadataBook = (*dsMetadataBook)(nil)
 func NewMetadataBook(store ds.Datastore) (*dsMetadataBook, error) {
 	return &dsMetadataBook{
 		ds:        store,
-		metadatas: make(map[peer.ID]methods.MetaData),
-		claims:    make(map[peer.ID]methods.SeqNr),
+		metadatas: make(map[peer.ID]beacon.MetaData),
+		claims:    make(map[peer.ID]beacon.SeqNr),
 		fetches:   make(map[peer.ID]uint64),
 	}, nil
 }
 
-func (mb *dsMetadataBook) loadMetadata(p peer.ID) (*methods.MetaData, error) {
+func (mb *dsMetadataBook) loadMetadata(p peer.ID) (*beacon.MetaData, error) {
 	key := peerIdToKey(eth2Base, p).Child(metadataSuffix)
 	value, err := mb.ds.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("error while fetching metadata from datastore for peer %s: %s\n", p.Pretty(), err)
 	}
-	var md methods.MetaData
-	if err := zssz.Decode(bytes.NewReader(value), uint64(len(value)), &md, methods.MetaDataSSZ); err != nil {
+	var md beacon.MetaData
+	if err := md.Deserialize(codec.NewDecodingReader(bytes.NewReader(value), uint64(len(value)))); err != nil {
 		return nil, fmt.Errorf("failed parse metadata bytes from datastore: %v", err)
 	}
 	return &md, nil
 }
 
-func (mb *dsMetadataBook) storeMetadata(p peer.ID, md *methods.MetaData) error {
+func (mb *dsMetadataBook) storeMetadata(p peer.ID, md *beacon.MetaData) error {
 	key := peerIdToKey(eth2Base, p).Child(metadataSuffix)
-	size := zssz.SizeOf(md, methods.MetaDataSSZ)
+	size := md.FixedLength()
 	out := bytes.NewBuffer(make([]byte, size, size))
-	if _, err := zssz.Encode(out, md, methods.MetaDataSSZ); err != nil {
+	if err := md.Serialize(codec.NewEncodingWriter(out)); err != nil {
 		return fmt.Errorf("failed encode metadata bytes for datastore: %v", err)
 	}
 	if err := mb.ds.Put(key, out.Bytes()); err != nil {
@@ -66,17 +66,17 @@ func (mb *dsMetadataBook) storeMetadata(p peer.ID, md *methods.MetaData) error {
 	return nil
 }
 
-func (mb *dsMetadataBook) loadClaim(p peer.ID) (methods.SeqNr, error) {
+func (mb *dsMetadataBook) loadClaim(p peer.ID) (beacon.SeqNr, error) {
 	key := peerIdToKey(eth2Base, p).Child(claimSuffix)
 	value, err := mb.ds.Get(key)
 	if err != nil {
 		return 0, fmt.Errorf("error while fetching claim seq nr from datastore for peer %s: %s\n", p.Pretty(), err)
 	}
-	claim := methods.SeqNr(binary.LittleEndian.Uint64(value))
+	claim := beacon.SeqNr(binary.LittleEndian.Uint64(value))
 	return claim, nil
 }
 
-func (mb *dsMetadataBook) storeClaim(p peer.ID, claim methods.SeqNr) error {
+func (mb *dsMetadataBook) storeClaim(p peer.ID, claim beacon.SeqNr) error {
 	key := peerIdToKey(eth2Base, p).Child(claimSuffix)
 	var dat [8]byte
 	binary.LittleEndian.PutUint64(dat[:], uint64(claim))
@@ -86,7 +86,7 @@ func (mb *dsMetadataBook) storeClaim(p peer.ID, claim methods.SeqNr) error {
 	return nil
 }
 
-func (mb *dsMetadataBook) Metadata(id peer.ID) *methods.MetaData {
+func (mb *dsMetadataBook) Metadata(id peer.ID) *beacon.MetaData {
 	mb.Lock()
 	defer mb.Unlock()
 	dat, ok := mb.metadatas[id]
@@ -101,7 +101,7 @@ func (mb *dsMetadataBook) Metadata(id peer.ID) *methods.MetaData {
 	return &dat
 }
 
-func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq methods.SeqNr, ok bool) {
+func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 	mb.Lock()
 	defer mb.Unlock()
 	dat, ok := mb.claims[id]
@@ -117,7 +117,7 @@ func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq methods.SeqNr, ok bool) {
 }
 
 // RegisterSeqClaim updates the latest supposed seq nr of the peer
-func (mb *dsMetadataBook) RegisterSeqClaim(id peer.ID, seq methods.SeqNr) (newer bool) {
+func (mb *dsMetadataBook) RegisterSeqClaim(id peer.ID, seq beacon.SeqNr) (newer bool) {
 	mb.Lock()
 	dat, ok := mb.claims[id]
 	defer mb.Unlock()
@@ -140,7 +140,7 @@ func (mb *dsMetadataBook) RegisterMetaFetch(id peer.ID) uint64 {
 }
 
 // RegisterMetadata updates metadata, if newer than previous. Resetting ongoing fetch counter if it's new enough
-func (mb *dsMetadataBook) RegisterMetadata(id peer.ID, md methods.MetaData) (newer bool) {
+func (mb *dsMetadataBook) RegisterMetadata(id peer.ID, md beacon.MetaData) (newer bool) {
 	mb.Lock()
 	defer mb.Unlock()
 	dat, ok := mb.metadatas[id]

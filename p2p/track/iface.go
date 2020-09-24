@@ -6,9 +6,7 @@ import (
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
-	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/track/dstee"
-	"github.com/protolambda/rumor/p2p/types"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"time"
 )
@@ -30,17 +28,17 @@ type ENRBook interface {
 
 type StatusBook interface {
 	// Status retrieves the peer status, and may be nil if there is no status
-	Status(peer.ID) *methods.Status
+	Status(peer.ID) *beacon.Status
 	// RegisterStatus updates the status of the peer
-	RegisterStatus(peer.ID, methods.Status)
+	RegisterStatus(peer.ID, beacon.Status)
 }
 
 type MetadataBook interface {
-	Metadata(peer.ID) *methods.MetaData
-	ClaimedSeq(peer.ID) (seq methods.SeqNr, ok bool)
-	RegisterSeqClaim(id peer.ID, seq methods.SeqNr) (newer bool)
+	Metadata(peer.ID) *beacon.MetaData
+	ClaimedSeq(peer.ID) (seq beacon.SeqNr, ok bool)
+	RegisterSeqClaim(id peer.ID, seq beacon.SeqNr) (newer bool)
 	RegisterMetaFetch(peer.ID) uint64
-	RegisterMetadata(id peer.ID, md methods.MetaData) (newer bool)
+	RegisterMetadata(id peer.ID, md beacon.MetaData) (newer bool)
 }
 
 type PeerAllData struct {
@@ -60,14 +58,14 @@ type PeerAllData struct {
 	NextForkVersion *beacon.Version    `json:"enr_next_fork_version,omitempty"`
 	NextForkEpoch   *beacon.Epoch      `json:"enr_next_fork_epoch,omitempty"`
 
-	Attnets *types.AttnetBits `json:"enr_attnets,omitempty"`
+	Attnets *beacon.AttnetBits `json:"enr_attnets,omitempty"`
 
 	// Metadata with highest sequence number
-	MetaData *methods.MetaData `json:"metadata,omitempty"`
+	MetaData *beacon.MetaData `json:"metadata,omitempty"`
 	// Highest claimed seq nr, we may not have the actual corresponding metadata yet.
-	ClaimedSeq methods.SeqNr `json:"claimed_seq,omitempty"`
+	ClaimedSeq beacon.SeqNr `json:"claimed_seq,omitempty"`
 	// Latest status
-	Status *methods.Status `json:"status,omitempty"`
+	Status *beacon.Status `json:"status,omitempty"`
 	// Latest ENR
 	ENR *enode.Node `json:"enr,omitempty"`
 }

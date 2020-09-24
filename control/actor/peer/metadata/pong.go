@@ -9,6 +9,7 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/rumor/p2p/track"
+	"github.com/protolambda/zrnt/eth2/beacon"
 	"time"
 )
 
@@ -53,14 +54,14 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 		f := map[string]interface{}{
 			"from": peerId.String(),
 		}
-		var ping methods.Ping
+		var ping beacon.Ping
 		err := handler.ReadRequest(&ping)
 		if err != nil {
 			f["input_err"] = err.Error()
 			_ = handler.WriteErrorChunk(reqresp.InvalidReqCode, "could not parse ping request")
 			c.Log.WithFields(f).Warnf("failed to read ping request: %v", err)
 		} else {
-			pong := methods.Pong(c.PeerMetadataState.Local.SeqNumber)
+			pong := beacon.Pong(c.PeerMetadataState.Local.SeqNumber)
 			if err := handler.WriteResponseChunk(reqresp.SuccessCode, &pong); err != nil {
 				c.Log.WithFields(f).Warnf("failed to respond to ping request: %v", err)
 			} else {
@@ -69,7 +70,7 @@ func (c *PeerMetadataPongCmd) Run(ctx context.Context, args ...string) error {
 			updating := c.ForceUpdate
 			if !updating && c.Update {
 				current := c.Book.Metadata(peerId)
-				if current == nil || current.SeqNumber < methods.SeqNr(ping) {
+				if current == nil || current.SeqNumber < beacon.SeqNr(ping) {
 					fetches := c.Book.RegisterMetaFetch(peerId)
 					updating = fetches <= c.MaxTries
 				}

@@ -13,7 +13,6 @@ import (
 	"github.com/protolambda/rumor/control/actor/flags"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/peering/enrstate"
-	"github.com/protolambda/rumor/p2p/types"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"net"
 	"strconv"
@@ -38,7 +37,7 @@ type EnrMakeCmd struct {
 	GenPriv bool                 `ask:"--gen-priv" help:"If no private key is known, and none is provided, then generate one"`
 	Priv    flags.P2pPrivKeyFlag `ask:"--priv" help:"Private key, in raw hex encoded format (32 bytes -> 64 hex chars with optional 0x prefix). Cannot overwrite a current private key."`
 
-	Attnets         types.AttnetBits  `ask:"--attnets" help:"Attnet bitfield, as bytes."`
+	Attnets         beacon.AttnetBits `ask:"--attnets" help:"Attnet bitfield, as bytes."`
 	ForkDigest      beacon.ForkDigest `ask:"--fork-digest" help:"Eth2 fork digest"`
 	NextForkVersion beacon.Version    `ask:"--next-fork-version" help:"Eth2 next fork version"`
 	NextForkEpoch   beacon.Epoch      `ask:"--next-fork-epoch" help:"Eth2 next fork epoch"`
@@ -171,7 +170,7 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 	if c.ForkDigestChanged || c.NextForkVersionChanged || c.NextForkEpochChanged {
 		// If they didn't all change, merge in the existing data (if any)
 		if !(c.ForkDigestChanged && c.NextForkVersionChanged && c.NextForkEpochChanged) {
-			var currEth2 *types.Eth2Data = nil
+			var currEth2 *beacon.Eth2Data = nil
 			if dat, exists, err := addrutil.ParseEnrEth2Data(node); err != nil && exists {
 				currEth2 = dat
 			}
@@ -189,7 +188,7 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 			}
 		}
 
-		c.Lazy.Current.SetEth2Data(&types.Eth2Data{
+		c.Lazy.Current.SetEth2Data(&beacon.Eth2Data{
 			ForkDigest:      c.ForkDigest,
 			NextForkVersion: c.NextForkVersion,
 			NextForkEpoch:   c.NextForkEpoch,

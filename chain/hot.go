@@ -84,6 +84,9 @@ type UnfinalizedChain struct {
 	// non-canonical empty entries are ignored, as there can theoretically be an unlimited number of.
 	// Non-canonical non-empty entries are still available, to track what is getting abandoned by the chain
 	BlockSink BlockSink
+
+	// Spec is holds configuration information for the parameters and types of the chain
+	Spec *beacon.Spec
 }
 
 type HotChainIter struct {
@@ -136,7 +139,7 @@ func (fn BlockSinkFn) Sink(entry *HotEntry, canonical bool) error {
 	return fn(entry, canonical)
 }
 
-func NewUnfinalizedChain(finalizedBlock *HotEntry, sink BlockSink) (*UnfinalizedChain, error) {
+func NewUnfinalizedChain(finalizedBlock *HotEntry, sink BlockSink, spec *beacon.Spec) (*UnfinalizedChain, error) {
 	fin, err := finalizedBlock.state.FinalizedCheckpoint()
 	if err != nil {
 		return nil, err
@@ -159,6 +162,7 @@ func NewUnfinalizedChain(finalizedBlock *HotEntry, sink BlockSink) (*Unfinalized
 		Entries:    map[BlockSlotKey]*HotEntry{key: finalizedBlock},
 		State2Key:  map[Root]BlockSlotKey{finalizedBlock.StateRoot(): key},
 		BlockSink:  sink,
+		Spec:       spec,
 	}
 	uc.ForkChoice = forkchoice.NewForkChoice(finCh, justCh, forkchoice.BlockSinkFn(uc.OnPrunedBlock))
 	return uc, nil
@@ -280,7 +284,7 @@ func (uc *UnfinalizedChain) Head() (ChainEntry, error) {
 
 func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.SignedBeaconBlock) error {
 	block := &signedBlock.Message
-	blockRoot := block.HashTreeRoot()
+	blockRoot := block.HashTreeRoot(uc.Spec, tree.GetHashFn())
 
 	pre, err := uc.ClosestFrom(block.ParentRoot, block.Slot)
 	if err != nil {
@@ -303,14 +307,14 @@ func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.Si
 
 	// Process empty slots
 	for slot := pre.Slot() + 1; slot < block.Slot; {
-		if err := state.ProcessSlot(ctx); err != nil {
+		if err := uc.Spec.ProcessSlot(ctx, state); err != nil {
 			return err
 		}
 		// Per-epoch transition happens at the start of the first slot of every epoch.
 		// (with the slot still at the end of the last epoch)
-		isEpochEnd := (slot + 1).ToEpoch() != slot.ToEpoch()
+		isEpochEnd := uc.Spec.SlotToEpoch(slot+1) != uc.Spec.SlotToEpoch(slot)
 		if isEpochEnd {
-			if err := state.ProcessEpoch(ctx, epc); err != nil {
+			if err := uc.Spec.ProcessEpoch(ctx, epc, state); err != nil {
 				return err
 			}
 		}
@@ -340,11 +344,11 @@ func (uc *UnfinalizedChain) AddBlock(ctx context.Context, signedBlock *beacon.Si
 		epc = epc.Clone()
 	}
 
-	if err := state.StateTransition(ctx, epc, signedBlock, true); err != nil {
+	if err := uc.Spec.StateTransition(ctx, epc, state, signedBlock, true); err != nil {
 		return err
 	}
 	// And seal the state, need the header and block/state roots to update.
-	if err := state.ProcessSlot(ctx); err != nil {
+	if err := uc.Spec.ProcessSlot(ctx, state); err != nil {
 		return err
 	}
 
@@ -404,7 +408,7 @@ func (uc *UnfinalizedChain) AddAttestation(att *beacon.Attestation) error {
 	if err != nil {
 		return err
 	}
-	indexedAtt, err := att.ConvertToIndexed(committee)
+	indexedAtt, err := att.ConvertToIndexed(uc.Spec, committee)
 	if err != nil {
 		return err
 	}

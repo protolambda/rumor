@@ -9,11 +9,12 @@ import (
 	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/rumor/p2p/rpc/reqresp"
 	"github.com/protolambda/rumor/p2p/track"
+	"github.com/protolambda/zrnt/eth2/beacon"
 )
 
 type PeerStatusState struct {
 	Following bool
-	Local     methods.Status
+	Local     beacon.Status
 }
 
 type PeerStatusCmd struct {
@@ -51,7 +52,7 @@ func (c *PeerStatusState) Routes() []string {
 }
 
 func (c *PeerStatusState) fetch(book track.StatusBook, sFn reqresp.NewStreamFn, ctx context.Context, peerID peer.ID, comp reqresp.Compression) (
-	resCode reqresp.ResponseCode, errMsg string, data *methods.Status, err error) {
+	resCode reqresp.ResponseCode, errMsg string, data *beacon.Status, err error) {
 	resCode = reqresp.ServerErrCode // error by default
 	err = methods.StatusRPCv1.RunRequest(ctx, sFn, peerID, comp,
 		reqresp.RequestSSZInput{Obj: &c.Local}, 1,
@@ -68,7 +69,7 @@ func (c *PeerStatusState) fetch(book track.StatusBook, sFn reqresp.NewStreamFn, 
 				}
 				errMsg = msg
 			case reqresp.SuccessCode:
-				var stat methods.Status
+				var stat beacon.Status
 				if err := chunk.ReadObj(&stat); err != nil {
 					return err
 				}

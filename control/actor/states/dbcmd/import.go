@@ -8,6 +8,7 @@ import (
 	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/zrnt/eth2/beacon"
+	"github.com/protolambda/ztyp/codec"
 	"github.com/protolambda/ztyp/tree"
 	"io"
 	"os"
@@ -50,7 +51,7 @@ func (c *StatesImportCmd) Run(ctx context.Context, args ...string) error {
 			r = f
 		}
 		var err error
-		state, err = beacon.AsBeaconStateView(beacon.BeaconStateType.Deserialize(r, size))
+		state, err = beacon.AsBeaconStateView(c.Spec().BeaconState().Deserialize(codec.NewDecodingReader(r, size)))
 		if err != nil {
 			return err
 		}

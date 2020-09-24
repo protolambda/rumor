@@ -3,7 +3,6 @@ package status
 import (
 	"context"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/protolambda/rumor/p2p/rpc/methods"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"github.com/sirupsen/logrus"
 )
@@ -28,7 +27,7 @@ func (c *PeerStatusSetCmd) Help() string {
 }
 
 func (c *PeerStatusSetCmd) Run(ctx context.Context, args ...string) error {
-	st := methods.Status{}
+	st := beacon.Status{}
 	if c.Merge {
 		st = c.PeerStatusState.Local
 	}

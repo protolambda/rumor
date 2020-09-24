@@ -4,6 +4,7 @@ import (
 	"context"
 	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/zrnt/eth2/configs"
 )
 
 type CreateCmd struct {
@@ -19,7 +20,7 @@ func (c *CreateCmd) Help() string {
 }
 
 func (c *CreateCmd) Run(ctx context.Context, args ...string) error {
-	_, err := c.DBs.Create(c.Name, c.Path)
+	_, err := c.DBs.Create(c.Name, c.Path, configs.Mainnet) // TODO choose config
 	if err != nil {
 		return err
 	}

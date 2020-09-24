@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/protolambda/zrnt/eth2/beacon"
-	"github.com/protolambda/zrnt/eth2/util/ssz"
-	"github.com/protolambda/zssz"
+	"github.com/protolambda/ztyp/codec"
+	"github.com/protolambda/ztyp/tree"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -17,12 +17,13 @@ type MemDB struct {
 	data        sync.Map
 	removalLock sync.Mutex
 	stats       DBStats
+	spec        *beacon.Spec
 }
 
 func (db *MemDB) Store(ctx context.Context, block *BlockWithRoot) (exists bool, err error) {
 	// Released when the block is removed from the DB
 	buf := getPoolBlockBuf()
-	_, err = zssz.Encode(buf, block.Block, beacon.SignedBeaconBlockSSZ)
+	err = block.Block.Serialize(db.spec, codec.NewEncodingWriter(buf))
 	if err != nil {
 		return false, fmt.Errorf("failed to store block %s: %v", block.Root, err)
 	}
@@ -49,12 +50,12 @@ func (db *MemDB) Import(r io.Reader) (exists bool, err error) {
 		return false, err
 	}
 	var dest beacon.SignedBeaconBlock
-	err = zssz.Decode(buf, uint64(len(buf.Bytes())), &dest, beacon.SignedBeaconBlockSSZ)
+	err = dest.Deserialize(db.spec, codec.NewDecodingReader(buf, uint64(len(buf.Bytes()))))
 	if err != nil {
 		return false, fmt.Errorf("failed to decode block, nee valid block to get block root. Err: %v", err)
 	}
 	// Take the hash-tree-root of the BeaconBlock, ignore the signature.
-	root := beacon.Root(ssz.HashTreeRoot(&dest.Message, beacon.BeaconBlockSSZ))
+	root := dest.Message.HashTreeRoot(db.spec, tree.GetHashFn())
 	existing, loaded := db.data.LoadOrStore(root, buf.Bytes())
 	if loaded {
 		existingBlock := existing.(*beacon.SignedBeaconBlock)
@@ -77,7 +78,7 @@ func (db *MemDB) Get(root beacon.Root, dest *beacon.SignedBeaconBlock) (exists b
 		return false, nil
 	}
 	buf := dat.(*bytes.Buffer)
-	err = zssz.Decode(buf, uint64(len(buf.Bytes())), dest, beacon.SignedBeaconBlockSSZ)
+	err = dest.Deserialize(db.spec, codec.NewDecodingReader(buf, uint64(len(buf.Bytes()))))
 	return true, err
 }
 
@@ -146,4 +147,8 @@ func (db *MemDB) List() (out []beacon.Root) {
 
 func (db *MemDB) Path() string {
 	return ""
+}
+
+func (db *MemDB) Spec() *beacon.Spec {
+	return db.spec
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/protolambda/rumor/p2p/types"
+	"github.com/protolambda/zrnt/eth2/beacon"
 	"github.com/sirupsen/logrus"
 	"net"
 )
@@ -33,8 +33,8 @@ type Dv5Settings interface {
 	SetIP(ip net.IP)
 	SetTCP(port uint16)
 	SetUDP(port uint16)
-	SetEth2Data(dat *types.Eth2Data)
-	SetAttnets(dat *types.AttnetBits)
+	SetEth2Data(dat *beacon.Eth2Data)
+	SetAttnets(dat *beacon.AttnetBits)
 }
 
 type Discv5Impl struct {
