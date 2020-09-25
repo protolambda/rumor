@@ -305,16 +305,29 @@ These are reserved names, used for shell functionality:
 SSH with socket linking to connect via TCP/IPC is extra work, if all you need is a human-readable shell.
 Instead, Rumor can serve its `shell` mode as SSH server, to make remote-access easy.
 
-```
+```shell
 # One-time only: generate a key for the server, so it has the same identity after restarting (avoid SSH trust warnings)
 ssh-keygen -f rumor_ssh_server -t rsa -b 4096 -P ""
+``` 
 
+SSH users have two options for authentication:
+
+1. Password based:
+```shell
 # Serve rumor on SSH (change user details)
-# TODO: Support for authorized keys, instead of user/pass pairs.
 rumor serve --ssh=0.0.0.0:5000 --ssh-key=rumor_ssh_server --ssh-users=myuser:1234 --ssh-users=other:abcd
 
 # Login directly into rumor shell (change host details)
 ssh myuser@1.2.3.4 -p 5000
+```
+
+2. Key based:
+```shell
+# Serve rumor on SSH (change user details)
+rumor serve --ssh=0.0.0.0:5000 --ssh-key=rumor_ssh_server --ssh-authorized-keys ~/.ssh/authorized_keys
+
+# Login directly into rumor shell (change host details)
+ssh -i some-key-that-has-been-authorized myuser@1.2.3.4 -p 5000
 ```
 
 ### HTTP POST usage

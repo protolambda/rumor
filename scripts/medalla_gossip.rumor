@@ -1,6 +1,6 @@
 gossip start
 
-fork_digest="0xe7a75d5a"
+fork_digest="e7a75d5a"
 topic_name="beacon_block"
 encoding="ssz_snappy"
 blocks_topic="/eth2/$fork_digest/$topic_name/$encoding"
