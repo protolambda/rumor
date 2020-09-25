@@ -52,8 +52,8 @@ require (
 	github.com/multiformats/go-multiaddr-net v0.1.5
 	github.com/multiformats/go-multistream v0.1.2
 	github.com/protolambda/ask v0.0.5
-	github.com/protolambda/zrnt v0.12.2-alpha.1
-	github.com/protolambda/ztyp v0.0.2
+	github.com/protolambda/zrnt v0.12.4
+	github.com/protolambda/ztyp v0.1.0
 	github.com/sirupsen/logrus v1.6.0
 	github.com/spf13/cobra v1.0.0
 	golang.org/x/crypto v0.0.0-20200728195943-123391ffb6de // indirect
@@ -63,9 +63,4 @@ require (
 	golang.org/x/text v0.3.3 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	mvdan.cc/sh/v3 v3.1.2
-)
-
-replace (
-	github.com/protolambda/zrnt => ../zrnt
-	github.com/protolambda/ztyp => ../ztyp
 )
