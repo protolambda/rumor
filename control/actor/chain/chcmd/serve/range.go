@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -45,6 +46,11 @@ func (c *ByRangeCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
+
+	if c.Blocks == nil {
+		return errors.New("need a blocks DB to serve blocks from")
+	}
+
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	sCtxFn := func() context.Context {
 		if c.Timeout == 0 {

@@ -33,7 +33,7 @@ func (c *ChainCmd) Cmd(route string) (cmd interface{}, err error) {
 	case "head":
 		cmd = &head.HeadCmd{Base: c.Base}
 	case "serve":
-		cmd = &serve.ServeCmd{Base: c.Base}
+		cmd = &serve.ServeCmd{Base: c.Base, Chain: c.Chain, Blocks: c.Blocks}
 	case "sync":
 		cmd = &sync.SyncCmd{Base: c.Base, Chain: c.Chain, Blocks: c.Blocks}
 	case "votes":
