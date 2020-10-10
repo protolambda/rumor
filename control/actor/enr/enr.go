@@ -20,7 +20,7 @@ type EnrCmd struct {
 func (c *EnrCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "view":
-		cmd = &EnrViewCmd{Base: c.Base}
+		cmd = &EnrViewCmd{Base: c.Base, Lazy: c.Lazy}
 	case "gen-key":
 		cmd = &EnrGenKeyCmd{Base: c.Base}
 	case "make":
