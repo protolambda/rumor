@@ -19,6 +19,7 @@ logs
 *.sock
 *.log
 *.csv
+*.json
 
 medalla
 
