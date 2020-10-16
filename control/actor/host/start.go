@@ -2,10 +2,12 @@ package host
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	gcrypto "github.com/ethereum/go-ethereum/crypto"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	mplex "github.com/libp2p/go-libp2p-mplex"
@@ -84,11 +86,12 @@ func (c *HostStartCmd) Run(ctx context.Context, args ...string) error {
 			// Check if we already have a key
 			if current := c.GetPriv(); current == nil {
 				// generate new private key if non was specified
-				genp, _, err := crypto.GenerateKeyPairWithReader(crypto.Secp256k1, -1, rand.Reader)
+				genp, err := ecdsa.GenerateKey(gcrypto.S256(), rand.Reader)
 				if err != nil {
-					return err
+					return fmt.Errorf("failed to generate key: %v", err)
 				}
-				priv = genp.(*crypto.Secp256k1PrivateKey)
+				priv = (*crypto.Secp256k1PrivateKey)(genp)
+				priv.Curve = gcrypto.S256()
 				p, err := priv.Raw()
 				if err != nil {
 					return err
