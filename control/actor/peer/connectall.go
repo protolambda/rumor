@@ -7,6 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/protolambda/rumor/control/actor/base"
+	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"reflect"
@@ -243,6 +244,19 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 				for _, p := range storedPeers {
 					// Check if it didn't fail before (unknown peer or success last time)
 					if v, ok := peerAttempts[p]; !ok || v == 0 {
+						if c.Filtering { // optionally filter by fork-digest
+							enr := c.Store.LatestENR(p)
+							if enr == nil {
+								continue
+							}
+							eth2Data, ok, err := addrutil.ParseEnrEth2Data(enr)
+							if err != nil || !ok {
+								continue
+							}
+							if eth2Data.ForkDigest != c.FilterDigest {
+								continue
+							}
+						}
 						// Check if we're connected, or if we can't connect
 						if status := h.Network().Connectedness(p); status != network.Connected && status != network.CannotConnect {
 							schedules = append(schedules, p)
