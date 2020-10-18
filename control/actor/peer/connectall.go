@@ -6,6 +6,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/rumor/p2p/track"
@@ -177,13 +178,22 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 			if !ok { // if background context closes, the workers will stop, and free up the workersGroup
 				break
 			}
+			// libp2p complains if we put multi-addresses that include the peer ID into the Addrs list.
+			addrs := c.Store.Addrs(p)
 			addrInfo := peer.AddrInfo{
 				ID:    p,
-				Addrs: nil,
+				Addrs: make([]ma.Multiaddr, 0, len(addrs)),
+			}
+			for _, m := range addrs {
+				transport, _ := peer.SplitAddr(m)
+				if transport == nil {
+					continue
+				}
+				addrInfo.Addrs = append(addrInfo.Addrs, transport)
 			}
 			ctx, _ := context.WithTimeout(ctx, c.Timeout)
 			attemptLog := log.WithField("peer_id", p)
-			attemptLog.Debug("attempting connection to peer")
+			attemptLog.WithField("addrs", addrInfo.Addrs).Debug("attempting connection to peer")
 			// Slight chance we're already connected due to duplicate scheduling, but that's ok, nothing happens.
 			if err := h.Connect(ctx, addrInfo); err != nil {
 				// increment attempts
@@ -196,15 +206,18 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 					if a >= priorityFloor {
 						a = priorityFloor
 					}
-					attemptLog.WithField("attempts", a).
-						Warn("failed connection attempt, scheduling retry...")
+					attemptLog.WithError(err).WithField("attempts", a).
+						Debug("failed connection attempt, scheduling retry...")
 					go func() {
 						// The lower the priority, the longer we wait.
 						time.Sleep(time.Second * 5 * time.Duration(pi))
 						if _, ok := schedule(p, int(a)); !ok {
-							attemptLog.Warn("failed to reschedule, dropping attempt")
+							attemptLog.Debug("failed to reschedule, dropping attempt")
 						}
 					}()
+				} else {
+					attemptLog.WithError(err).WithField("attempts", a).
+						Debug("failed connection attempt, reached maximum, no retry")
 				}
 			} else {
 				log.WithField("peer_id", p).Debug("successful connection made")
@@ -255,8 +268,8 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 								continue
 							}
 						}
-						// Check if we're connected, or if we can't connect
-						if status := h.Network().Connectedness(p); status != network.Connected && status != network.CannotConnect {
+						// Check if we're connected already
+						if status := h.Network().Connectedness(p); status != network.Connected {
 							schedules = append(schedules, p)
 						}
 					}
