@@ -57,21 +57,6 @@ func priorityPeerConsumer(prioritized []chan peer.ID) consumePeerFn {
 		panic("too many channels to prioritize")
 	}
 
-	lastPriority := uint64(len(prioritized) - 1)
-	lastCh := prioritized[lastPriority]
-	next := func(ctx context.Context) (res peer.ID, priority uint64, ok bool) {
-		select {
-		case <-ctx.Done():
-			return "", 0, false
-		case id, ok := <-lastCh:
-			return id, lastPriority, ok
-		}
-	}
-	// if it's the only one, then we don't have more work to do.
-	if len(prioritized) == 1 {
-		return next
-	}
-
 	selectCases := make([]reflect.SelectCase, 0, len(prioritized))
 	for _, ch := range prioritized {
 		selectCases = append(selectCases, reflect.SelectCase{
@@ -84,18 +69,19 @@ func priorityPeerConsumer(prioritized []chan peer.ID) consumePeerFn {
 	// ctx/0/default(ctx/0/1/default(ctx/0/1/2/default(0/1/2/3/default(...))))
 	withBackup := func(chs []reflect.SelectCase, forPriority uint64, fn consumePeerFn) consumePeerFn {
 		return func(ctx context.Context) (res peer.ID, priority uint64, ok bool) {
-			options := make([]reflect.SelectCase, len(chs)+2, len(chs)+2)
+			options := make([]reflect.SelectCase, len(chs)+1, len(chs)+2)
 			options[0] = reflect.SelectCase{
 				Dir:  reflect.SelectRecv,
 				Chan: reflect.ValueOf(ctx.Done()),
 			}
-			copy(options[1:len(options)-1], chs)
-			options[len(options)-1] = reflect.SelectCase{
-				Dir: reflect.SelectDefault,
+			copy(options[1:], chs)
+			if fn != nil {
+				options = append(options, reflect.SelectCase{
+					Dir: reflect.SelectDefault,
+				})
 			}
-
 			chosen, val, ok := reflect.Select(options)
-			if chosen == len(options)-1 { // the default case
+			if chosen == len(chs)+1 { // the select-default case
 				return fn(ctx)
 			}
 			if !ok {
@@ -105,8 +91,9 @@ func priorityPeerConsumer(prioritized []chan peer.ID) consumePeerFn {
 		}
 	}
 
-	for i := len(prioritized) - 2; i >= 0; i-- {
-		next = withBackup(selectCases[i:], uint64(i), next)
+	var next consumePeerFn = nil
+	for i := len(prioritized) - 1; i >= 0; i-- {
+		next = withBackup(selectCases[:i+1], uint64(i), next)
 	}
 	return next
 }
@@ -129,6 +116,15 @@ func priorityPeerScheduler(prioritized []chan peer.ID) func(p peer.ID, priority 
 	}
 }
 
+func closeSchedulingChannels(prioritized []chan peer.ID) {
+	for i := 0; i < len(prioritized); i++ {
+		// future schedules will block, and resort to lower priority channel, but none will be left, so they exit.
+		ch := prioritized[i]
+		prioritized[i] = nil
+		close(ch)
+	}
+}
+
 func (c *PeerConnectAllCmd) Run(ctx context.Context, args ...string) error {
 	h, err := c.Host()
 	if err != nil {
@@ -147,7 +143,7 @@ func (c *PeerConnectAllCmd) Run(ctx context.Context, args ...string) error {
 
 	c.Control.RegisterStop(func(ctx context.Context) error {
 		bgCancel()
-		c.Log.Infof("Stopped polling")
+		c.Log.Infof("Stopped auto-connecting")
 		<-done
 		return nil
 	})
@@ -166,11 +162,7 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 	for i := range byAttempts {
 		byAttempts[i] = make(chan peer.ID, 100)
 	}
-	defer func() {
-		for _, c := range byAttempts {
-			close(c)
-		}
-	}()
+	defer closeSchedulingChannels(byAttempts)
 	next := priorityPeerConsumer(byAttempts)
 	schedule := priorityPeerScheduler(byAttempts)
 
@@ -179,19 +171,19 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 		defer workersGroup.Done()
 		log := c.Log.WithField("worker", i)
 
+		log.Info("started worker")
 		for {
 			p, pi, ok := next(ctx)
 			if !ok { // if background context closes, the workers will stop, and free up the workersGroup
 				break
 			}
-			// The lower the priority, the longer we wait. Priority 0 doesn't wait.
-			time.Sleep(time.Second * 5 * time.Duration(pi))
 			addrInfo := peer.AddrInfo{
 				ID:    p,
 				Addrs: nil,
 			}
 			ctx, _ := context.WithTimeout(ctx, c.Timeout)
-			log.WithField("peer_id", p).Debug("attempting connection to peer")
+			attemptLog := log.WithField("peer_id", p)
+			attemptLog.Debug("attempting connection to peer")
 			// Slight chance we're already connected due to duplicate scheduling, but that's ok, nothing happens.
 			if err := h.Connect(ctx, addrInfo); err != nil {
 				// increment attempts
@@ -204,9 +196,15 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 					if a >= priorityFloor {
 						a = priorityFloor
 					}
-					log.WithField("peer_id", p).WithField("attempts", a).
+					attemptLog.WithField("attempts", a).
 						Warn("failed connection attempt, scheduling retry...")
-					schedule(p, int(a))
+					go func() {
+						// The lower the priority, the longer we wait.
+						time.Sleep(time.Second * 5 * time.Duration(pi))
+						if _, ok := schedule(p, int(a)); !ok {
+							attemptLog.Warn("failed to reschedule, dropping attempt")
+						}
+					}()
 				}
 			} else {
 				log.WithField("peer_id", p).Debug("successful connection made")
@@ -268,11 +266,10 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 				c.Log.Infof("scanned peerstore, found %d peers to schedule", len(schedules))
 				count := len(h.Network().Peers())
 				if est := uint64(count + len(schedules)); est > c.MaxPeers {
-					extra := c.MaxPeers - est
-					if extra >= uint64(len(schedules)) {
+					if uint64(count) >= c.MaxPeers {
 						schedules = nil
 					} else {
-						schedules = schedules[:extra]
+						schedules = schedules[:c.MaxPeers-uint64(count)]
 					}
 					c.Log.Warnf("too many peers, adjusted scheduled peers to %d", len(schedules))
 				}
