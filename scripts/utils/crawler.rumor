@@ -1,0 +1,15 @@
+include enr.rumor
+include peerstore.rumor
+include peerstore_tee.rumor
+include start_host.rumor
+# include setup_chain.rumor
+include medalla_status.rumor
+include drop_goodbyes.rumor
+include polling.rumor
+include sync.rumor
+# include sync_chain_serve.rumor
+include sync_chain_drop.rumor
+include gossip.rumor
+include listen.rumor
+include medalla_bootnodes.rumor
+include dv5.rumor

@@ -1,0 +1,3 @@
+host listen --tcp=$p2p_port --ip=0.0.0.0
+# We're interested in all connections and streams
+host notify all
