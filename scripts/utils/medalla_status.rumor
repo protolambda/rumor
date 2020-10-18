@@ -1,5 +1,9 @@
 # Set up a genesis Medalla status
 
+fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+
+set -e
+
 # We zero out attnets here, even though we advertise it in the ENR. We can't really support the attnets without gossip.
 peer metadata set \
       --attnets="0x0000000000000000" \

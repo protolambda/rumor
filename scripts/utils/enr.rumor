@@ -1,5 +1,7 @@
+set -e
+
 external_ip="$(curl -s v4.ident.me)"
-p2p_port=9030
+p2p_port=${P2P_PORT:-9000}
 
 echo "External IP used in ENRs: $external_ip"
 echo "External port used in ENRs: $p2p_port"
@@ -10,6 +12,7 @@ enr make \
   --ip="$external_ip" \
   --tcp=$p2p_port \
   --udp=$p2p_port \
+  --priv=$P2P_PRIV_KEY \
   --static-ip="$external_ip" \
   --fallback-udp=$p2p_port \
   --attnets="0xffffffffffffffff" \

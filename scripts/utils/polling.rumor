@@ -1,3 +1,5 @@
+set -e
+
 peer status serve
 peer metadata serve
 

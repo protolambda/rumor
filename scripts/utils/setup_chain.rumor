@@ -1,3 +1,5 @@
+set -e
+
 # TODO state is a memory DB, since persistence is not optimized to prune away duplicate info
 states create statedb
 states db import --input=$PWD/rumordata/genesis.ssz

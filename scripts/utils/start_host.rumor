@@ -1,3 +1,5 @@
+set -e
+
 # Try and get 400 peers connected, because why not, we're a crawler.
 # And tag, see how many users identify us
 host start --identify=true --libp2p-ping=true \

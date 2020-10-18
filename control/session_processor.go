@@ -118,6 +118,15 @@ func (sp *SessionProcessor) NewSession(log logrus.FieldLogger) *Session {
 	return s
 }
 
+func (sp *SessionProcessor) NewSubSession(log logrus.FieldLogger, ctx context.Context, parentEnv expand.Environ) *Session {
+	sp.sessionsLock.Lock()
+	sp.sessionIdCounter += 1
+	s := newSession(SessionID(fmt.Sprintf("s%d", sp.sessionIdCounter)), ctx, parentEnv, log, sp)
+	sp.sessions[s] = struct{}{}
+	sp.sessionsLock.Unlock()
+	return s
+}
+
 func (sp *SessionProcessor) GetCall(id CallID) *Call {
 	dat, ok := sp.ongoingCalls.Load(id)
 	if !ok {

@@ -1,3 +1,4 @@
+set -e
 
 # TODO: tee options
 mkdir -p "$PWD/rumordata"

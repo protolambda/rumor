@@ -1,3 +1,4 @@
+set -e
 
 chain this serve by-root  --timeout=20s --compression=snappy --max-count=400 --within-view=true
 chain this serve by-root  --timeout=20s --compression=none   --max-count=400 --within-view=true
