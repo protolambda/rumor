@@ -21,7 +21,8 @@ logs
 *.csv
 *.json
 
-medalla
+/medalla
+/rumordata
 
 # Example SSH key
 rumor_ssh_server

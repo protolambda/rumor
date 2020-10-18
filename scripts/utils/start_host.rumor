@@ -1,0 +1,8 @@
+# Try and get 400 peers connected, because why not, we're a crawler.
+# And tag, see how many users identify us
+host start --lo-peers=400 --hi-peers=500 --peer-grace-period=30s --agent="protolambda-heya"
+host listen --tcp=$p2p_port --ip=0.0.0.0
+
+# We're interested in all connections and streams
+host notify all
+

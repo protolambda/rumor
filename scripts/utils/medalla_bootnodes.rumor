@@ -1,4 +1,4 @@
-bootnodes=$(cat << EndOfMessage
+export BOOT_NODES=$(cat << EndOfMessage
 enr:-Ku4QLglCMIYAgHd51uFUqejD9DWGovHOseHQy7Od1SeZnHnQ3fSpE4_nbfVs8lsy8uF07ae7IgrOOUFU0NFvZp5D4wBh2F0dG5ldHOIAAAAAAAAAACEZXRoMpAYrkzLAAAAAf__________gmlkgnY0gmlwhBLf22SJc2VjcDI1NmsxoQJxCnE6v_x2ekgY_uoE1rtwzvGy40mq9eD66XfHPBWgIIN1ZHCCD6A
 enr:-Ku4QOdk3u7rXI5YvqwmEbApW_OLlRkq_yzmmhdlrJMcfviacLWwSm-tr1BOvamuRQqfc6lnMeec4E4ddOhd3KqCB98Bh2F0dG5ldHOIAAAAAAAAAACEZXRoMpAYrkzLAAAAAf__________gmlkgnY0gmlwhBLf22SJc2VjcDI1NmsxoQKH3lxnglLqrA7L6sl5r7XFnckr3XCnlZMaBTYSdE8SHIN1ZHCCG1g
 enr:-Ku4QOVrqhlmsh9m2MGSnvVz8XPfjwHWBuOcgVQvWwBhN0-NI0XVhSerujBBwIeLpc-OES0C9iAzJhiCgRZ0xH13DgEBh2F0dG5ldHOIAAAAAAAAAACEZXRoMpAYrkzLAAAAAf__________gmlkgnY0gmlwhBLf22SJc2VjcDI1NmsxoQLEq16KLm1vPjUKYGkHq296D60i7y209NYPUpwZPXDVgYN1ZHCCF3A
@@ -17,14 +17,4 @@ enr:-LK4QFMUor7tPnQfx0CO8lBv1IicmvrlITSl7wMmf-SvBI9eGoOpSrn1TRG2WSxmEA7JKxkgqa_w
 EndOfMessage
 )
 
-echo "bootnodes: $bootnodes"
-
-bootnodes=$(echo -n $bootnodes | tr " " ",")
-
-_dv5_runner lvl_warn dv5 run --bootnodes=$bootnodes
-
-fork_digest="0xe7a75d5a"
-_dv5_crawler lvl_error dv5 random --add --filter-digest=$fork_digest
-
-echo "started dv5 in background: _dv5_runner lvl_warn, _dv5_crawler lvl_error"
-
+echo "bootnodes: $BOOT_NODES"

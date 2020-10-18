@@ -1,0 +1,3 @@
+# ignore goodbye endpoints
+rpc goodbye listen --drop --compression=snappy
+rpc goodbye listen --drop --compression=none
