@@ -56,7 +56,7 @@ func (mb *dsMetadataBook) loadMetadata(p peer.ID) (*beacon.MetaData, error) {
 func (mb *dsMetadataBook) storeMetadata(p peer.ID, md *beacon.MetaData) error {
 	key := peerIdToKey(eth2Base, p).Child(metadataSuffix)
 	size := md.FixedLength()
-	out := bytes.NewBuffer(make([]byte, size, size))
+	out := bytes.NewBuffer(make([]byte, 0, size))
 	if err := md.Serialize(codec.NewEncodingWriter(out)); err != nil {
 		return fmt.Errorf("failed encode metadata bytes for datastore: %v", err)
 	}
@@ -119,7 +119,7 @@ func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 // RegisterSeqClaim updates the latest supposed seq nr of the peer
 func (mb *dsMetadataBook) RegisterSeqClaim(id peer.ID, seq beacon.SeqNr) (newer bool) {
 	mb.Lock()
-	dat, ok := mb.claims[id]
+	dat, ok := mb.ClaimedSeq(id)
 	defer mb.Unlock()
 	newer = !ok || dat < seq
 	if newer {
@@ -144,8 +144,8 @@ func (mb *dsMetadataBook) RegisterMetaFetch(id peer.ID) uint64 {
 func (mb *dsMetadataBook) RegisterMetadata(id peer.ID, md beacon.MetaData) (newer bool) {
 	mb.Lock()
 	defer mb.Unlock()
-	dat, ok := mb.metadatas[id]
-	newer = !ok || dat.SeqNumber < md.SeqNumber
+	dat := mb.Metadata(id)
+	newer = dat == nil || dat.SeqNumber < md.SeqNumber
 	if newer {
 		// will 0 if no claim
 		claimed, _ := mb.claims[id]

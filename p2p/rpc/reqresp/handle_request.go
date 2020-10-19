@@ -19,7 +19,7 @@ type RequestPayloadHandler func(ctx context.Context, peerId peer.ID, requestLen 
 type StreamCtxFn func() context.Context
 
 // startReqRPC registers a request handler for the given protocol. Compression is optional and may be nil.
-func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, maxRequestContentSize uint64) network.StreamHandler {
+func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, minRequestContentSize, maxRequestContentSize uint64) network.StreamHandler {
 	return func(stream network.Stream) {
 		peerId := stream.Conn().RemotePeer()
 		ctx, cancel := context.WithCancel(newCtx())
@@ -48,6 +48,9 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 		blr.PerRead = false
 		if err != nil {
 			invalidInputErr = err
+		} else if reqLen < minRequestContentSize {
+			// Check against raw content size minimum (without compression applied)
+			invalidInputErr = fmt.Errorf("request length %d is unexpectedly small, request size minimum is %d", reqLen, minRequestContentSize)
 		} else if reqLen > maxRequestContentSize {
 			// Check against raw content size limit (without compression applied)
 			invalidInputErr = fmt.Errorf("request length %d exceeds request size limit %d", reqLen, maxRequestContentSize)
@@ -64,7 +67,16 @@ func (handle RequestPayloadHandler) MakeStreamHandler(newCtx StreamCtxFn, comp C
 		if invalidInputErr != nil {
 			maxRequestContentSize = 0
 		}
-		blr.N = int(maxRequestContentSize)
+		if comp == nil {
+			blr.N = int(maxRequestContentSize)
+		} else {
+			v, err := comp.MaxEncodedLen(maxRequestContentSize)
+			if err != nil {
+				blr.N = int(maxRequestContentSize)
+			} else {
+				blr.N = int(v)
+			}
+		}
 		r := io.Reader(blr)
 		handle(ctx, peerId, reqLen, r, w, comp, invalidInputErr)
 	}

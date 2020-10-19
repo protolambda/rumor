@@ -43,7 +43,7 @@ func (sb *dsStatusBook) loadStatus(p peer.ID) (*beacon.Status, error) {
 func (sb *dsStatusBook) storeStatus(p peer.ID, st *beacon.Status) error {
 	key := peerIdToKey(eth2Base, p).Child(statusSuffix)
 	size := st.FixedLength()
-	out := bytes.NewBuffer(make([]byte, size, size))
+	out := bytes.NewBuffer(make([]byte, 0, size))
 	if err := st.Serialize(codec.NewEncodingWriter(out)); err != nil {
 		return fmt.Errorf("failed encode status bytes for datastore: %v", err)
 	}
