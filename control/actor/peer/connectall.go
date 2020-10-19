@@ -236,6 +236,55 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 		go worker(w)
 	}
 
+	scan := func() {
+		storedPeers := c.Store.PeersWithAddrs()
+
+		var schedules []peer.ID
+		peerAttemptLock.Lock()
+		for _, p := range storedPeers {
+			// Check if it didn't fail before (unknown peer or success last time)
+			if v, ok := peerAttempts[p]; !ok || v == 0 {
+				if c.Filtering { // optionally filter by fork-digest
+					enr := c.Store.LatestENR(p)
+					if enr == nil {
+						continue
+					}
+					eth2Data, ok, err := addrutil.ParseEnrEth2Data(enr)
+					if err != nil || !ok {
+						continue
+					}
+					if eth2Data.ForkDigest != c.FilterDigest {
+						continue
+					}
+				}
+				// Check if we're connected already
+				if status := h.Network().Connectedness(p); status != network.Connected {
+					schedules = append(schedules, p)
+				}
+			}
+		}
+		peerAttemptLock.Unlock()
+
+		c.Log.Infof("scanned peerstore, found %d peers to schedule", len(schedules))
+		count := len(h.Network().Peers())
+		if est := uint64(count + len(schedules)); est > c.MaxPeers {
+			if uint64(count) >= c.MaxPeers {
+				schedules = nil
+			} else {
+				schedules = schedules[:c.MaxPeers-uint64(count)]
+			}
+			c.Log.Warnf("too many peers, adjusted scheduled peers to %d", len(schedules))
+		}
+		for _, p := range schedules {
+			// Schedule the peer with good priority
+			if _, ok := schedule(p, 0); !ok {
+				// oh no, too many peers scheduled. Skip this fill round.
+				c.Log.Warn("Scheduled too many peer connections, aborting")
+				break
+			}
+		}
+	}
+
 	// And add the producer
 	workersGroup.Add(1)
 
@@ -245,55 +294,13 @@ func (c *PeerConnectAllCmd) run(ctx context.Context, h host.Host) {
 		scanTicker := time.NewTicker(c.Rescan)
 		defer scanTicker.Stop()
 
+		// initial scan
+		scan()
+
 		for {
 			select {
 			case <-scanTicker.C:
-				storedPeers := c.Store.PeersWithAddrs()
-
-				var schedules []peer.ID
-				peerAttemptLock.Lock()
-				for _, p := range storedPeers {
-					// Check if it didn't fail before (unknown peer or success last time)
-					if v, ok := peerAttempts[p]; !ok || v == 0 {
-						if c.Filtering { // optionally filter by fork-digest
-							enr := c.Store.LatestENR(p)
-							if enr == nil {
-								continue
-							}
-							eth2Data, ok, err := addrutil.ParseEnrEth2Data(enr)
-							if err != nil || !ok {
-								continue
-							}
-							if eth2Data.ForkDigest != c.FilterDigest {
-								continue
-							}
-						}
-						// Check if we're connected already
-						if status := h.Network().Connectedness(p); status != network.Connected {
-							schedules = append(schedules, p)
-						}
-					}
-				}
-				peerAttemptLock.Unlock()
-
-				c.Log.Infof("scanned peerstore, found %d peers to schedule", len(schedules))
-				count := len(h.Network().Peers())
-				if est := uint64(count + len(schedules)); est > c.MaxPeers {
-					if uint64(count) >= c.MaxPeers {
-						schedules = nil
-					} else {
-						schedules = schedules[:c.MaxPeers-uint64(count)]
-					}
-					c.Log.Warnf("too many peers, adjusted scheduled peers to %d", len(schedules))
-				}
-				for _, p := range schedules {
-					// Schedule the peer with good priority
-					if _, ok := schedule(p, 0); !ok {
-						// oh no, too many peers scheduled. Skip this fill round.
-						c.Log.Warn("Scheduled too many peer connections, aborting")
-						break
-					}
-				}
+				scan()
 			case <-ctx.Done():
 				c.Log.Debug("stopped scanning peerstore for connect-all")
 				return
