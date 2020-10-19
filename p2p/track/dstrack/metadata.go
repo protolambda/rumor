@@ -124,6 +124,7 @@ func (mb *dsMetadataBook) RegisterSeqClaim(id peer.ID, seq beacon.SeqNr) (newer 
 	newer = !ok || dat < seq
 	if newer {
 		mb.claims[id] = seq
+		_ = mb.storeClaim(id, seq)
 	}
 	return
 }
@@ -154,8 +155,10 @@ func (mb *dsMetadataBook) RegisterMetadata(id peer.ID, md beacon.MetaData) (newe
 			mb.fetches[id] = 0
 		}
 		mb.metadatas[id] = md
+		_ = mb.storeMetadata(id, &md)
 		if md.SeqNumber > claimed {
 			mb.claims[id] = md.SeqNumber
+			_ = mb.storeClaim(id, md.SeqNumber)
 		}
 	}
 	return

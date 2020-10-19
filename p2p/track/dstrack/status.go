@@ -72,6 +72,8 @@ func (sb *dsStatusBook) Status(id peer.ID) *beacon.Status {
 // RegisterStatus updates latest peer status
 func (sb *dsStatusBook) RegisterStatus(id peer.ID, st beacon.Status) {
 	sb.data.Store(id, &st)
+	// Try persist it to the store
+	_ = sb.storeStatus(id, &st)
 	return
 }
 
