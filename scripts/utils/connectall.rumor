@@ -1,0 +1,4 @@
+set -e
+
+fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+peer connectall --filter-digest="$fork_digest" --max-peers=500 --max-retries=5 --rescan=1m --timeout=10s --workers=3
