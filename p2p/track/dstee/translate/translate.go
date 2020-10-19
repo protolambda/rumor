@@ -351,7 +351,7 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 				}
 				sort.Strings(out.Protocols)
 			case "ProtocolVersion":
-				out.UserAgent = res.(string)
+				out.ProtocolVersion = res.(string)
 			case "AgentVersion":
 				out.UserAgent = res.(string)
 			default:
