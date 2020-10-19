@@ -325,7 +325,6 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 				var md beacon.MetaData
 				if e := md.Deserialize(codec.NewDecodingReader(bytes.NewReader(v), uint64(len(v)))); e == nil {
 					out.Eth2.Metadata = &md
-					panic(fmt.Sprintf("metadata! %s: %x", md.String(), v))
 				} else {
 					err = fmt.Errorf("bad metadata in peerstore: %v", e)
 					return
@@ -333,7 +332,6 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 			case "metadata_claim":
 				if len(v) == 8 {
 					out.Eth2.MetadataClaim = beacon.SeqNr(binary.LittleEndian.Uint64(v))
-					panic(fmt.Sprintf("claim! %d: %x", out.Eth2.MetadataClaim, v))
 				} else {
 					err = fmt.Errorf("bad metadata_claim in peerstore, wrong length: claim bytes: %x", v)
 					return

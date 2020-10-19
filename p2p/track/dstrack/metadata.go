@@ -89,6 +89,10 @@ func (mb *dsMetadataBook) storeClaim(p peer.ID, claim beacon.SeqNr) error {
 func (mb *dsMetadataBook) Metadata(id peer.ID) *beacon.MetaData {
 	mb.Lock()
 	defer mb.Unlock()
+	return mb.metadata(id)
+}
+
+func (mb *dsMetadataBook) metadata(id peer.ID) *beacon.MetaData {
 	dat, ok := mb.metadatas[id]
 	if !ok {
 		md, err := mb.loadMetadata(id)
@@ -104,6 +108,10 @@ func (mb *dsMetadataBook) Metadata(id peer.ID) *beacon.MetaData {
 func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 	mb.Lock()
 	defer mb.Unlock()
+	return mb.claimedSeq(id)
+}
+
+func (mb *dsMetadataBook) claimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 	dat, ok := mb.claims[id]
 	if !ok {
 		n, err := mb.loadClaim(id)
@@ -119,8 +127,8 @@ func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 // RegisterSeqClaim updates the latest supposed seq nr of the peer
 func (mb *dsMetadataBook) RegisterSeqClaim(id peer.ID, seq beacon.SeqNr) (newer bool) {
 	mb.Lock()
-	dat, ok := mb.ClaimedSeq(id)
 	defer mb.Unlock()
+	dat, ok := mb.claimedSeq(id)
 	newer = !ok || dat < seq
 	if newer {
 		mb.claims[id] = seq
@@ -144,14 +152,13 @@ func (mb *dsMetadataBook) RegisterMetaFetch(id peer.ID) uint64 {
 func (mb *dsMetadataBook) RegisterMetadata(id peer.ID, md beacon.MetaData) (newer bool) {
 	mb.Lock()
 	defer mb.Unlock()
-	dat := mb.Metadata(id)
+	dat := mb.metadata(id)
 	newer = dat == nil || dat.SeqNumber < md.SeqNumber
 	if newer {
 		// will 0 if no claim
 		claimed, _ := mb.claims[id]
 		if md.SeqNumber >= claimed {
 			// if it is newer or equal to best, we can reset the ongoing fetches
-			// TODO: protect against super-fast increasing metadata seq nrs.
 			mb.fetches[id] = 0
 		}
 		mb.metadatas[id] = md

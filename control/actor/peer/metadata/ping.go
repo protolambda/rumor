@@ -37,6 +37,7 @@ func (c *PeerMetadataPingCmd) Default() {
 	c.UpdateTimeout = 10 * time.Second
 	c.Compression = flags.CompressionFlag{Compression: reqresp.SnappyCompression{}}
 	c.Update = true
+	c.MaxTries = 20
 }
 
 func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
@@ -65,6 +66,7 @@ func (c *PeerMetadataPingCmd) Run(ctx context.Context, args ...string) error {
 				"code": code,
 				"pong": pong,
 			}).Debug("ping request success")
+			c.Store.RegisterSeqClaim(peerID, beacon.SeqNr(pong))
 		} else {
 			c.Log.WithFields(logrus.Fields{
 				"code": code,

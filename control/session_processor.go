@@ -95,6 +95,8 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 			}
 			sp.logData.Store(string(callID)+"_"+k, v)
 		}
+		sp.sessionsLock.RLock()
+		defer sp.sessionsLock.RUnlock()
 		for s := range sp.sessions {
 			if lvl, ok := s.HasInterest(callID); ok {
 				// TODO: if this has lots of slow connection sessions open, we should parallelize and buffer this.

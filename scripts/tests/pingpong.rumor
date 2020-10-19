@@ -1,0 +1,39 @@
+alice: me
+host start
+
+host listen
+host view
+
+alice_id="$__peer_id"
+alice_addr="$__addr"
+
+# Serve some metadata
+peer metadata set \
+      --attnets="0x00000000000000cd" \
+      --seq-number=20
+peer metadata serve
+
+# Alice will want to update their knowledge of Bob if they get their ping
+peer metadata pong --update=true --compression=snappy
+
+
+bob: me
+host start
+
+host listen --tcp=9001
+peer connect $alice_addr
+echo "Connected! requesting now"
+
+
+# Serve some metadata
+peer metadata set \
+      --attnets="0x00000000000000ab" \
+      --seq-number=42
+peer metadata serve
+
+# Ping Alice for updated metadata
+# Bob will request the metadata after learning from the pong
+peer metadata ping $alice_id --update=true
+
+# meanwhile Alice is serving pongs, and requesting the metadata of Bob
+sleep 10s
