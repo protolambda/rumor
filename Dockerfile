@@ -9,11 +9,13 @@ ADD . .
 RUN CGO_ENABLED=1 GOOS=linux \
     go build -ldflags '-extldflags "-static"' -o app
 
-FROM scratch
+FROM golang:alpine
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt \
      /etc/ssl/certs/ca-certificates.crt
 
 COPY --from=build /build/app /app
+
+WORKDIR /
 
 ENTRYPOINT ["/app"]
