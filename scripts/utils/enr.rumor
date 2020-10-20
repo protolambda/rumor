@@ -1,6 +1,6 @@
 set -e
 
-external_ip="$(curl -s v4.ident.me)"
+external_ip=$P2P_PUBLIC_IP
 p2p_port=${P2P_PORT:-9000}
 
 echo "External IP used in ENRs: $external_ip"
