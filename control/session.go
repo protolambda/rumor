@@ -224,7 +224,10 @@ func (sess *Session) runCmd(ctx context.Context, args []string) error {
 		defer func() {
 			sess.defaultActorID = prevActor
 		}()
-		scriptPath := path.Join(handlingCtx.Dir, args[1])
+		scriptPath := args[1]
+		if !path.IsAbs(scriptPath) {
+			scriptPath = path.Join(handlingCtx.Dir, scriptPath)
+		}
 		return sess.RunInclude(ctx, scriptPath)
 	}
 
