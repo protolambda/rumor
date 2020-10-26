@@ -1,0 +1,8 @@
+set -e
+
+# Set up dummy endpoints, never actually sync
+rpc blocks-by-range listen --drop --compression=snappy
+rpc blocks-by-root listen --drop --compression=snappy
+
+rpc blocks-by-range listen --drop --compression=none
+rpc blocks-by-root listen --drop --compression=none

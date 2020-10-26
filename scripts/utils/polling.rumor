@@ -1,0 +1,17 @@
+set -e
+
+peer status serve
+peer metadata serve
+
+# Start polling status of everyone
+# Exchange status with everyone every slot
+peer status poll --interval=12s  --timeout=3s --compression=snappy
+#peer status poll --interval=12s  --timeout=3s --compression=none
+
+# Ping everyone every 30s, and update metadata if they have new data for us
+peer metadata poll --interval=30s  --timeout=10s  --update=true --update-timeout=20s --compression=snappy
+#peer metadata poll --interval=30s  --timeout=10s  --update=true --update-timeout=20s --compression=none
+
+# Serve pong requests, also update if we get a higher ping than known
+peer metadata pong --update=true --compression=snappy
+#peer metadata pong --update=true --compression=none

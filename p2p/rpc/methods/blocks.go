@@ -74,8 +74,8 @@ func (r *BlocksByRangeReqV1) String() string {
 func BlocksByRangeRPCv1(spec *beacon.Spec) *reqresp.RPCMethod {
 	return &reqresp.RPCMethod{
 		Protocol:                  "/eth2/beacon_chain/req/beacon_blocks_by_range/1/ssz",
-		RequestCodec:              reqresp.NewSSZCodec(func() reqresp.SerDes { return new(BlocksByRangeReqV1) }, blocksByRangeReqByteLen),
-		ResponseChunkCodec:        reqresp.NewSSZCodec(func() reqresp.SerDes { return spec.Wrap(new(beacon.SignedBeaconBlock)) }, spec.SignedBeaconBlock().MaxByteLength()),
+		RequestCodec:              reqresp.NewSSZCodec(func() reqresp.SerDes { return new(BlocksByRangeReqV1) }, blocksByRangeReqByteLen, blocksByRangeReqByteLen),
+		ResponseChunkCodec:        reqresp.NewSSZCodec(func() reqresp.SerDes { return spec.Wrap(new(beacon.SignedBeaconBlock)) }, 0, spec.SignedBeaconBlock().MaxByteLength()),
 		DefaultResponseChunkCount: 20,
 	}
 }
@@ -124,8 +124,8 @@ func (r BlocksByRootReq) String() string {
 func BlocksByRootRPCv1(spec *beacon.Spec) *reqresp.RPCMethod {
 	return &reqresp.RPCMethod{
 		Protocol:                  "/eth2/beacon_chain/req/beacon_blocks_by_root/1/ssz",
-		RequestCodec:              reqresp.NewSSZCodec(func() reqresp.SerDes { return new(BlocksByRootReq) }, 32*MAX_REQUEST_BLOCKS_BY_ROOT),
-		ResponseChunkCodec:        reqresp.NewSSZCodec(func() reqresp.SerDes { return spec.Wrap(new(beacon.SignedBeaconBlock)) }, spec.SignedBeaconBlock().MaxByteLength()),
+		RequestCodec:              reqresp.NewSSZCodec(func() reqresp.SerDes { return new(BlocksByRootReq) }, 0, 32*MAX_REQUEST_BLOCKS_BY_ROOT),
+		ResponseChunkCodec:        reqresp.NewSSZCodec(func() reqresp.SerDes { return spec.Wrap(new(beacon.SignedBeaconBlock)) }, 0, spec.SignedBeaconBlock().MaxByteLength()),
 		DefaultResponseChunkCount: 20,
 	}
 }

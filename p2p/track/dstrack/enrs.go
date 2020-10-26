@@ -62,6 +62,7 @@ func (eb *dsENRBook) UpdateENRMaybe(id peer.ID, n *enode.Node) (updated bool, er
 	}
 	return false, nil
 }
+
 func (eb *dsENRBook) LatestENR(id peer.ID) (n *enode.Node) {
 	n, err := eb.loadEnr(id)
 	if err != nil {

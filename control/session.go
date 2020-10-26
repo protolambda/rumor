@@ -25,6 +25,7 @@ type EnvGlobal interface {
 	GetCall(id CallID) *Call
 	// Runs the call in sync
 	MakeCall(callCtx context.Context, out io.Writer, actorID actor.ActorID, callID CallID, args []string) (*Call, error)
+	NewSubSession(log logrus.FieldLogger, ctx context.Context, parentEnv expand.Environ) *Session
 	IsClosing() bool
 	KillActor(id actor.ActorID)
 	GetCalls(id actor.ActorID) map[CallID]CallSummary
@@ -223,7 +224,10 @@ func (sess *Session) runCmd(ctx context.Context, args []string) error {
 		defer func() {
 			sess.defaultActorID = prevActor
 		}()
-		scriptPath := path.Join(handlingCtx.Dir, args[1])
+		scriptPath := args[1]
+		if !path.IsAbs(scriptPath) {
+			scriptPath = path.Join(handlingCtx.Dir, scriptPath)
+		}
 		return sess.RunInclude(ctx, scriptPath)
 	}
 
@@ -383,7 +387,17 @@ func (sess *Session) runCmd(ctx context.Context, args []string) error {
 	return MaybeRuntimeErr(callErr)
 }
 
+// RunInclude runs an included file as a sub-session. The ctx must be an interp.HandlerCtx.
+// The session environment, except the dynamic parts, is inherited. As well as the current default actor.
 func (sess *Session) RunInclude(ctx context.Context, includePath string) error {
+	handlingCtx := interp.HandlerCtx(ctx)
+	subSession := sess.global.NewSubSession(sess.log.WithField("parent", sess.sessionID), ctx, handlingCtx.Env)
+	subSession.defaultActorID = sess.defaultActorID
+	defer subSession.Close()
+	return subSession.runInclude(ctx, includePath)
+}
+
+func (sess *Session) runInclude(ctx context.Context, includePath string) error {
 	inputFile, err := os.Open(includePath)
 	if err != nil {
 		sess.log.WithField("include", includePath).WithError(err).Error("failed to open included rumor script")

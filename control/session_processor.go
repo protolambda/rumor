@@ -95,6 +95,8 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 			}
 			sp.logData.Store(string(callID)+"_"+k, v)
 		}
+		sp.sessionsLock.RLock()
+		defer sp.sessionsLock.RUnlock()
 		for s := range sp.sessions {
 			if lvl, ok := s.HasInterest(callID); ok {
 				// TODO: if this has lots of slow connection sessions open, we should parallelize and buffer this.
@@ -113,6 +115,15 @@ func (sp *SessionProcessor) NewSession(log logrus.FieldLogger) *Session {
 	sp.sessionsLock.Lock()
 	sp.sessionIdCounter += 1
 	s := newSession(SessionID(fmt.Sprintf("s%d", sp.sessionIdCounter)), sp.globalSessionCtx, sp.mainEnv, log, sp)
+	sp.sessions[s] = struct{}{}
+	sp.sessionsLock.Unlock()
+	return s
+}
+
+func (sp *SessionProcessor) NewSubSession(log logrus.FieldLogger, ctx context.Context, parentEnv expand.Environ) *Session {
+	sp.sessionsLock.Lock()
+	sp.sessionIdCounter += 1
+	s := newSession(SessionID(fmt.Sprintf("s%d", sp.sessionIdCounter)), ctx, parentEnv, log, sp)
 	sp.sessions[s] = struct{}{}
 	sp.sessionsLock.Unlock()
 	return s

@@ -1,0 +1,8 @@
+set -e
+
+mkdir -p "$PWD/rumordata"
+#_peer_tracker peer track tee --dest=json --path="$PWD/rumordata/peerstore_events"
+
+tracker_ws_addr=${PEER_TRACKER_WS_ADDR:-"ws://localhost:4000/peerstore/input/ws"}
+tracker_key=${PEER_TRACKER_KEY:-""}
+_peer_tracker_remote peer track tee --dest=wsjson --path="$tracker_ws_addr" --key="$tracker_key"

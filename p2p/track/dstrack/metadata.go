@@ -56,7 +56,7 @@ func (mb *dsMetadataBook) loadMetadata(p peer.ID) (*beacon.MetaData, error) {
 func (mb *dsMetadataBook) storeMetadata(p peer.ID, md *beacon.MetaData) error {
 	key := peerIdToKey(eth2Base, p).Child(metadataSuffix)
 	size := md.FixedLength()
-	out := bytes.NewBuffer(make([]byte, size, size))
+	out := bytes.NewBuffer(make([]byte, 0, size))
 	if err := md.Serialize(codec.NewEncodingWriter(out)); err != nil {
 		return fmt.Errorf("failed encode metadata bytes for datastore: %v", err)
 	}
@@ -89,6 +89,10 @@ func (mb *dsMetadataBook) storeClaim(p peer.ID, claim beacon.SeqNr) error {
 func (mb *dsMetadataBook) Metadata(id peer.ID) *beacon.MetaData {
 	mb.Lock()
 	defer mb.Unlock()
+	return mb.metadata(id)
+}
+
+func (mb *dsMetadataBook) metadata(id peer.ID) *beacon.MetaData {
 	dat, ok := mb.metadatas[id]
 	if !ok {
 		md, err := mb.loadMetadata(id)
@@ -104,6 +108,10 @@ func (mb *dsMetadataBook) Metadata(id peer.ID) *beacon.MetaData {
 func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 	mb.Lock()
 	defer mb.Unlock()
+	return mb.claimedSeq(id)
+}
+
+func (mb *dsMetadataBook) claimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 	dat, ok := mb.claims[id]
 	if !ok {
 		n, err := mb.loadClaim(id)
@@ -119,11 +127,12 @@ func (mb *dsMetadataBook) ClaimedSeq(id peer.ID) (seq beacon.SeqNr, ok bool) {
 // RegisterSeqClaim updates the latest supposed seq nr of the peer
 func (mb *dsMetadataBook) RegisterSeqClaim(id peer.ID, seq beacon.SeqNr) (newer bool) {
 	mb.Lock()
-	dat, ok := mb.claims[id]
 	defer mb.Unlock()
+	dat, ok := mb.claimedSeq(id)
 	newer = !ok || dat < seq
 	if newer {
 		mb.claims[id] = seq
+		_ = mb.storeClaim(id, seq)
 	}
 	return
 }
@@ -143,19 +152,20 @@ func (mb *dsMetadataBook) RegisterMetaFetch(id peer.ID) uint64 {
 func (mb *dsMetadataBook) RegisterMetadata(id peer.ID, md beacon.MetaData) (newer bool) {
 	mb.Lock()
 	defer mb.Unlock()
-	dat, ok := mb.metadatas[id]
-	newer = !ok || dat.SeqNumber < md.SeqNumber
+	dat := mb.metadata(id)
+	newer = dat == nil || dat.SeqNumber < md.SeqNumber
 	if newer {
 		// will 0 if no claim
 		claimed, _ := mb.claims[id]
 		if md.SeqNumber >= claimed {
 			// if it is newer or equal to best, we can reset the ongoing fetches
-			// TODO: protect against super-fast increasing metadata seq nrs.
 			mb.fetches[id] = 0
 		}
 		mb.metadatas[id] = md
+		_ = mb.storeMetadata(id, &md)
 		if md.SeqNumber > claimed {
 			mb.claims[id] = md.SeqNumber
+			_ = mb.storeClaim(id, md.SeqNumber)
 		}
 	}
 	return

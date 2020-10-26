@@ -18,14 +18,18 @@ import (
 	"time"
 )
 
+const (
+	// Time allowed to read the next pong message from the server.
+	pongWait = 60 * time.Second
+)
+
 type PeerTrackTeeCmd struct {
 	*base.Base
 	Store track.ExtendedPeerstore
 	Match string `ask:"--match" help:"Datastore key path matcher regex, to select what to track changes of. Empty to match everything."`
-	// TODO support http api, db, socket, websocket, anything.
-	Dest string `ask:"--dest" help:"Destination to direct events to. Could be: log,csv,evlog,evcsv,json"`
-	Path string `ask:"--path" help:"Path, address or other destination uri"`
-	Key  string `ask:"--key" help:"Optional API key or authentication for the chosen destination type"`
+	Dest  string `ask:"--dest" help:"Destination to direct events to. Could be: log,csv,evlog,evcsv,json,wsjson"`
+	Path  string `ask:"--path" help:"Path, address or other destination uri"`
+	Key   string `ask:"--key" help:"Optional API key or authentication for the chosen destination type"`
 }
 
 func (c *PeerTrackTeeCmd) Help() string {
@@ -150,6 +154,7 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 			var err error
 		reconnectLoop:
 			for {
+				c.Log.Info("dialing websocket")
 				// TODO: maybe send the whole peerstore as json in the initial request?
 				conn, _, err = websocket.DefaultDialer.Dial(c.Path, h)
 				if err != nil {
@@ -162,20 +167,39 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 					return
 				}
 
-				select {
-				case ev, ok := <-evCh:
-					if !ok {
-						if err := conn.Close(); err != nil {
-							c.Log.WithError(err).Error("failed to close websocket connection properly")
+				conn.SetPingHandler(nil)
+				conn.SetPongHandler(func(string) error {
+					conn.SetReadDeadline(time.Now().Add(pongWait))
+					return nil
+				})
+
+				// keep forwarding messages to the websocket
+				for {
+					select {
+					case ev, ok := <-evCh:
+						if !ok {
+							if err := conn.Close(); err != nil {
+								c.Log.WithError(err).Error("failed to close websocket connection properly")
+							}
+							c.Log.Info("Done sending peerstore events to websocket")
+							return
 						}
-						c.Log.Info("Done sending peerstore events to websocket")
-						return
-					}
-					if err := conn.WriteJSON(ev); err != nil {
-						if websocket.IsUnexpectedCloseError(err) {
-							continue reconnectLoop
+						if err := conn.WriteJSON(ev); err != nil {
+							if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+								c.Log.WithError(err).Warn("unexpected close error, reconnecting after 10 seconds...")
+								_ = conn.Close()
+								time.Sleep(time.Second * 10)
+								continue reconnectLoop
+							}
+							if _, ok := err.(*websocket.CloseError); !ok {
+								c.Log.WithError(err).Info("Got websocket close event, reconnecting after 10 seconds...")
+								_ = conn.Close()
+								time.Sleep(time.Second * 10)
+								continue reconnectLoop
+							} else {
+								c.Log.WithError(err).Warn("failed to write event to json websocket")
+							}
 						}
-						c.Log.Warn("failed to write event to json websocket")
 					}
 				}
 			}
@@ -195,6 +219,7 @@ func (c *PeerTrackTeeCmd) Run(ctx context.Context, args ...string) error {
 			reconnCancel()
 			wl.Lock()
 			open = false
+			close(evCh)
 			wl.Unlock()
 			return nil
 		}

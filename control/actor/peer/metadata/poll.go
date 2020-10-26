@@ -20,6 +20,7 @@ type PeerMetadataPollCmd struct {
 	Update        bool                  `ask:"--update" help:"If the seq nr pong is higher than known, request metadata"`
 	ForceUpdate   bool                  `ask:"--force-update" help:"Force a metadata request, even if the ping results in an already known pong seq nr"`
 	UpdateTimeout time.Duration         `ask:"--update-timeout" help:"If updating, use this timeout for the update request, 0 to disable."`
+	MaxTries      uint64                `ask:"--max-tries" help:"How many times an update should be attempted after learning about a pong"`
 	Compression   flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`
 }
 
@@ -29,6 +30,7 @@ func (c *PeerMetadataPollCmd) Default() {
 	c.Interval = 20 * time.Second
 	c.Compression = flags.CompressionFlag{Compression: reqresp.SnappyCompression{}}
 	c.Update = true
+	c.MaxTries = 20
 }
 
 func (c *PeerMetadataPollCmd) Help() string {
@@ -66,6 +68,7 @@ func (c *PeerMetadataPollCmd) Run(ctx context.Context, args ...string) error {
 						Update:            c.Update,
 						ForceUpdate:       c.ForceUpdate,
 						UpdateTimeout:     c.UpdateTimeout,
+						MaxTries:          c.MaxTries,
 						PeerID:            flags.PeerIDFlag{PeerID: peerID},
 					}
 					if err := pingCmd.Run(reqCtx); err != nil {

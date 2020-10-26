@@ -1,0 +1,11 @@
+set -e
+
+# TODO state is a memory DB, since persistence is not optimized to prune away duplicate info
+states create statedb
+states db import --input=$PWD/rumordata/genesis.ssz
+GENESIS_ROOT=$__root
+
+mkdir -p $PWD/rumordata/blocks
+blocks create blocksdb $PWD/rumordata/blocks
+
+chain create medalla_chain $GENESIS_ROOT

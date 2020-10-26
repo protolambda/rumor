@@ -6,7 +6,7 @@ import (
 	crand "crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"github.com/btcsuite/btcd/btcec"
+	gcrypto "github.com/ethereum/go-ethereum/crypto"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/control/actor/base"
@@ -83,7 +83,7 @@ func (c *EnrMakeCmd) Run(ctx context.Context, args ...string) error {
 
 	if priv == nil {
 		if c.GenPriv {
-			key, err := ecdsa.GenerateKey(btcec.S256(), crand.Reader)
+			key, err := ecdsa.GenerateKey(gcrypto.S256(), crand.Reader)
 			if err != nil {
 				return fmt.Errorf("failed to generate key: %v", err)
 			}

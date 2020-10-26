@@ -1,0 +1,8 @@
+set -e
+
+# Try and get 400 peers connected, because why not, we're a crawler.
+# And tag, see how many users identify us
+host start --identify=true --libp2p-ping=true \
+  --lo-peers=400 --hi-peers=500 \
+  --peer-grace-period=30s --agent="protolambda-heya"
+

@@ -3,6 +3,7 @@ package enr
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -14,15 +15,24 @@ import (
 
 type EnrViewCmd struct {
 	*base.Base
+	Lazy *LazyEnrState
+
 	KvMode bool          `ask:"--kv" help:"Print the full set of Key-Value pairs"`
-	Enr    flags.EnrFlag `ask:"<enr>" help:"The ENR to view, url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix."`
+	Enr    flags.EnrFlag `ask:"[enr]" help:"The ENR to view, url-base64 (RFC 4648). With optional 'enr:' or 'enr://' prefix."`
 }
 
 func (c *EnrViewCmd) Help() string {
-	return "View ENR contents"
+	return "View ENR contents, defaults to current actor's ENR if none provided to decode"
 }
 
 func (c *EnrViewCmd) Run(ctx context.Context, args ...string) error {
+	if c.Enr.ENR == nil && c.Lazy.Current != nil {
+		c.Enr.ENR = c.Lazy.Current.LocalNode().Node().Record()
+	}
+	if c.Enr.ENR == nil {
+		return errors.New("no ENR was specified, current actor does not have one either")
+	}
+
 	if c.KvMode {
 		enrPairs := c.Enr.ENR.AppendElements(nil)
 		enrKV := make(map[string]string)

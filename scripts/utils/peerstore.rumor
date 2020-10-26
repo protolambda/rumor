@@ -1,0 +1,5 @@
+set -e
+
+mkdir -p $PWD/rumordata/peerstore
+# create a shared peerstore, we can hook more actors to it later.
+peerstore create crawler --store-type=badger --store-path=$PWD/rumordata/peerstore

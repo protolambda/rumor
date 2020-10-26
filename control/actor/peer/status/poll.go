@@ -52,7 +52,7 @@ func (c *PeerStatusPollCmd) Run(ctx context.Context, args ...string) error {
 			for _, p := range h.Network().Peers() {
 				wg.Add(1)
 				go func(peerID peer.ID) {
-					pingCmd := &PeerStatusReqCmd{
+					statusCmd := &PeerStatusReqCmd{
 						Base:            c.Base,
 						PeerStatusState: c.PeerStatusState,
 						Book:            c.Book,
@@ -60,7 +60,7 @@ func (c *PeerStatusPollCmd) Run(ctx context.Context, args ...string) error {
 						Compression:     c.Compression,
 						PeerID:          flags.PeerIDFlag{PeerID: peerID},
 					}
-					if err := pingCmd.Run(reqCtx); err != nil {
+					if err := statusCmd.Run(reqCtx); err != nil {
 						c.Log.WithField("peer", peerID.String()).WithError(err).Warn("failed to poll peer")
 					}
 

@@ -26,6 +26,8 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 		cmd = &PeerConnectCmd{Base: c.Base, Store: c.Store}
 	case "disconnect":
 		cmd = &PeerDisconnectCmd{Base: c.Base}
+	case "connectall":
+		cmd = &PeerConnectAllCmd{Base: c.Base, Store: c.Store}
 	case "protect":
 		cmd = &PeerProtectCmd{Base: c.Base}
 	case "unprotect":

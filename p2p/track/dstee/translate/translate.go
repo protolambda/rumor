@@ -15,10 +15,10 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	pstore_pb "github.com/libp2p/go-libp2p-peerstore/pb"
 	"github.com/multiformats/go-base32"
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/protolambda/rumor/p2p/addrutil"
 	"github.com/protolambda/zrnt/eth2/beacon"
 	"github.com/protolambda/ztyp/codec"
+	"net"
 	"sort"
 	"strconv"
 )
@@ -32,7 +32,16 @@ Peerstore layout, partially due to libp2p legacy:
 				- /metadata           <- ssz encoded
 				- /metadata_claim     <- ssz encoded
 				- /status             <- ssz encoded
-				- /enr                <- base64 enr representation
+				- /enr                <- stored in raw base64 enr presentation. Then expanded into subfields when reading:
+				  - /raw              <- base64 enr representation
+                  - /other            <- map of unrecognized key/value pairs. Values encoded as hex bytes by us.
+                  - /eth2_data        <- Eth2Data
+                  - /attnets          <- bitfield
+                  - /seq              <- ENR seq num
+                  - /ip               <- IP (v4 or v6)
+                  - /udp              <- UDP port
+                  - /tcp              <- TCP port
+
 		- /addrs
 			- /<peer-id>              <- no subkeys. Encoded as `pstore_pb.AddrBookRecord` protobuf
 		- /metadata
@@ -49,8 +58,14 @@ Peerstore layout, partially due to libp2p legacy:
 */
 
 type ENRData struct {
-	Raw      string            `json:"raw,omitempty"`
-	Contents map[string]string `json:"contents,omitempty"`
+	Raw      string             `json:"raw,omitempty"`
+	Other    map[string]string  `json:"other,omitempty"`
+	Eth2Data *beacon.Eth2Data   `json:"eth2_data,omitempty"`
+	Attnets  *beacon.AttnetBits `json:"attnets,omitempty"`
+	Seq      uint64             `json:"seq,omitempty"`
+	IP       net.IP             `json:"ip,omitempty"`
+	TCP      uint16             `json:"tcp,omitempty"`
+	UDP      uint16             `json:"udp,omitempty"`
 }
 
 type AddrBookRecord struct {
@@ -61,7 +76,8 @@ type AddrBookRecord struct {
 }
 
 type AddrBookRecord_AddrEntry struct {
-	Addr ma.Multiaddr `json:"addr,omitempty"`
+	// Addr in multi-addr format
+	Addr string `json:"addr,omitempty"`
 	// The point in time when this address expires.
 	Expiry int64 `json:"expiry,omitempty"`
 	// The original TTL of this address.
@@ -98,7 +114,10 @@ func (p *PartialPeerstoreEntry) Merge(other *PartialPeerstoreEntry) {
 			p.Eth2 = other.Eth2
 		} else {
 			if other.Eth2.ENR != nil {
-				p.Eth2.ENR = other.Eth2.ENR
+				// only ever update ENR forwards
+				if p.Eth2.ENR == nil || other.Eth2.ENR.Seq > p.Eth2.ENR.Seq {
+					p.Eth2.ENR = other.Eth2.ENR
+				}
 			}
 			if other.Eth2.Status != nil {
 				p.Eth2.Status = other.Eth2.Status
@@ -107,7 +126,10 @@ func (p *PartialPeerstoreEntry) Merge(other *PartialPeerstoreEntry) {
 				p.Eth2.MetadataClaim = other.Eth2.MetadataClaim
 			}
 			if other.Eth2.Metadata != nil {
-				p.Eth2.Metadata = other.Eth2.Metadata
+				// only ever update metadata forwards
+				if p.Eth2.Metadata == nil || other.Eth2.Metadata.SeqNumber > p.Eth2.Metadata.SeqNumber {
+					p.Eth2.Metadata = other.Eth2.Metadata
+				}
 			}
 		}
 	}
@@ -141,8 +163,21 @@ func (p *PartialPeerstoreEntry) ToCSV(prefixFields ...string) (out [][]string) {
 	if p.Eth2 != nil {
 		if p.Eth2.ENR != nil {
 			entry("eth2/enr", p.Eth2.ENR.Raw)
-			for k, v := range p.Eth2.ENR.Contents {
+			if p.Eth2.ENR.Eth2Data != nil { // combine these fields, since they are always updated together
+				eth2CSVStr := fmt.Sprintf("%s:%s:%d",
+					p.Eth2.ENR.Eth2Data.ForkDigest,
+					p.Eth2.ENR.Eth2Data.NextForkVersion,
+					p.Eth2.ENR.Eth2Data.NextForkEpoch)
+				entry("eth2/enr/eth2_data", eth2CSVStr)
+			}
+			if p.Eth2.ENR.Attnets != nil {
+				entry("eth2/enr/attnets", p.Eth2.ENR.Attnets.String())
+			}
+			for k, v := range p.Eth2.ENR.Other {
 				entry("eth2/enr/"+k, v)
+			}
+			if p.Eth2.ENR.Seq != 0 {
+				entry("eth2/enr/seq", strconv.FormatUint(p.Eth2.ENR.Seq, 10))
 			}
 		}
 		if p.Eth2.Status != nil {
@@ -166,9 +201,15 @@ func (p *PartialPeerstoreEntry) ToCSV(prefixFields ...string) (out [][]string) {
 		}
 		if p.AddrRecords.Addrs != nil {
 			for i, addr := range p.AddrRecords.Addrs {
-				entry(fmt.Sprintf("addr_records/addrs/%d/addr", i), addr.Addr.String())
-				entry(fmt.Sprintf("addr_records/addrs/%d/ttl", i), fmt.Sprintf("%d", addr.Ttl))
-				entry(fmt.Sprintf("addr_records/addrs/%d/expiry", i), fmt.Sprintf("%d", addr.Expiry))
+				if addr.Addr != "" {
+					entry(fmt.Sprintf("addr_records/addrs/%d/addr", i), addr.Addr)
+				}
+				if addr.Ttl != 0 {
+					entry(fmt.Sprintf("addr_records/addrs/%d/ttl", i), fmt.Sprintf("%d", addr.Ttl))
+				}
+				if addr.Expiry != 0 {
+					entry(fmt.Sprintf("addr_records/addrs/%d/expiry", i), fmt.Sprintf("%d", addr.Expiry))
+				}
 			}
 			entry("addr_records/addrs/count", fmt.Sprintf("%d", len(p.AddrRecords.Addrs)))
 		}
@@ -282,23 +323,45 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 			switch parts[3] {
 			case "metadata":
 				var md beacon.MetaData
-				if err := md.Deserialize(codec.NewDecodingReader(bytes.NewReader(v), uint64(len(v)))); err == nil {
+				if e := md.Deserialize(codec.NewDecodingReader(bytes.NewReader(v), uint64(len(v)))); e == nil {
 					out.Eth2.Metadata = &md
+				} else {
+					err = fmt.Errorf("bad metadata in peerstore: %v", e)
+					return
 				}
 			case "metadata_claim":
 				if len(v) == 8 {
 					out.Eth2.MetadataClaim = beacon.SeqNr(binary.LittleEndian.Uint64(v))
+				} else {
+					err = fmt.Errorf("bad metadata_claim in peerstore, wrong length: claim bytes: %x", v)
+					return
 				}
 			case "status":
 				var st beacon.Status
-				if err := st.Deserialize(codec.NewDecodingReader(bytes.NewReader(v), uint64(len(v)))); err == nil {
+				if e := st.Deserialize(codec.NewDecodingReader(bytes.NewReader(v), uint64(len(v)))); e == nil {
 					out.Eth2.Status = &st
+				} else {
+					err = fmt.Errorf("bad status in peerstore: %v", e)
+					return
 				}
 			case "enr":
 				out.Eth2.ENR = &ENRData{}
 				out.Eth2.ENR.Raw = string(v)
 				rec, err := addrutil.ParseEnr(out.Eth2.ENR.Raw)
 				if err == nil {
+					n, err := enode.New(enode.ValidSchemes, rec)
+					if err == nil {
+						if eth2Data, ok, err := addrutil.ParseEnrEth2Data(n); err != nil && ok {
+							out.Eth2.ENR.Eth2Data = eth2Data
+						}
+						if attnets, ok, err := addrutil.ParseEnrAttnets(n); err != nil && ok {
+							out.Eth2.ENR.Attnets = attnets
+						}
+						out.Eth2.ENR.Seq = n.Seq()
+						out.Eth2.ENR.IP = n.IP()
+						out.Eth2.ENR.TCP = uint16(n.TCP())
+						out.Eth2.ENR.UDP = uint16(n.UDP())
+					}
 					enrPairs := rec.AppendElements(nil)
 					enrKV := make(map[string]string)
 					for i := 1; i < len(enrPairs); i += 2 {
@@ -313,10 +376,16 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 							if err := rlp.DecodeBytes(rawValue, typedValue); err != nil {
 								enrKV["fail_"+key] = hex.EncodeToString(rawValue)
 							}
+							// if these cannot be parsed, then fine, add the raw form on failure (see above)
+							// Otherwise, don't duplicat the data.
+							if key == "eth2" || key == "attnets" || key == "ip" ||
+								key == "ip6" || key == "udp" || key == "tcp" {
+								continue
+							}
 							enrKV[key] = getValueStr()
 						}
 					}
-					out.Eth2.ENR.Contents = enrKV
+					out.Eth2.ENR.Other = enrKV
 				}
 			default:
 				err = fmt.Errorf("%w key: %s", UnknownKey, k)
@@ -327,7 +396,7 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 				out.AddrRecords = &AddrBookRecord{}
 				for _, a := range addrsPb.Addrs {
 					out.AddrRecords.Addrs = append(out.AddrRecords.Addrs, &AddrBookRecord_AddrEntry{
-						Addr:   a.Addr.Multiaddr,
+						Addr:   a.Addr.Multiaddr.String(),
 						Expiry: a.Expiry,
 						Ttl:    a.Ttl,
 					})
@@ -351,7 +420,7 @@ func ItemToEntry(k ds.Key, v []byte) (id peer.ID, out PartialPeerstoreEntry, err
 				}
 				sort.Strings(out.Protocols)
 			case "ProtocolVersion":
-				out.UserAgent = res.(string)
+				out.ProtocolVersion = res.(string)
 			case "AgentVersion":
 				out.UserAgent = res.(string)
 			default:

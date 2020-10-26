@@ -1,0 +1,7 @@
+p2p_port=${P2P_PORT:-9000}
+
+set -e
+
+host listen --tcp=$p2p_port --ip=0.0.0.0
+# We're interested in all connections and streams
+host notify all

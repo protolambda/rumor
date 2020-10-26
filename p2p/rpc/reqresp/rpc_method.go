@@ -17,6 +17,7 @@ type Request interface {
 }
 
 type Codec interface {
+	MinByteLen() uint64
 	MaxByteLen() uint64
 	Encode(w io.Writer, input codec.Serializable) error
 	Decode(r io.Reader, bytesLen uint64, dest codec.Deserializable) error
@@ -30,14 +31,23 @@ type SerDes interface {
 
 type SSZCodec struct {
 	alloc      func() SerDes
+	minByteLen uint64
 	maxByteLen uint64
 }
 
-func NewSSZCodec(alloc func() SerDes, maxByteLen uint64) *SSZCodec {
+func NewSSZCodec(alloc func() SerDes, minByteLen uint64, maxByteLen uint64) *SSZCodec {
 	return &SSZCodec{
 		alloc:      alloc,
+		minByteLen: minByteLen,
 		maxByteLen: maxByteLen,
 	}
+}
+
+func (c *SSZCodec) MinByteLen() uint64 {
+	if c == nil {
+		return 0
+	}
+	return c.minByteLen
 }
 
 func (c *SSZCodec) MaxByteLen() uint64 {
@@ -301,5 +311,5 @@ func (m *RPCMethod) MakeStreamHandler(newCtx StreamCtxFn, comp Compression, list
 		listener(ctx, peerId, &chReqHandler{
 			m: m, comp: comp, reqLen: requestLen, r: r, w: w, invalidInputErr: invalidInputErr,
 		})
-	}).MakeStreamHandler(newCtx, comp, m.RequestCodec.MaxByteLen())
+	}).MakeStreamHandler(newCtx, comp, m.RequestCodec.MinByteLen(), m.RequestCodec.MaxByteLen())
 }

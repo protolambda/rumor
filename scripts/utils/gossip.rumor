@@ -1,0 +1,19 @@
+set -e
+
+gossip start
+
+fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+
+# Remove the 0x prefix, it's not part of the topic string
+fork_digest=${fork_digest#"0x"}
+
+topic_name="beacon_block"
+encoding="ssz_snappy"
+blocks_topic="/eth2/$fork_digest/$topic_name/$encoding"
+gossip join --topic=$blocks_topic
+
+# Subscribe to topics, like the beacon-blocks topic.
+# One topic is enough to be accepted as running the protocol.
+gossip log $blocks_topic
+echo "logging medalla beacon blocks"
+

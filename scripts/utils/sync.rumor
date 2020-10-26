@@ -1,0 +1,30 @@
+# Prerequisite: connect to peer, specify it as $TARGET_PEER_ID
+# And optionally specify start as: MIN_BLOCK_SLOT, and end as MAX_BLOCK_SLOT
+
+set -e
+
+# Request their peer status like a honest spec user would. And we need the head slot anyway
+peer status req $TARGET_PEER_ID
+
+# Sync up to head slot of honest peer
+up_to_slot=${__head_slot:-MAX_BLOCK_SLOT}
+echo "Other peer has slots up to $up_to_slot"
+
+
+start_slot=${MIN_BLOCK_SLOT:-0}
+
+for ((i=$startvalue; i < $up_to_slot; )) do
+  # Try and request 100 blocks at a time, we probably get less. Lighthouse likes to respond with 64.
+  count=$up_to_slot-$i
+  if [ $count -gt 100 ]; then
+    count=100
+  fi
+  # Don't process the blocks, just store them
+  chain this sync by-range --peer=$TARGET_PEER_ID --start=$slot --step=1 --count=100 --process=false --store=true
+  # Update the loop offset slot, with whatever was the latest
+  i=$((__slot + 1))
+  # Be kind, don't continue spamming with another request right away
+  sleep 1s
+done
+
+

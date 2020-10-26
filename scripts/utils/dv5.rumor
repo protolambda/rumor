@@ -1,0 +1,14 @@
+# Prerequisite: specify line-end separated ENR list $BOOT_NODES
+# Optionally specify a $FORK_DIGEST, defaults to Medalla
+set -e
+
+bootnodes=${BOOT_NODES:-""}
+bootnodes=$(echo -n $bootnodes | tr " " ",")
+
+_dv5_runner lvl_warn dv5 run --bootnodes=$bootnodes
+
+fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+_dv5_crawler lvl_error dv5 random --add --filter-digest=$fork_digest
+
+echo "started dv5 in background: _dv5_runner lvl_warn, _dv5_crawler lvl_error"
+

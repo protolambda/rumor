@@ -1,0 +1,18 @@
+# Set up a genesis Medalla status
+
+fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+
+set -e
+
+# We zero out attnets here, even though we advertise it in the ENR. We can't really support the attnets without gossip.
+peer metadata set \
+      --attnets="0x0000000000000000" \
+      --seq-number=0
+
+# change status, as if we are at the start of the Medalla chain
+peer status set \
+      --finalized-epoch=0 \
+      --finalized-root="0000000000000000000000000000000000000000000000000000000000000000" \
+      --fork-digest="$fork_digest" \
+      --head-root="0xebe49843e96e538592c9e1976e155e9057c251ed9312eba517afce3ca1a0660c" \
+      --head-slot=0

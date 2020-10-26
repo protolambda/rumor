@@ -1,0 +1,21 @@
+set -e
+
+external_ip=$P2P_PUBLIC_IP
+p2p_port=${P2P_PORT:-9000}
+
+echo "External IP used in ENRs: $external_ip"
+echo "External port used in ENRs: $p2p_port"
+
+fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+
+enr make \
+  --ip="$external_ip" \
+  --tcp=$p2p_port \
+  --udp=$p2p_port \
+  --priv=$P2P_PRIV_KEY \
+  --static-ip="$external_ip" \
+  --fallback-udp=$p2p_port \
+  --attnets="0xffffffffffffffff" \
+  --fork-digest="$fork_digest" \
+  --next-fork-version="0x00000001" \
+  --next-fork-epoch="0xffffffffffffffff"

@@ -19,9 +19,14 @@ logs
 *.sock
 *.log
 *.csv
+*.json
 
-medalla
+/medalla
+/rumordata
 
 # Example SSH key
 rumor_ssh_server
 rumor_ssh_server.pub
+
+# Root dir scripts are for debugging
+/*.rumor
