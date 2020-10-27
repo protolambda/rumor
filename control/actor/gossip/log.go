@@ -7,7 +7,7 @@ import (
 	"github.com/golang/snappy"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/protolambda/rumor/control/actor/base"
-	"github.com/sirupsen/logrus"
+    "github.com/sirupsen/logrus"
 	"strings"
 )
 
@@ -55,7 +55,7 @@ func (c *GossipLogCmd) Run(ctx context.Context, args ...string) error {
 						msgData = msg.Data
 					}
 					c.Log.WithFields(logrus.Fields{
-						"from":      msg.GetFrom().String(),
+						"from":      msg.ReceivedFrom.String(),
 						"data":      hex.EncodeToString(msgData),
 						"signature": hex.EncodeToString(msg.Signature),
 						"seq_no":    hex.EncodeToString(msg.Seqno),
