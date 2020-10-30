@@ -57,7 +57,7 @@ func (c *PeerCmd) Cmd(route string) (cmd interface{}, err error) {
 }
 
 func (c *PeerCmd) Routes() []string {
-	return []string{"connect", "disconnect", "protect", "unprotect", "add", "trim",
+	return []string{"connect", "disconnect", "connectall", "protect", "unprotect", "add", "trim",
 		"list", "info", "identify", "track", "addrs", "status", "metadata"}
 }
 
