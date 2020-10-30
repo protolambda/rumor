@@ -36,7 +36,7 @@ func (sb *dsStatusBook) loadStatus(p peer.ID) (*beacon.Status, error) {
 		return nil, fmt.Errorf("failed parse status bytes from datastore: %v", err)
 	}
 	// cache it
-	sb.data.Store(p, status)
+	sb.data.Store(p, &status)
 	return &status, nil
 }
 
