@@ -12,11 +12,11 @@ import (
 
 type ChainCreateCmd struct {
 	*base.Base
-	chain.Chains
+	dbs.Chains
 	*ChainState
 	States    sdb.DB
-	Name      chain.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
-	StateRoot beacon.Root   `ask:"<state>" help:"The state to start from, retrieved from the states DB"`
+	Name      dbs.ChainID `ask:"<name>" help:"The name to give to the created chain. Must not exist yet."`
+	StateRoot beacon.Root `ask:"<state>" help:"The state to start from, retrieved from the states DB"`
 }
 
 func (c *ChainCreateCmd) Help() string {
@@ -62,7 +62,7 @@ func (c *ChainCreateCmd) Run(ctx context.Context, args ...string) error {
 	if err != nil {
 		return err
 	}
-	entry := chain.NewHotEntry(slot, blockRoot, parentRoot, state, epc)
+	entry := dbs.NewHotEntry(slot, blockRoot, parentRoot, state, epc)
 	_, err = c.Chains.Create(c.Name, entry, spec)
 	if err != nil {
 		return err

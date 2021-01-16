@@ -16,7 +16,7 @@ type handleSync struct {
 	Log logrus.FieldLogger
 
 	Blocks bdb.DB
-	Chain  chain.FullChain
+	Chain  dbs.FullChain
 
 	ExpectedCount uint64
 

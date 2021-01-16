@@ -6,7 +6,7 @@ p2p_port=${P2P_PORT:-9000}
 echo "External IP used in ENRs: $external_ip"
 echo "External port used in ENRs: $p2p_port"
 
-fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+fork_digest=${FORK_DIGEST:-"0xb5303f2a"}
 
 enr make \
   --ip="$external_ip" \
@@ -17,5 +17,5 @@ enr make \
   --fallback-udp=$p2p_port \
   --attnets="0xffffffffffffffff" \
   --fork-digest="$fork_digest" \
-  --next-fork-version="0x00000001" \
+  --next-fork-version="0x00000000" \
   --next-fork-epoch="0xffffffffffffffff"

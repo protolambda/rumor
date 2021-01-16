@@ -1,6 +1,6 @@
 module github.com/protolambda/rumor
 
-go 1.14
+go 1.15
 
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
@@ -62,4 +62,9 @@ require (
 	golang.org/x/text v0.3.3 // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	mvdan.cc/sh/v3 v3.1.2
+)
+
+replace (
+	github.com/protolambda/zrnt => ../zrnt
+	github.com/protolambda/ztyp => ../ztyp
 )

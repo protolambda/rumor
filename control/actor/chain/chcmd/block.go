@@ -13,7 +13,7 @@ import (
 type BlockCmd struct {
 	*base.Base
 	Blocks bdb.DB
-	Chain  chain.FullChain
+	Chain  dbs.FullChain
 	Root   beacon.Root `ask:"<root>" help:"Root of the block to add to the chain"`
 }
 

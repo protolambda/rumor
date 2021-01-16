@@ -2,7 +2,7 @@ set -e
 
 gossip start
 
-fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+fork_digest=${FORK_DIGEST:-"0xb5303f2a"}
 
 # Remove the 0x prefix, it's not part of the topic string
 fork_digest=${fork_digest#"0x"}
@@ -15,5 +15,5 @@ gossip join --topic=$blocks_topic
 # Subscribe to topics, like the beacon-blocks topic.
 # One topic is enough to be accepted as running the protocol.
 gossip log $blocks_topic
-echo "logging medalla beacon blocks"
+echo "logging beacon blocks"
 

@@ -11,7 +11,7 @@ import (
 
 type OnCmd struct {
 	*base.Base
-	chain.Chains
+	dbs.Chains
 	Blocks bdb.DB
 	States sdb.DB
 }
@@ -28,7 +28,7 @@ func (c *OnCmd) Routes() (out []string) {
 }
 
 func (c *OnCmd) Cmd(route string) (cmd interface{}, err error) {
-	ch, ok := c.Chains.Find(chain.ChainID(route))
+	ch, ok := c.Chains.Find(dbs.ChainID(route))
 	if !ok {
 		return nil, errors.New("chain not available, create one with 'chains create'")
 	}

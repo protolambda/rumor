@@ -20,7 +20,7 @@ type ByRangeCmd struct {
 	*base.Base
 
 	Blocks bdb.DB
-	Chain  chain.FullChain
+	Chain  dbs.FullChain
 
 	PeerID         flags.PeerIDFlag      `ask:"--peer" help:"Peers to make blocks-by-range request to."`
 	StartSlot      beacon.Slot           `ask:"--start" help:"Start slot of request"`

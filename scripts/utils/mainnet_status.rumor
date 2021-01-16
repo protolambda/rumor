@@ -1,6 +1,6 @@
 # Set up a genesis Medalla status
 
-fork_digest=${FORK_DIGEST:-"0xe7a75d5a"}
+fork_digest=${FORK_DIGEST:-"0xb5303f2a"}
 
 set -e
 
@@ -14,5 +14,5 @@ peer status set \
       --finalized-epoch=0 \
       --finalized-root="0000000000000000000000000000000000000000000000000000000000000000" \
       --fork-digest="$fork_digest" \
-      --head-root="0xebe49843e96e538592c9e1976e155e9057c251ed9312eba517afce3ca1a0660c" \
+      --head-root="0xeade62f0457b2fdf48e7d3fc4b60736688286be7c7a3ac4c9a16a5e0600bd9e4" \
       --head-slot=0

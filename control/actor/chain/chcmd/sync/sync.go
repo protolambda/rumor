@@ -9,7 +9,7 @@ import (
 
 type SyncCmd struct {
 	*base.Base
-	Chain  chain.FullChain
+	Chain  dbs.FullChain
 	Blocks bdb.DB
 }
 

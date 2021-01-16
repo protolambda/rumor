@@ -9,7 +9,7 @@ import (
 type ChainListCmd struct {
 	*base.Base
 
-	chain.Chains
+	dbs.Chains
 	*ChainState
 }
 

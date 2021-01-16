@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"github.com/protolambda/ask"
 	"github.com/protolambda/rumor/chain"
-	bdb "github.com/protolambda/rumor/chain/db/blocks"
-	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/p2p/track"
@@ -62,9 +60,9 @@ func NewSessionProcessor(adminLog logrus.FieldLogger) *SessionProcessor {
 		actorGlobals: actor.GlobalActorData{
 			GlobalCtx:        globActCtx,
 			GlobalPeerstores: &track.PeerstoresMap{},
-			GlobalChains:     &chain.ChainsMap{},
-			GlobalBlocksDBs:  &bdb.DBMap{},
-			GlobalStatesDBs:  &sdb.DBMap{},
+			GlobalChains:     &dbs.ChainsMap{},
+			GlobalBlocksDBs:  &dbs.DBMap{},
+			GlobalStatesDBs:  &dbs.DBMap{},
 		},
 		sessions:            make(map[*Session]struct{}),
 		log:                 log,

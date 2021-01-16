@@ -11,12 +11,12 @@ import (
 )
 
 type ChainState struct {
-	CurrentChain chain.ChainID
+	CurrentChain dbs.ChainID
 }
 
 type ChainCmd struct {
 	*base.Base
-	chain.Chains
+	dbs.Chains
 	*ChainState
 	Blocks bdb.DB
 	States sdb.DB

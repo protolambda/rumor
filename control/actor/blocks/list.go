@@ -2,13 +2,13 @@ package blocks
 
 import (
 	"context"
-	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	"github.com/protolambda/rumor/dbs"
 	"github.com/protolambda/rumor/control/actor/base"
 )
 
 type ListCmd struct {
 	*base.Base
-	bdb.DBs
+	dbs.BlocksDBs
 	*DBState
 }
 
@@ -17,11 +17,11 @@ func (c *ListCmd) Help() string {
 }
 
 func (c *ListCmd) Run(ctx context.Context, args ...string) error {
-	dbIDs := c.DBs.List()
+	dbIDs := c.BlocksDBs.List()
 	c.Log.WithField("dbs", dbIDs).Infof("Got %d DBs", len(dbIDs))
 
 	if current := c.DBState.CurrentDB; current != "" {
-		db, ok := c.DBs.Find(current)
+		db, ok := c.BlocksDBs.Find(current)
 		if ok {
 			c.Log.WithField("current", current).WithField("path", db.Path()).Info("Current DB")
 		} else {

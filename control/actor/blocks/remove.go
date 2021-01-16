@@ -2,15 +2,15 @@ package blocks
 
 import (
 	"context"
-	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	"github.com/protolambda/rumor/dbs"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/sirupsen/logrus"
 )
 
 type RemoveCmd struct {
 	*base.Base
-	bdb.DBs
-	Name bdb.DBID `ask:"<name>" help:"The name of the DB to remove. Must exist."`
+	dbs.BlocksDBs
+	Name dbs.BlocksDBID `ask:"<name>" help:"The name of the DB to remove. Must exist."`
 }
 
 func (c *RemoveCmd) Help() string {
@@ -18,7 +18,7 @@ func (c *RemoveCmd) Help() string {
 }
 
 func (c *RemoveCmd) Run(ctx context.Context, args ...string) error {
-	existed := c.DBs.Remove(c.Name)
+	existed := c.BlocksDBs.Remove(c.Name)
 	c.Log.WithFields(logrus.Fields{"existed": existed, "name": c.Name}).Info("removed DB")
 	return nil
 }

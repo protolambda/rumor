@@ -1,0 +1,4 @@
+set -e
+
+mkdir -p "$PWD/rumordata"
+_peer_tracker_remote peer track tee --dest=json --path="$PWD/rumordata/peerstore_events"

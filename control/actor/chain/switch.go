@@ -11,7 +11,7 @@ import (
 type ChainSwitchCmd struct {
 	*base.Base
 	*ChainState
-	To chain.ChainID `ask:"<to>" help:"The name of the chain to switch to. Must exist."`
+	To dbs.ChainID `ask:"<to>" help:"The name of the chain to switch to. Must exist."`
 }
 
 func (c *ChainSwitchCmd) Help() string {

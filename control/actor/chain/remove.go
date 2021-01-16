@@ -9,8 +9,8 @@ import (
 
 type ChainRemoveCmd struct {
 	*base.Base
-	chain.Chains
-	Name chain.ChainID `ask:"<name>" help:"The name of the chain to remove. Must exist."`
+	dbs.Chains
+	Name dbs.ChainID `ask:"<name>" help:"The name of the chain to remove. Must exist."`
 }
 
 func (c *ChainRemoveCmd) Help() string {

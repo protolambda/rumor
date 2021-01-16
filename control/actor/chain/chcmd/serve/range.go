@@ -21,7 +21,7 @@ type ByRangeCmd struct {
 	*base.Base
 
 	Blocks bdb.DB
-	Chain  chain.FullChain
+	Chain  dbs.FullChain
 
 	Timeout     time.Duration         `ask:"--timeout" help:"Timeout for full request and response. 0 to disable"`
 	Compression flags.CompressionFlag `ask:"--compression" help:"Compression. 'none' to disable, 'snappy' for streaming-snappy"`

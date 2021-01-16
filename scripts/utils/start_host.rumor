@@ -4,5 +4,6 @@ set -e
 # And tag, see how many users identify us
 host start --identify=true --libp2p-ping=true \
   --lo-peers=400 --hi-peers=500 \
+  --mux=mplex,yamux \
   --peer-grace-period=30s --agent="protolambda-heya"
 

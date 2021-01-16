@@ -3,7 +3,7 @@ package blocks
 import (
 	"context"
 	"errors"
-	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	"github.com/protolambda/rumor/dbs"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/sirupsen/logrus"
 )
@@ -11,7 +11,7 @@ import (
 type SwitchCmd struct {
 	*base.Base
 	*DBState
-	To bdb.DBID `ask:"<to>" help:"The name of the DB to switch to. Must exist."`
+	To dbs.BlocksDBID `ask:"<to>" help:"The name of the DB to switch to. Must exist."`
 }
 
 func (c *SwitchCmd) Help() string {

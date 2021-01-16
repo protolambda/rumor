@@ -8,8 +8,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/protolambda/ask"
 	chaindata "github.com/protolambda/rumor/chain"
-	bdb "github.com/protolambda/rumor/chain/db/blocks"
-	sdb "github.com/protolambda/rumor/chain/db/states"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/blocks"
 	"github.com/protolambda/rumor/control/actor/chain"
@@ -36,8 +34,8 @@ type GlobalActorData struct {
 	GlobalCtx        context.Context
 	GlobalPeerstores track.Peerstores
 	GlobalChains     chaindata.Chains
-	GlobalBlocksDBs  bdb.DBs
-	GlobalStatesDBs  sdb.DBs
+	GlobalBlocksDBs  chaindata.DBs
+	GlobalStatesDBs  chaindata.DBs
 }
 
 type ActorID string

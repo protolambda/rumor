@@ -3,41 +3,41 @@ package states
 import (
 	"errors"
 	"github.com/protolambda/ask"
-	sdb "github.com/protolambda/rumor/chain/db/states"
+	"github.com/protolambda/rumor/dbs"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/rumor/control/actor/states/dbcmd"
 )
 
 type DBState struct {
-	CurrentDB sdb.DBID
+	CurrentDB dbs.StatesDBID
 }
 
 type StatesCmd struct {
 	*base.Base
-	sdb.DBs
+	dbs.StatesDBs
 	*DBState
 }
 
 func (c *StatesCmd) Cmd(route string) (cmd interface{}, err error) {
 	switch route {
 	case "create":
-		cmd = &CreateCmd{Base: c.Base, DBs: c.DBs, DBState: c.DBState}
+		cmd = &CreateCmd{Base: c.Base, StatesDBs: c.StatesDBs, DBState: c.DBState}
 	case "copy":
 		cmd = &CopyCmd{Base: c.Base}
 	case "switch":
 		cmd = &SwitchCmd{Base: c.Base, DBState: c.DBState}
 	case "rm":
-		cmd = &RemoveCmd{Base: c.Base, DBs: c.DBs}
+		cmd = &RemoveCmd{Base: c.Base, StatesDBs: c.StatesDBs}
 	case "list":
-		cmd = &ListCmd{Base: c.Base, DBs: c.DBs, DBState: c.DBState}
+		cmd = &ListCmd{Base: c.Base, StatesDBs: c.StatesDBs, DBState: c.DBState}
 	case "db":
-		db, ok := c.DBs.Find(c.CurrentDB)
+		db, ok := c.StatesDBs.Find(c.CurrentDB)
 		if !ok {
 			return nil, errors.New("current DB not available. Create one with 'states create'")
 		}
 		cmd = &dbcmd.DBCmd{Base: c.Base, DB: db}
 	case "on":
-		cmd = &OnCmd{Base: c.Base, DBs: c.DBs}
+		cmd = &OnCmd{Base: c.Base, StatesDBs: c.StatesDBs}
 	default:
 		return nil, ask.UnrecognizedErr
 	}

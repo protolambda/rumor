@@ -2,16 +2,16 @@ package blocks
 
 import (
 	"context"
-	bdb "github.com/protolambda/rumor/chain/db/blocks"
+	"github.com/protolambda/rumor/dbs"
 	"github.com/protolambda/rumor/control/actor/base"
 	"github.com/protolambda/zrnt/eth2/configs"
 )
 
 type CreateCmd struct {
 	*base.Base
-	bdb.DBs
+	dbs.BlocksDBs
 	*DBState
-	Name bdb.DBID `ask:"<name>" help:"The name to give to the created db. Must not exist yet."`
+	Name dbs.BlocksDBID `ask:"<name>" help:"The name to give to the created db. Must not exist yet."`
 	Path string   `ask:"[path]" help:"The path used for the DB. It will be a memory DB if left empty."`
 }
 
@@ -20,7 +20,7 @@ func (c *CreateCmd) Help() string {
 }
 
 func (c *CreateCmd) Run(ctx context.Context, args ...string) error {
-	_, err := c.DBs.Create(c.Name, c.Path, configs.Mainnet) // TODO choose config
+	_, err := c.BlocksDBs.Create(c.Name, c.Path, configs.Mainnet) // TODO choose config
 	if err != nil {
 		return err
 	}
